@@ -535,44 +535,69 @@
             </p>
 
             <form onsubmit="return false;">
-              <div class="setting-item">
-                <div>
-                  <strong>1. Google Gemini API Key (מומלץ וחינמי):</strong>
-                  <p>Google AI Studio (Gemini 1.5 Flash)</p>
+              <!-- 1. Gemini -->
+              <div class="setting-item" style="display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem; padding: 1.1rem; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+                  <div>
+                    <strong style="font-size: 1.05rem;">1. Google Gemini API Key (מומלץ וחינמי):</strong>
+                    <p style="margin: 0.2rem 0 0 0; color: #64748b; font-size: 0.9rem;">Google AI Studio (Gemini 1.5 Flash)</p>
+                  </div>
+                  <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <input type="password" id="cfg-gemini-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Gemini..." autocomplete="off">
+                    <button type="button" id="btn-test-gemini" class="secondary-btn" style="white-space: nowrap; padding: 0.55rem 0.95rem; font-size: 0.88rem;">
+                      <span>בדוק Gemini 🧪</span>
+                    </button>
+                  </div>
                 </div>
-                <input type="password" id="cfg-gemini-key" class="styled-input" style="max-width: 300px;" placeholder="הדבק כאן מפתח Gemini..." autocomplete="off">
+                <div id="cfg-gemini-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
               </div>
 
-              <div class="setting-item">
-                <div>
-                  <strong>2. Groq API Key (ספק גיבוי מהיר וחינמי):</strong>
-                  <p>Groq Console (Llama 3.3 70B)</p>
+              <!-- 2. Groq -->
+              <div class="setting-item" style="display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem; padding: 1.1rem; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+                  <div>
+                    <strong style="font-size: 1.05rem;">2. Groq API Key (ספק גיבוי מהיר וחינמי):</strong>
+                    <p style="margin: 0.2rem 0 0 0; color: #64748b; font-size: 0.9rem;">Groq Console (Llama 3.1 8B / 3.3 70B)</p>
+                  </div>
+                  <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <input type="password" id="cfg-groq-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Groq..." autocomplete="off">
+                    <button type="button" id="btn-test-groq" class="secondary-btn" style="white-space: nowrap; padding: 0.55rem 0.95rem; font-size: 0.88rem;">
+                      <span>בדוק Groq 🧪</span>
+                    </button>
+                  </div>
                 </div>
-                <input type="password" id="cfg-groq-key" class="styled-input" style="max-width: 300px;" placeholder="הדבק כאן מפתח Groq..." autocomplete="off">
+                <div id="cfg-groq-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
               </div>
 
-              <div class="setting-item">
-                <div>
-                  <strong>3. מודל מקומי / Local Ollama URL:</strong>
-                  <p>ברירת מחדל: http://localhost:11434</p>
+              <!-- 3. Ollama -->
+              <div class="setting-item" style="display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem; padding: 1.1rem; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+                  <div>
+                    <strong style="font-size: 1.05rem;">3. מודל מקומי / Local Ollama URL:</strong>
+                    <p style="margin: 0.2rem 0 0 0; color: #64748b; font-size: 0.9rem;">ברירת מחדל: http://localhost:11434</p>
+                  </div>
+                  <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <input type="text" id="cfg-ollama-url" class="styled-input" style="max-width: 270px;" value="http://localhost:11434">
+                    <button type="button" id="btn-test-ollama" class="secondary-btn" style="white-space: nowrap; padding: 0.55rem 0.95rem; font-size: 0.88rem;">
+                      <span>בדוק Ollama 🧪</span>
+                    </button>
+                  </div>
                 </div>
-                <input type="text" id="cfg-ollama-url" class="styled-input" style="max-width: 300px;" value="http://localhost:11434">
+                <div id="cfg-ollama-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
               </div>
 
-              <div class="setting-item">
+              <!-- 4. Offline Synthesizer -->
+              <div class="setting-item" style="display: flex; justify-content: space-between; align-items: center; padding: 1.1rem; border-radius: 12px; background: #f8fafc; border: 1px solid #e2e8f0; margin-bottom: 1.2rem;">
                 <div>
-                  <strong>4. מנוע פנימי חכם (Built-in Offline Synthesizer):</strong>
-                  <p>פועל תמיד באופן אוטומטי ואוטונומי אם אין מפתחות או אין חיבור רשת.</p>
+                  <strong style="font-size: 1.05rem;">4. מנוע פנימי חכם (Built-in Offline Synthesizer):</strong>
+                  <p style="margin: 0.2rem 0 0 0; color: #64748b; font-size: 0.9rem;">פועל תמיד באופן אוטומטי ואוטונומי אם אין מפתחות או אין חיבור רשת.</p>
                 </div>
-                <span class="badge-tag" style="background-color:#ecfdf5;color:#059669;">תמיד פעיל ✅</span>
+                <span class="badge-tag" style="background-color:#ecfdf5;color:#059669; font-weight: bold; padding: 0.4rem 0.8rem; border-radius: 20px; border: 1px solid #a7f3d0;">תמיד פעיל ✅</span>
               </div>
 
-              <div style="margin-top: 1rem;">
-                <button id="cfg-save-keys-btn" class="primary-btn">
+              <div style="margin-top: 1.2rem; display: flex; gap: 0.75rem; align-items: center;">
+                <button type="button" id="cfg-save-keys-btn" class="primary-btn">
                   <span>שמור הגדרות מפתחות 💾</span>
-                </button>
-                <button id="cfg-test-connection-btn" class="secondary-btn" style="margin-right: 0.5rem;">
-                  <span>בדוק חיבור לספקים 🧪</span>
                 </button>
               </div>
             </form>
