@@ -1,7 +1,8 @@
 /**
- * מאמן ה-AI של דניאל v2.0
- * ארכיטקטורה מודולרית, פדגוגיית 4 השלבים, בדיקת הבנה חד-משמעית,
- * ממשק ניהול סמוי (#admin) עם עוזר AI, עריכת Live Preview, שרשרת Fallback, ולוח פתקים משותף.
+ * מאמן ה-AI של דניאל v2.0 - מתוקן ומאומת
+ * פדגוגיית 4 השלבים, בדיקת הבנה חד-משמעית, שחזור סשן מלא בריפרש,
+ * סימולטור שיחה טבעי (ללא JSON), ביטול שגיאות 405 ב-GitHub Pages,
+ * וממשק ניהול סמוי (#admin) עם שרשרת Fallback רב-שכבתית.
  */
 
 // ============================================================================
@@ -297,13 +298,9 @@ let appState = {
   calibrationChoices: [],
   profile: null,
 
-  // רשימת יחידות הלימוד הפעילות (מסלול מודולרי)
   curriculumUnits: JSON.parse(JSON.stringify(DEFAULT_V2_UNITS)),
-
-  // תור תגבורים אדפטיביים (needs_reinforcement)
   needsReinforcementQueue: [],
 
-  // לוח פתקים והארות משותף לאושרי ולאבא
   caregiverNotes: [
     {
       id: 'note_1',
@@ -313,7 +310,6 @@ let appState = {
     }
   ],
 
-  // הגדרות ספקי מודלי שפה ושרשרת Fallback
   apiConfig: {
     geminiKey: '',
     groqKey: '',
@@ -321,12 +317,11 @@ let appState = {
     adminPin: ADMIN_PIN_DEFAULT
   },
 
-  // היסטוריית וידואי הבנה ומשובים
   quizHistory: [],
   feedbackHistory: []
 };
 
-// מיגרציה שקטה וחלקה מ-v1
+// מיגרציה שקטה מ-v1 ושחזור מלא
 function performMigrationIfNeeded() {
   try {
     const rawV2 = localStorage.getItem(STORAGE_KEY);
@@ -336,7 +331,6 @@ function performMigrationIfNeeded() {
       return;
     }
 
-    // בדיקת נתוני v1 קיימים
     const rawV1 = localStorage.getItem(LEGACY_V1_KEY);
     if (rawV1) {
       const v1Data = JSON.parse(rawV1);
@@ -348,14 +342,12 @@ function performMigrationIfNeeded() {
       if (v1Data.profile) appState.profile = v1Data.profile;
       if (v1Data.feedbackHistory) appState.feedbackHistory = v1Data.feedbackHistory;
 
-      // מיפוי משימות v1 שהושלמו ליחידות v2
       if (Array.isArray(v1Data.weekPlan)) {
         let completedV1TasksCount = 0;
         v1Data.weekPlan.forEach(day => {
           day.tasks.forEach(t => { if (t.isCompleted) completedV1TasksCount++; });
         });
 
-        // פתיחה או השלמה של יחידות מקבילות ב-v2
         const unitsToComplete = Math.min(Math.floor(completedV1TasksCount / 2), appState.curriculumUnits.length);
         for (let i = 0; i < unitsToComplete; i++) {
           appState.curriculumUnits[i].isCompleted = true;
@@ -369,27 +361,32 @@ function performMigrationIfNeeded() {
 
       appState.version = 2;
       saveAppState();
-      showToast('הנתונים הקודמים של דניאל שודרגו בהצלחה לגרסה החדשה! ⭐');
     }
   } catch (err) {
     console.error('Migration error:', err);
   }
 }
 
+// שמירת מצב - מתוקנת: ללא שגיאות 405 ב-GitHub Pages!
 function saveAppState() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
   } catch (e) {
     console.error('Failed to save to localStorage:', e);
   }
-  // סנכרון שרת אם קיים
-  try {
-    fetch('/api/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(appState)
-    }).catch(() => {});
-  } catch (e) {}
+
+  // שולח בקשת POST אך ורק אם מריצים שרת מקומי ב-localhost!
+  // ב-GitHub Pages (או שרת סטטי) - לעולם לא שולח POST כדי למנוע שגיאות 405.
+  const isLocalServer = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  if (isLocalServer) {
+    try {
+      fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(appState)
+      }).catch(() => {});
+    } catch (e) {}
+  }
 }
 
 // ============================================================================
@@ -397,40 +394,107 @@ function saveAppState() {
 // ============================================================================
 
 const AIService = {
-  async callWithFallback(userPrompt, systemInstruction) {
+  // א. מענה ישיר וטבעי עבור הסימולטור של דניאל (טקסט שיחה טבעי בלבד, לעולם לא JSON!)
+  async callChatWithFallback(userPrompt) {
     const cfg = appState.apiConfig;
+    const sysInstruction = 'אתה עוזר אישי סבלני וידידותי עבור דניאל בן 28. ענה לו בעברית פשוטה, קצרה ונעימה, במשפט אחד או שניים בלבד. אל תחזיר שום מבנה JSON, אל תחזיר רשימות ארוכות - ענה כמשפט דיבור ישיר, פשוט וברור.';
 
-    // 1. נסיון ראשון: Gemini API
+    // 1. נסיון Gemini
     if (cfg.geminiKey && cfg.geminiKey.trim()) {
       try {
-        const res = await this.callGemini(cfg.geminiKey.trim(), userPrompt, systemInstruction);
-        if (res) return { text: res, provider: 'Google Gemini 1.5 Flash' };
-      } catch (err) {
-        console.warn('Gemini call failed, falling back to Groq...', err);
+        const res = await this.callGemini(cfg.geminiKey.trim(), userPrompt, sysInstruction);
+        if (res) return res.trim();
+      } catch (e) {
+        console.warn('Gemini chat failed, fallback...', e);
       }
     }
 
-    // 2. נסיון שני: Groq API
+    // 2. נסיון Groq
     if (cfg.groqKey && cfg.groqKey.trim()) {
       try {
-        const res = await this.callGroq(cfg.groqKey.trim(), userPrompt, systemInstruction);
-        if (res) return { text: res, provider: 'Groq (Llama 3.3)' };
-      } catch (err) {
-        console.warn('Groq call failed, falling back to Local...', err);
+        const res = await this.callGroq(cfg.groqKey.trim(), userPrompt, sysInstruction);
+        if (res) return res.trim();
+      } catch (e) {
+        console.warn('Groq chat failed, fallback...', e);
       }
     }
 
-    // 3. נסיון שלישי: Local Ollama
+    // 3. נסיון Ollama
     if (cfg.ollamaUrl && cfg.ollamaUrl.trim()) {
       try {
-        const res = await this.callOllama(cfg.ollamaUrl.trim(), userPrompt, systemInstruction);
-        if (res) return { text: res, provider: 'Local Ollama' };
-      } catch (err) {
-        console.warn('Local Ollama failed, falling back to offline synthesizer...', err);
+        const res = await this.callOllama(cfg.ollamaUrl.trim(), userPrompt, sysInstruction);
+        if (res) return res.trim();
+      } catch (e) {
+        console.warn('Local Ollama chat failed, fallback...', e);
       }
     }
 
-    // 4. נסיון רביעי (Fallback בטוח): מחולל פנימי מקומי חכם (אפס תלות)
+    // 4. מענה שיחה מקומי חכם (אופליין ללא תלות ברשת)
+    return this.simulateSimpleChatAnswer(userPrompt);
+  },
+
+  // ב. סימולטור מענה שיחה טבעי לדניאל באופליין
+  simulateSimpleChatAnswer(prompt) {
+    const p = prompt.toLowerCase();
+    if (p.includes('גיבוי')) {
+      return 'גיבוי במחשב הוא שמירה של הקבצים והתמונות החשובים שלך במקום נוסף (כמו ענן או דיסק-און-קי), כדי שלא יאבדו אם המחשב יתקלקל.';
+    }
+    if (p.includes('עכבר')) {
+      return 'עכבר מחשב הוא המכשיר שמזיז את החץ על המסך. כשלוחצים עליו הוא בוחר דברים ופותח תוכניות.';
+    }
+    if (p.includes('וואטסאפ') || p.includes('איחור') || p.includes('הודעה') || p.includes('מנהל')) {
+      return '"בוקר טוב! לצערי יש פקקים בדרך ואאחר בכ-20 דקות. מתנצל על העיכוב ואעדכן ברגע שאגיע."';
+    }
+    if (p.includes('ברוטו') || p.includes('נטו') || p.includes('תלוש') || p.includes('שכר')) {
+      return 'ברוטו הוא הסכום שסוכם עליך לפני שמורידים מיסים, ונטו הוא הכסף האמיתי שנכנס לחשבון הבנק שלך בסוף החודש.';
+    }
+    if (p.includes('פנסיה') || p.includes('חיסכון')) {
+      return 'פנסיה היא כסף ששומרים לך בכל חודש בצד, כדי שיהיה לך כסף מסודר כשתפרוש מעבודה בעתיד.';
+    }
+    if (p.includes('מדפסת') || p.includes('תקלה') || p.includes('קובץ')) {
+      return 'בדיקה ראשונה ופשוטה: ודא שכבל המכשיר מחובר לחשמל, שהאור דולק, ונסה לכבות ל-10 שניות ולהדליק שוב.';
+    }
+    if (p.includes('ראיון') || p.includes('מראיין')) {
+      return 'שלום וברוך הבא! אני שמח לפגוש אותך לראיון. שאלה ראשונה וקלה: ספר לי מה אתה הכי אוהב לעשות ביום עבודה מוצלח?';
+    }
+    if (p.includes('תמונה') || p.includes('ציור')) {
+      return 'תיאור תמונה: במה מוארת באורות כחולים וסגולים, גיטרה חשמלית נוצצת וקהל שמח שמוחא כפיים באושר.';
+    }
+
+    return `תשובה מעולה עבורך: ביקשת לדעת על "${prompt}". ה-AI מסביר את זה בצורה קצרה וברורה שעוזרת לך להבין בקלות!`;
+  },
+
+  // ג. יצירת יחידת לימוד שלמה לעוזר הניהול של המלווה (מחזיר JSON)
+  async callLessonGeneratorWithFallback(userPrompt, sysInst) {
+    const cfg = appState.apiConfig;
+
+    if (cfg.geminiKey && cfg.geminiKey.trim()) {
+      try {
+        const res = await this.callGemini(cfg.geminiKey.trim(), userPrompt, sysInst);
+        if (res) return { text: res, provider: 'Google Gemini 1.5 Flash' };
+      } catch (err) {
+        console.warn('Gemini lesson call failed, fallback...', err);
+      }
+    }
+
+    if (cfg.groqKey && cfg.groqKey.trim()) {
+      try {
+        const res = await this.callGroq(cfg.groqKey.trim(), userPrompt, sysInst);
+        if (res) return { text: res, provider: 'Groq (Llama 3.3)' };
+      } catch (err) {
+        console.warn('Groq lesson call failed, fallback...', err);
+      }
+    }
+
+    if (cfg.ollamaUrl && cfg.ollamaUrl.trim()) {
+      try {
+        const res = await this.callOllama(cfg.ollamaUrl.trim(), userPrompt, sysInst);
+        if (res) return { text: res, provider: 'Local Ollama' };
+      } catch (err) {
+        console.warn('Local Ollama lesson call failed, fallback...', err);
+      }
+    }
+
     const offlineRes = this.synthesizeOfflineUnit(userPrompt);
     return { text: offlineRes, provider: 'מנוע פנימי חכם (Offline Fallback)' };
   },
@@ -438,9 +502,9 @@ const AIService = {
   async callGemini(key, prompt, sysInst) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
     const payload = {
-      systemInstruction: { parts: [{ text: sysInst || 'אתה עוזר פדגוגי מומחה ללימוד שימוש ב-AI עבור אדם בוגר עם קשיים בהבנה.' }] },
+      systemInstruction: { parts: [{ text: sysInst }] },
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.4 }
+      generationConfig: { temperature: 0.3 }
     };
     const response = await fetch(url, {
       method: 'POST',
@@ -457,10 +521,10 @@ const AIService = {
     const payload = {
       model: 'llama-3.3-70b-versatile',
       messages: [
-        { role: 'system', content: sysInst || 'אתה עוזר פדגוגי מומחה ללימוד שימוש ב-AI עבור אדם בוגר.' },
+        { role: 'system', content: sysInst },
         { role: 'user', content: prompt }
       ],
-      temperature: 0.4
+      temperature: 0.3
     };
     const response = await fetch(url, {
       method: 'POST',
@@ -492,7 +556,7 @@ const AIService = {
     return data.response;
   },
 
-  // סינתזה פנימית חכמה ללא רשת כלל
+  // סינתזה מקומית של יחידות לימוד ב-JSON
   synthesizeOfflineUnit(prompt) {
     const p = prompt.toLowerCase();
     let title = 'יחידה מותאמת אישית';
@@ -502,13 +566,13 @@ const AIService = {
     let correctOpt = 'להגדיר לו לענות ב-2 משפטים קצרים ובלי מילים קשות';
     let wrongOpt = 'לבקש ממנו לכתוב ספר שלם';
 
-    if (p.includes('חביתה') || p.includes('מתכון') || p.includes('טוסט') || p.includes('אוכל')) {
+    if (p.includes('חביתה') || p.includes('מתכון') || p.includes('טוסט') || p.includes('אוכל') || p.includes('קפה')) {
       title = 'אוכל ומטבח: איך לבקש מתכון קל ומהיר';
-      goodPrompt = 'תן לי מתכון פשוט לטוסט טעים ב-3 צעדים קצרים, ומצרכים שיש בכל בית';
+      goodPrompt = 'תן לי מתכון פשוט ב-3 צעדים קצרים ומצרכים שיש בכל בית';
       takeaway = 'כשמבקשים "ב-3 צעדים קצרים ומצרכים שיש בכל בית", ה-AI נותן מתכון שאפשר להכין מיד!';
       question = 'מה כדאי להוסיף כשמבקשים מה-AI מתכון לאוכל?';
       correctOpt = 'לבקש צעדים קצרים ומצרכים פשוטים שיש בבית';
-      wrongOpt = 'לבקש מתכון של מסעדת שף צרפתית';
+      wrongOpt = 'לבקש מתכון מסובך של מסעדת שף';
     } else if (p.includes('עבודה') || p.includes('איחור') || p.includes('מנהל')) {
       title = 'עבודה: ניסוח הודעה מהירה ומכבדת';
       goodPrompt = 'תנסח לי הודעת וואטסאפ מנומסת של 2 משפטים למנהל שלי, שאני מעט מתעכב ואגיע בקרוב';
@@ -573,7 +637,6 @@ const SoundService = {
 
       osc.connect(gain);
       gain.connect(ctx.destination);
-
       osc.start(now);
       osc.stop(now + 0.46);
     } catch (e) {}
@@ -589,15 +652,14 @@ const SoundService = {
       const gain = ctx.createGain();
 
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(329.63, now); // E4
-      osc.frequency.exponentialRampToValueAtTime(261.63, now + 0.2); // C4
+      osc.frequency.setValueAtTime(329.63, now);
+      osc.frequency.exponentialRampToValueAtTime(261.63, now + 0.2);
 
       gain.gain.setValueAtTime(0.1, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
-
       osc.start(now);
       osc.stop(now + 0.32);
     } catch (e) {}
@@ -661,7 +723,6 @@ function renderRoadmap() {
   units.forEach((unit, idx) => {
     if (unit.isCompleted) completedCount++;
 
-    // נעילה: יחידה ראשונה פתוחה תמיד, או יחידה שקודמתה הושלמה
     let isUnlocked = false;
     if (idx === 0) {
       isUnlocked = true;
@@ -784,7 +845,7 @@ function renderUnitPlayer(unitId) {
     actionUnlockedContent.style.display = 'none';
   }
 
-  quiz.options.forEach((opt, idx) => {
+  quiz.options.forEach((opt) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'quiz-option-btn';
@@ -805,14 +866,12 @@ function renderUnitPlayer(unitId) {
         quizFeedbackBox.innerHTML = `<span>⭐ מצוין! ${opt.explanation}</span>`;
         quizFeedbackBox.style.display = 'block';
 
-        // רישום הצלחה
         appState.quizHistory.push({
           unitId: unit.id,
           timestamp: new Date().toISOString(),
           isCorrect: true
         });
 
-        // פתיחת שלב 4 (עשייה מעשית)
         stepActionBox.classList.remove('locked-step');
         actionLockedNotice.style.display = 'none';
         actionUnlockedContent.style.display = 'block';
@@ -826,7 +885,6 @@ function renderUnitPlayer(unitId) {
         quizFeedbackBox.innerHTML = `<span>לא מדויק: ${opt.explanation} נסה שוב!</span>`;
         quizFeedbackBox.style.display = 'block';
 
-        // רישום קושי והפעלת מנגנון תגבור אסינכרוני
         appState.quizHistory.push({
           unitId: unit.id,
           timestamp: new Date().toISOString(),
@@ -834,7 +892,6 @@ function renderUnitPlayer(unitId) {
         });
         saveAppState();
 
-        // תהליך אסינכרוני ברקע: ייצור יחידת תגבור מותאמת
         triggerAsyncReinforcement(unit, opt.text);
       }
     };
@@ -898,7 +955,6 @@ function renderUnitPlayer(unitId) {
 // ============================================================================
 
 async function triggerAsyncReinforcement(failedUnit, userChoice) {
-  // הפעלה ברקע ללא חסימת ממשק המשתמש
   setTimeout(async () => {
     try {
       console.log(`[Async Engine] Generating reinforcement for unit: ${failedUnit.id}`);
@@ -906,7 +962,7 @@ async function triggerAsyncReinforcement(failedUnit, userChoice) {
       const prompt = `דניאל התקשה ביחידה "${failedUnit.title}". שאלת הווידוא הייתה: "${failedUnit.step3_quiz.question}". הוא בחר בטעות בתשובה: "${userChoice}".
 צור יחידת תגבור קצרה וקלה יותר, שתסביר את אותו עקרון בדיוק בצורה פשוטה, מוחשית ועדינה יותר. החזר אובייקט JSON תואם למבנה המערכת.`;
 
-      const res = await AIService.callWithFallback(prompt);
+      const res = await AIService.callLessonGeneratorWithFallback(prompt);
       let parsed = null;
 
       try {
@@ -922,7 +978,6 @@ async function triggerAsyncReinforcement(failedUnit, userChoice) {
         parsed.isUnlocked = false;
         parsed.isCompleted = false;
 
-        // הוספה לתור התגבורים ולהמשך המסלול
         appState.needsReinforcementQueue.push({
           originalUnitId: failedUnit.id,
           createdUnitId: parsed.id,
@@ -930,7 +985,6 @@ async function triggerAsyncReinforcement(failedUnit, userChoice) {
           reason: userChoice
         });
 
-        // הזרקה למסלול במרחק של 2 יחידות קדימה
         const curIndex = appState.curriculumUnits.findIndex(u => u.id === failedUnit.id);
         const insertAt = Math.min(curIndex + 2, appState.curriculumUnits.length);
         appState.curriculumUnits.splice(insertAt, 0, parsed);
@@ -990,7 +1044,6 @@ function initAdminPanel() {
     renderRoadmap();
   };
 
-  // מעבר בין לשוניות ניהול
   const tabBtns = document.querySelectorAll('.adm-tab-btn');
   const tabPanels = document.querySelectorAll('.adm-tab-panel');
 
@@ -1072,7 +1125,6 @@ function initAdminAssistant() {
     const query = chatInput.value.trim();
     if (!query) return;
 
-    // הודעת המשתמש
     const userMsg = document.createElement('div');
     userMsg.className = 'user-msg';
     userMsg.textContent = query;
@@ -1080,7 +1132,6 @@ function initAdminAssistant() {
     chatInput.value = '';
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
-    // הודעת טעינה
     const aiLoading = document.createElement('div');
     aiLoading.className = 'ai-msg';
     aiLoading.textContent = 'מנתח ומכין יחידת לימוד במבנה 4 השלבים עם שרשרת Fallback...';
@@ -1114,7 +1165,7 @@ function initAdminAssistant() {
   }
 }`;
 
-      const aiRes = await AIService.callWithFallback(query, sysInstruction);
+      const aiRes = await AIService.callLessonGeneratorWithFallback(query, sysInstruction);
       document.getElementById('active-llm-label').textContent = `${aiRes.provider} (פעיל)`;
 
       let unitObj = null;
@@ -1132,7 +1183,6 @@ function initAdminAssistant() {
 
       aiLoading.textContent = `היחידה נוצרה בהצלחה באמצעות ${aiRes.provider}! הכרטיסייה מוצגת כעת ב-Live Preview מימין. באפשרותך ללחוץ על הטקסטים ולערוך אותם, או לאשר אותה.`;
 
-      // רינדור ה-Live Preview
       renderLivePreview(unitObj);
       previewActions.style.display = 'block';
 
@@ -1198,7 +1248,6 @@ function renderLivePreview(unit) {
     </div>
   `;
 
-  // חיבור אירועי עדכון מהשדות העריכים ישירות ל-Draft
   box.querySelectorAll('.editable-field').forEach(el => {
     el.oninput = () => {
       unit.title = document.getElementById('edit-unit-title').textContent;
@@ -1346,7 +1395,7 @@ function initAdminSettings() {
   document.getElementById('cfg-test-connection-btn').onclick = async () => {
     showToast('בודק חיבור עם מנגנון Fallback...');
     try {
-      const res = await AIService.callWithFallback('שלום, בדיקת חיבור קצרה.');
+      const res = await AIService.callLessonGeneratorWithFallback('שלום, בדיקת חיבור קצרה.');
       alert(`בדיקת החיבור הצליחה!\nמענה התקבל מ: ${res.provider}`);
     } catch (e) {
       alert(`בדיקת החיבור נכשלה: ${e.message}`);
@@ -1371,7 +1420,7 @@ function initAdminSettings() {
 }
 
 // ============================================================================
-// 14. סימולטור אינטראקטיבי מובנה (Interactive Playground)
+// 14. סימולטור אינטראקטיבי מובנה - מתוקן: מענה טקסטואלי טבעי בלבד!
 // ============================================================================
 
 function openPlaygroundModal(initialPrompt) {
@@ -1392,14 +1441,15 @@ function openPlaygroundModal(initialPrompt) {
     if (!prompt) return;
 
     respBox.style.display = 'block';
-    respText.textContent = 'ה-AI מעבד את התשובה עבורך...';
+    respText.textContent = 'ה-AI מכין עבורך תשובה קצרה ופשוטה...';
 
     try {
-      const aiRes = await AIService.callWithFallback(prompt, 'ענה בעברית פשוטה, קצרה ובמשפט או שניים בלבד עבור דניאל.');
-      respText.textContent = aiRes.text;
+      // קורא לפונקציית השיחה הייעודית - שמחזירה תמיד טקסט קצר ולא JSON!
+      const answer = await AIService.callChatWithFallback(prompt);
+      respText.textContent = answer;
       SoundService.playSuccessSound();
     } catch (err) {
-      respText.textContent = `מענה מובנה: ביקשת "${prompt}". ה-AI מסביר את זה בצורה הכי קלה ופשוטה בשבילך!`;
+      respText.textContent = AIService.simulateSimpleChatAnswer(prompt);
       SoundService.playSuccessSound();
     }
   };
@@ -1461,7 +1511,7 @@ function handleRestoreBackup(file) {
 }
 
 // ============================================================================
-// 16. שאלון וכיול (Assesment & Calibration)
+// 16. שאלון וכיול (Assessment & Calibration)
 // ============================================================================
 
 const ASSESSMENT_QUESTIONS = [
@@ -1595,6 +1645,13 @@ function renderCalibrationRound(index) {
     if (index + 1 < total) {
       renderCalibrationRound(index + 1);
     } else {
+      // יצירת פרופיל
+      appState.profile = {
+        name: appState.user.name || 'דניאל',
+        completedAt: new Date().toISOString()
+      };
+      saveAppState();
+
       showView('transition');
       setTimeout(() => {
         document.getElementById('calm-status-text').textContent = 'המסלול מוכן בשבילך!';
@@ -1608,18 +1665,15 @@ function renderCalibrationRound(index) {
 }
 
 // ============================================================================
-// 17. אתחול ראשי (DOM Ready)
+// 17. אתחול ראשי - שחזור סשן מלא בריפרש!
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
-  // בדיקת מיגרציה מ-v1
   performMigrationIfNeeded();
 
-  // בדיקת כתובת מנהל #admin
   checkAdminRoute();
   window.addEventListener('hashchange', checkAdminRoute);
 
-  // טריגר סמוי למנהל: 3 קליקים על הקרדיט בפוטר
   let footerClicks = 0;
   const trigger = document.getElementById('footer-admin-trigger');
   if (trigger) {
@@ -1632,7 +1686,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // הקראה קולית כללית
   document.getElementById('global-tts-btn').onclick = () => {
     let text = 'מאמן ה-אי-איי האישי של דניאל. לומדים צעד אחר צעד בקצב שלך.';
     if (appState.currentView === 'unit') {
@@ -1642,21 +1695,10 @@ document.addEventListener('DOMContentLoaded', () => {
     SoundService.speakText(text);
   };
 
-  // אתחול מסך פתיחה
   const startBtn = document.getElementById('start-btn');
-  const hasHistory = appState.curriculumUnits.some(u => u.isCompleted);
-  if (hasHistory) {
-    document.getElementById('welcome-title').textContent = `שלום ${appState.user.name || 'דניאל'}`;
-    document.getElementById('start-btn-text').textContent = 'המשך במסלול שלי ▶';
-    startBtn.onclick = () => { showView('roadmap'); renderRoadmap(); };
-  } else {
-    document.getElementById('welcome-title').textContent = 'שלום דניאל';
-    document.getElementById('start-btn-text').textContent = 'בוא נתחיל ▶';
-    startBtn.onclick = () => { showView('assessment'); renderAssessmentQuestion(0); };
-  }
-
   const restoreBtn = document.getElementById('restore-link-btn');
   const backupInput = document.getElementById('backup-file-input');
+
   if (restoreBtn && backupInput) {
     restoreBtn.onclick = () => backupInput.click();
     backupInput.onchange = (e) => {
@@ -1665,9 +1707,45 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // ניתוב למסך שמור
-  if (hasHistory) {
-    showView('roadmap');
-    renderRoadmap();
+  // --- שחזור מצב חכם ומדויק בריפרש ---
+  const hasProfile = Boolean(appState.profile && Object.keys(appState.profile).length > 0);
+  const hasCompletedUnits = appState.curriculumUnits.some(u => u.isCompleted);
+  const hasActiveSession = hasProfile || hasCompletedUnits;
+
+  if (hasActiveSession) {
+    document.getElementById('welcome-title').textContent = `שלום ${appState.user.name || 'דניאל'}`;
+    document.getElementById('start-btn-text').textContent = 'המשך במסלול שלי ▶';
+    startBtn.onclick = () => {
+      showView('roadmap');
+      renderRoadmap();
+    };
+
+    // משחזר את המסך שבו דניאל עצר (בתוך יחידה או במסלול)
+    if (appState.currentView === 'unit' && appState.activeUnitId) {
+      showView('unit');
+      renderUnitPlayer(appState.activeUnitId);
+    } else {
+      showView('roadmap');
+      renderRoadmap();
+    }
+  } else {
+    // משתמש חדש לגמרי שעוד לא סיים שאלון
+    document.getElementById('welcome-title').textContent = 'שלום דניאל';
+    document.getElementById('start-btn-text').textContent = 'בוא נתחיל ▶';
+    startBtn.onclick = () => {
+      showView('assessment');
+      renderAssessmentQuestion(appState.currentAssessmentIndex || 0);
+    };
+
+    // אם המשתמש ריפרש באמצע השאלון או הכיול - השאר אותו בדיוק שם!
+    if (appState.currentView === 'assessment') {
+      showView('assessment');
+      renderAssessmentQuestion(appState.currentAssessmentIndex || 0);
+    } else if (appState.currentView === 'calibration') {
+      showView('calibration');
+      renderCalibrationRound(appState.currentCalibrationIndex || 0);
+    } else {
+      showView('welcome');
+    }
   }
 });

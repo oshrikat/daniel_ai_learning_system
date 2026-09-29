@@ -1,4 +1,12 @@
-<!DOCTYPE html>
+import os
+import json
+
+base_dir = "/working_dir/c_8d547bc41fe84fe3/daniel_ai_learning_system"
+
+# ==========================================
+# 1. FIXED index.html
+# ==========================================
+fixed_html = """<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8">
@@ -717,3 +725,8 @@
   <script src="app.js"></script>
 </body>
 </html>
+"""
+
+with open(os.path.join(base_dir, "index.html"), "w", encoding="utf-8") as f:
+    f.write(fixed_html)
+print("Updated index.html successfully.")
