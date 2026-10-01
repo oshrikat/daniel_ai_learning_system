@@ -8,6 +8,23 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .loading-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-left: 6px;
+    }
+  </style>
 </head>
 <body>
 
@@ -540,7 +557,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
                   <div>
                     <strong style="font-size: 1.05rem;">1. Google Gemini API Key (מומלץ וחינמי):</strong>
-                    <p style="margin: 0.2rem 0 0 0; color: #64748b; font-size: 0.9rem;">Google AI Studio (Gemini 1.5 Flash)</p>
+                    <p style="margin: 0.2rem 0 0 0; color: #64748b; font-size: 0.9rem;">Google AI Studio (Gemini 2.5 Flash / 3.6 / 3.1 Flash-Lite)</p>
                   </div>
                   <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
                     <input type="password" id="cfg-gemini-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Gemini..." autocomplete="off">

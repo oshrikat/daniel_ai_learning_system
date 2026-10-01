@@ -1,4 +1,8 @@
-/**
+import os
+
+base_dir = "/working_dir/c_8d547bc41fe84fe3/daniel_ai_learning_system"
+
+fixed_js_code = r'''/**
  * מאמן ה-AI של דניאל v2.0 - מתוקן ומאומת
  * פדגוגיית 4 השלבים, בדיקת הבנה חד-משמעית, שחזור סשן מלא בריפרש,
  * סימולטור שיחה טבעי (ללא JSON), ביטול שגיאות 405 ב-GitHub Pages,
@@ -499,170 +503,44 @@ const AIService = {
     return { text: offlineRes, provider: 'מנוע פנימי חכם (Offline Fallback)' };
   },
 
-  activeGeminiModel: null,
-  activeGroqModel: null,
-
-  // תשאול דינמי של מודלים פעילים ב-Gemini
-  async getAvailableGeminiModels(key) {
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key.trim()}`, {
-        method: 'GET'
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && Array.isArray(data.models)) {
-          const valid = data.models
-            .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
-            .map(m => m.name.replace(/^models\//, ''))
-            .filter(id => !id.includes('embedding') && !id.includes('aqa') && !id.includes('imagen'));
-          
-          if (valid.length > 0) {
-            const flashModels = valid.filter(m => m.includes('flash'));
-            return flashModels.length > 0 ? flashModels : valid;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Could not fetch Gemini models dynamically', e);
-    }
-    // רשימת הגיבוי הרחבה למודלי Gemini (כולל 3.6, 3.1, 3.5, 2.5)
-    return [
-      'gemini-2.5-flash',
-      'gemini-3.6-flash',
-      'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
-      'gemini-3.1-flash-lite',
-      'gemini-3.8-flash',
-      'gemini-2.5-flash-lite',
-      'gemini-2.0-flash'
-    ];
-  },
-
-  // תשאול דינמי של מודלים פעילים ב-Groq
-  async getAvailableGroqModels(key) {
-    try {
-      const res = await fetch('https://api.groq.com/openai/v1/models', {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${key.trim()}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && Array.isArray(data.data)) {
-          const chatModels = data.data
-            .map(m => m.id)
-            .filter(id => !id.includes('whisper') && !id.includes('orpheus') && !id.includes('tts') && !id.includes('guard'));
-          if (chatModels.length > 0) {
-            return chatModels;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Could not fetch Groq models dynamically', e);
-    }
-    return ['openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'allam-2-7b', 'openai/gpt-oss-120b'];
-  },
-
   async callGemini(key, prompt, sysInst) {
-    const models = this.activeGeminiModel
-      ? [this.activeGeminiModel, 'gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.0-flash']
-      : await this.getAvailableGeminiModels(key);
-
-    let lastErr = null;
-
-    for (const model of models) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key.trim()}`;
-        const payload = {
-          systemInstruction: { parts: [{ text: sysInst }] },
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3 }
-        };
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-          let errorMsg = `Gemini HTTP error ${response.status}`;
-          try {
-            const errData = await response.json();
-            if (errData && errData.error && errData.error.message) {
-              errorMsg = errData.error.message;
-            }
-          } catch (e) {}
-          throw new Error(errorMsg);
-        }
-
-        const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          this.activeGeminiModel = model;
-          return text;
-        }
-      } catch (err) {
-        lastErr = err;
-        if (!err.message.toLowerCase().includes('not found') && !err.message.includes('404')) {
-          throw err;
-        }
-      }
-    }
-    throw lastErr || new Error('Gemini call failed');
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+    const payload = {
+      systemInstruction: { parts: [{ text: sysInst }] },
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.3 }
+    };
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) throw new Error(`Gemini HTTP error ${response.status}`);
+    const data = await response.json();
+    return data.candidates[0].content.parts[0].text;
   },
 
   async callGroq(key, prompt, sysInst) {
     const url = 'https://api.groq.com/openai/v1/chat/completions';
-    const models = this.activeGroqModel 
-      ? [this.activeGroqModel, 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'allam-2-7b', 'openai/gpt-oss-120b']
-      : await this.getAvailableGroqModels(key);
-    let lastErr = null;
-
-    for (const model of models) {
-      try {
-        const payload = {
-          model: model,
-          messages: [
-            ...(sysInst ? [{ role: 'system', content: sysInst }] : []),
-            { role: 'user', content: prompt }
-          ],
-          max_tokens: 450,
-          temperature: 0.3
-        };
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${key.trim()}`
-          },
-          body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-          let errorMsg = `Groq HTTP error ${response.status}`;
-          try {
-            const errData = await response.json();
-            if (errData && errData.error && errData.error.message) {
-              errorMsg = errData.error.message;
-            }
-          } catch (e) {}
-          throw new Error(errorMsg);
-        }
-
-        const data = await response.json();
-        const msgObj = data.choices?.[0]?.message || {};
-        const content = (msgObj.content || msgObj.reasoning_content || '').trim();
-        if (content) {
-          this.activeGroqModel = model;
-          return content;
-        }
-      } catch (err) {
-        lastErr = err;
-        if (!err.message.toLowerCase().includes('model') && !err.message.includes('404')) {
-          throw err;
-        }
-      }
-    }
-    throw lastErr || new Error('Groq call failed');
+    const payload = {
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: sysInst },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.3
+    };
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${key}`
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) throw new Error(`Groq HTTP error ${response.status}`);
+    const data = await response.json();
+    return data.choices[0].message.content;
   },
 
   async callOllama(url, prompt, sysInst) {
@@ -682,134 +560,7 @@ const AIService = {
     return data.response;
   },
 
-  // בדיקות קישוריות עצמאיות ואסינכרוניות עם אינדיקטור התקדמות
-  async testGemini(key, onProgress) {
-    if (!key || !key.trim()) {
-      return { success: false, error: 'לא הוזן מפתח API של Gemini. אנא הדבק מפתח ולחץ שוב.' };
-    }
-    const startTime = performance.now();
-    if (onProgress) onProgress('מאתר מודלים נתמכים בחשבון Google AI...');
-    const models = await this.getAvailableGeminiModels(key);
-    let lastError = null;
-
-    for (const model of models) {
-      if (onProgress) onProgress(`בודק מודל ${model}...`);
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key.trim()}`;
-        const payload = {
-          contents: [{ parts: [{ text: 'ענה במילה אחת בלבד: שלום' }] }]
-        };
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const latency = Math.round(performance.now() - startTime);
-
-        if (!response.ok) {
-          let msg = `Gemini HTTP error ${response.status}`;
-          try {
-            const errData = await response.json();
-            if (errData && errData.error && errData.error.message) {
-              msg = errData.error.message;
-            }
-          } catch (e) {}
-          lastError = msg;
-          if (msg.toLowerCase().includes('not found') || response.status === 404) {
-            continue;
-          }
-          return { success: false, error: msg, latency, model };
-        }
-
-        const data = await response.json();
-        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'OK';
-        this.activeGeminiModel = model;
-        return { success: true, latency, reply, model, provider: `Google Gemini (${model})` };
-      } catch (e) {
-        lastError = e.message || 'שגיאת רשת / חיבור';
-      }
-    }
-    const latency = Math.round(performance.now() - startTime);
-    return { success: false, error: lastError || 'בדיקת Gemini נכשלה', latency };
-  },
-
-  async testGroq(key, onProgress) {
-    if (!key || !key.trim()) {
-      return { success: false, error: 'לא הוזן מפתח API של Groq. אנא הדבק מפתח ולחץ שוב.' };
-    }
-    const startTime = performance.now();
-    if (onProgress) onProgress('מאתר מודלים פעילים בחשבון Groq...');
-    const models = await this.getAvailableGroqModels(key);
-    let lastError = null;
-
-    for (const model of models) {
-      if (onProgress) onProgress(`בודק מודל ${model}...`);
-      try {
-        const url = 'https://api.groq.com/openai/v1/chat/completions';
-        const payload = {
-          model: model,
-          messages: [{ role: 'user', content: 'ענה במילה אחת בלבד: שלום' }],
-          max_tokens: 300,
-          temperature: 0.2
-        };
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${key.trim()}`
-          },
-          body: JSON.stringify(payload)
-        });
-        const latency = Math.round(performance.now() - startTime);
-
-        if (!response.ok) {
-          let msg = `Groq HTTP error ${response.status}`;
-          try {
-            const errData = await response.json();
-            if (errData && errData.error && errData.error.message) {
-              msg = errData.error.message;
-            }
-          } catch (e) {}
-          lastError = msg;
-          if (msg.toLowerCase().includes('model') || response.status === 404) {
-            continue;
-          }
-          return { success: false, error: msg, latency, model };
-        }
-
-        const data = await response.json();
-        const msgObj = data.choices?.[0]?.message || {};
-        const reply = (msgObj.content || msgObj.reasoning_content || '').trim() || 'OK';
-        this.activeGroqModel = model;
-        return { success: true, latency, reply, model, provider: `Groq (${model})` };
-      } catch (e) {
-        lastError = e.message || 'שגיאת רשת / חיבור';
-      }
-    }
-    const latency = Math.round(performance.now() - startTime);
-    return { success: false, error: lastError || 'בדיקת Groq נכשלה', latency };
-  },
-
-  async testOllama(url, onProgress) {
-    const rawUrl = url ? url.trim() : 'http://localhost:11434';
-    const baseUrl = rawUrl.replace(/\/+$/, '');
-    const startTime = performance.now();
-    if (onProgress) onProgress('בודק תקשורת מקומית עם Ollama...');
-    try {
-      const response = await fetch(`${baseUrl}/api/tags`, { method: 'GET' });
-      const latency = Math.round(performance.now() - startTime);
-      if (!response.ok) {
-        return { success: false, error: `Ollama HTTP error ${response.status}`, latency };
-      }
-      const data = await response.json();
-      const models = (data.models || []).map(m => m.name).join(', ') || 'אין מודלים מותקנים עדיין';
-      return { success: true, latency, reply: `מודלים זמינים: ${models}`, provider: 'Local Ollama' };
-    } catch (e) {
-      const latency = Math.round(performance.now() - startTime);
-      return { success: false, error: `לא ניתן להתחבר ל-Ollama בכתובת (${baseUrl}). ודא שהתוכנה מותקנת ומופעלת במחשבך.`, latency };
-    }
-  },
-
+  // סינתזה מקומית של יחידות לימוד ב-JSON
   synthesizeOfflineUnit(prompt) {
     const p = prompt.toLowerCase();
     let title = 'יחידה מותאמת אישית';
@@ -1645,128 +1396,15 @@ function initAdminSettings() {
     showToast('הגדרות המפתחות נשמרו בהצלחה! 💾');
   };
 
-  // בדיקת קישוריות עצמאית ל-Gemini
-  const btnTestGemini = document.getElementById('btn-test-gemini');
-  const statusGemini = document.getElementById('cfg-gemini-status');
-  if (btnTestGemini && statusGemini) {
-    btnTestGemini.onclick = async () => {
-      const key = geminiInput.value.trim();
-      btnTestGemini.disabled = true;
-      btnTestGemini.innerHTML = '<span class="loading-spinner"></span> <span>בודק...</span>';
-      statusGemini.style.display = 'block';
-      statusGemini.style.backgroundColor = '#eff6ff';
-      statusGemini.style.color = '#1e40af';
-      statusGemini.style.border = '1px solid #bfdbfe';
-      statusGemini.innerHTML = '<span class="loading-spinner"></span> <span id="gemini-prog-msg">מתחבר ל-Google AI Studio...</span>';
-
-      try {
-        const res = await AIService.testGemini(key, (msg) => {
-          const el = document.getElementById('gemini-prog-msg');
-          if (el) el.textContent = msg;
-        });
-        if (res.success) {
-          statusGemini.style.backgroundColor = '#ecfdf5';
-          statusGemini.style.color = '#065f46';
-          statusGemini.style.border = '1px solid #a7f3d0';
-          statusGemini.innerHTML = `🟢 <strong>מחובר בהצלחה!</strong> זמן תגובה: <strong>${res.latency}ms</strong> | מודל פעיל: <code>${res.model}</code> | מענה: "${res.reply}"`;
-        } else {
-          statusGemini.style.backgroundColor = '#fef2f2';
-          statusGemini.style.color = '#991b1b';
-          statusGemini.style.border = '1px solid #fecaca';
-          statusGemini.innerHTML = `🔴 <strong>שגיאת חיבור ל-Gemini:</strong> ${res.error}`;
-        }
-      } catch (err) {
-        statusGemini.style.backgroundColor = '#fef2f2';
-        statusGemini.style.color = '#991b1b';
-        statusGemini.style.border = '1px solid #fecaca';
-        statusGemini.innerHTML = `🔴 <strong>שגיאה:</strong> ${err.message}`;
-      } finally {
-        btnTestGemini.disabled = false;
-        btnTestGemini.innerHTML = '<span>בדוק Gemini 🧪</span>';
-      }
-    };
-  }
-
-  // בדיקת קישוריות עצמאית ל-Groq
-  const btnTestGroq = document.getElementById('btn-test-groq');
-  const statusGroq = document.getElementById('cfg-groq-status');
-  if (btnTestGroq && statusGroq) {
-    btnTestGroq.onclick = async () => {
-      const key = groqInput.value.trim();
-      btnTestGroq.disabled = true;
-      btnTestGroq.innerHTML = '<span class="loading-spinner"></span> <span>בודק...</span>';
-      statusGroq.style.display = 'block';
-      statusGroq.style.backgroundColor = '#eff6ff';
-      statusGroq.style.color = '#1e40af';
-      statusGroq.style.border = '1px solid #bfdbfe';
-      statusGroq.innerHTML = '<span class="loading-spinner"></span> <span id="groq-prog-msg">מתחבר לשרתי Groq Cloud...</span>';
-
-      try {
-        const res = await AIService.testGroq(key, (msg) => {
-          const el = document.getElementById('groq-prog-msg');
-          if (el) el.textContent = msg;
-        });
-        if (res.success) {
-          statusGroq.style.backgroundColor = '#ecfdf5';
-          statusGroq.style.color = '#065f46';
-          statusGroq.style.border = '1px solid #a7f3d0';
-          statusGroq.innerHTML = `🟢 <strong>מחובר בהצלחה!</strong> זמן תגובה: <strong>${res.latency}ms</strong> | מודל: <code>${res.model}</code> | מענה: "${res.reply}"`;
-        } else {
-          statusGroq.style.backgroundColor = '#fef2f2';
-          statusGroq.style.color = '#991b1b';
-          statusGroq.style.border = '1px solid #fecaca';
-          statusGroq.innerHTML = `🔴 <strong>שגיאת חיבור ל-Groq:</strong> ${res.error}`;
-        }
-      } catch (err) {
-        statusGroq.style.backgroundColor = '#fef2f2';
-        statusGroq.style.color = '#991b1b';
-        statusGroq.style.border = '1px solid #fecaca';
-        statusGroq.innerHTML = `🔴 <strong>שגיאה:</strong> ${err.message}`;
-      } finally {
-        btnTestGroq.disabled = false;
-        btnTestGroq.innerHTML = '<span>בדוק Groq 🧪</span>';
-      }
-    };
-  }
-
-  // בדיקת קישוריות עצמאית ל-Ollama
-  const btnTestOllama = document.getElementById('btn-test-ollama');
-  const statusOllama = document.getElementById('cfg-ollama-status');
-  if (btnTestOllama && statusOllama) {
-    btnTestOllama.onclick = async () => {
-      const url = ollamaInput.value.trim();
-      btnTestOllama.disabled = true;
-      btnTestOllama.innerHTML = '<span class="loading-spinner"></span> <span>בודק...</span>';
-      statusOllama.style.display = 'block';
-      statusOllama.style.backgroundColor = '#eff6ff';
-      statusOllama.style.color = '#1e40af';
-      statusOllama.style.border = '1px solid #bfdbfe';
-      statusOllama.innerHTML = '<span class="loading-spinner"></span> <span>מתחבר ל-Ollama ב-localhost...</span>';
-
-      try {
-        const res = await AIService.testOllama(url);
-        if (res.success) {
-          statusOllama.style.backgroundColor = '#ecfdf5';
-          statusOllama.style.color = '#065f46';
-          statusOllama.style.border = '1px solid #a7f3d0';
-          statusOllama.innerHTML = `🟢 <strong>מחובר ל-Ollama מקומי!</strong> זמן תגובה: <strong>${res.latency}ms</strong> | ${res.reply}`;
-        } else {
-          statusOllama.style.backgroundColor = '#fffbeb';
-          statusOllama.style.color = '#92400e';
-          statusOllama.style.border = '1px solid #fde68a';
-          statusOllama.innerHTML = `ℹ️ <strong>סטטוס Ollama:</strong> ${res.error}`;
-        }
-      } catch (err) {
-        statusOllama.style.backgroundColor = '#fef2f2';
-        statusOllama.style.color = '#991b1b';
-        statusOllama.style.border = '1px solid #fecaca';
-        statusOllama.innerHTML = `🔴 <strong>שגיאה:</strong> ${err.message}`;
-      } finally {
-        btnTestOllama.disabled = false;
-        btnTestOllama.innerHTML = '<span>בדוק Ollama 🧪</span>';
-      }
-    };
-  }
+  document.getElementById('cfg-test-connection-btn').onclick = async () => {
+    showToast('בודק חיבור עם מנגנון Fallback...');
+    try {
+      const res = await AIService.callLessonGeneratorWithFallback('שלום, בדיקת חיבור קצרה.');
+      alert(`בדיקת החיבור הצליחה!\nמענה התקבל מ: ${res.provider}`);
+    } catch (e) {
+      alert(`בדיקת החיבור נכשלה: ${e.message}`);
+    }
+  };
 
   document.getElementById('adm-export-btn').onclick = () => exportBackupFile();
   const fileInput = document.getElementById('adm-file-input');
@@ -2115,3 +1753,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 });
+'''
+
+with open(os.path.join(base_dir, "app.js"), "w", encoding="utf-8") as f:
+    f.write(fixed_js_code)
+print("Updated app.js successfully.")
