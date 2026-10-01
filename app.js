@@ -525,9 +525,41 @@ const AIService = {
     return data.candidates[0].content.parts[0].text;
   },
 
+  activeGroqModel: null,
+
+  async getAvailableGroqModels(key) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/models', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${key.trim()}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.data)) {
+          const chatModels = data.data
+            .map(m => m.id)
+            .filter(id => !id.includes('whisper') && !id.includes('orpheus') && !id.includes('tts') && !id.includes('guard'));
+          if (chatModels.length > 0) {
+            if (chatModels.includes('openai/gpt-oss-20b')) {
+              return ['openai/gpt-oss-20b', ...chatModels.filter(m => m !== 'openai/gpt-oss-20b')];
+            }
+            return chatModels;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not fetch Groq models dynamically, using fallbacks', e);
+    }
+    return ['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
+  },
+
   async callGroq(key, prompt, sysInst) {
     const url = 'https://api.groq.com/openai/v1/chat/completions';
-    const models = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
+    const models = this.activeGroqModel 
+      ? [this.activeGroqModel, 'openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b']
+      : await this.getAvailableGroqModels(key);
     let lastErr = null;
 
     for (const model of models) {
@@ -561,6 +593,7 @@ const AIService = {
         }
 
         const data = await response.json();
+        this.activeGroqModel = model;
         return data.choices[0].message.content;
       } catch (err) {
         lastErr = err;
@@ -632,7 +665,7 @@ const AIService = {
       return { success: false, error: 'לא הוזן מפתח API של Groq. אנא הדבק מפתח ולחץ שוב.' };
     }
     const startTime = performance.now();
-    const models = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
+    const models = await this.getAvailableGroqModels(key);
     let lastError = null;
 
     for (const model of models) {
@@ -670,6 +703,7 @@ const AIService = {
 
         const data = await response.json();
         const reply = data.choices?.[0]?.message?.content?.trim() || 'OK';
+        this.activeGroqModel = model;
         return { success: true, latency, reply, model, provider: `Groq (${model})` };
       } catch (e) {
         lastError = e.message || 'שגיאת רשת / חיבור';
