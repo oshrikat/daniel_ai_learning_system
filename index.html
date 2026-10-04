@@ -3,143 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>דניאל לומד בינה מלאכותית | סביבת למידה אישית</title>
+  <title>מאמן ה-AI של דניאל | למידה מעשית ונגישה v2</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-  <style>
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    .loading-spinner {
-      display: inline-block;
-      width: 14px;
-      height: 14px;
-      border: 2px solid currentColor;
-      border-top-color: transparent;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      vertical-align: middle;
-      margin-left: 6px;
-    }
-    /* Shabbat Screen */
-    .shabbat-overlay {
-      display: none;
-      position: fixed;
-      top: 0; left: 0; width: 100%; height: 100%;
-      background: linear-gradient(135deg, #091e3a 0%, #1e3a8a 100%);
-      color: #ffffff;
-      z-index: 99999;
-      justify-content: center;
-      align-items: center;
-      text-align: center;
-      padding: 2rem;
-      box-sizing: border-box;
-    }
-    .shabbat-overlay.active {
-      display: flex;
-    }
-    .shabbat-card {
-      background: rgba(255, 255, 255, 0.08);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 24px;
-      padding: 3rem 2rem;
-      max-width: 600px;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
-    }
-    .shabbat-candles {
-      font-size: 4rem;
-      margin-bottom: 1rem;
-    }
-    .shabbat-title {
-      font-size: 2.2rem;
-      font-weight: 800;
-      color: #fef08a;
-      margin-bottom: 1rem;
-    }
-    .shabbat-desc {
-      font-size: 1.25rem;
-      line-height: 1.6;
-      color: #e2e8f0;
-      margin-bottom: 1.5rem;
-    }
-    /* Checkpoint Card in Grid */
-    .checkpoint-card {
-      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-      border: 2px dashed #f59e0b;
-      border-radius: 16px;
-      padding: 1.4rem;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      transition: all 0.2s ease;
-    }
-    .checkpoint-card.locked {
-      background: #f1f5f9;
-      border-color: #cbd5e1;
-      opacity: 0.7;
-    }
-    .checkpoint-card.passed {
-      background: #ecfdf5;
-      border: 2px solid #10b981;
-    }
-    .checkpoint-badge {
-      display: inline-block;
-      padding: 0.3rem 0.8rem;
-      border-radius: 20px;
-      font-size: 0.85rem;
-      font-weight: 700;
-      margin-bottom: 0.6rem;
-    }
-    /* Share Buttons */
-    .share-whatsapp-btn {
-      background-color: #25d366;
-      color: #ffffff;
-      border: none;
-      padding: 0.75rem 1.4rem;
-      border-radius: 12px;
-      font-size: 1.05rem;
-      font-weight: 700;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      text-decoration: none;
-      transition: all 0.2s;
-    }
-    .share-whatsapp-btn:hover {
-      background-color: #1ebd5a;
-      transform: translateY(-2px);
-    }
-    .share-email-btn {
-      background-color: #3b82f6;
-      color: #ffffff;
-      border: none;
-      padding: 0.75rem 1.4rem;
-      border-radius: 12px;
-      font-size: 1.05rem;
-      font-weight: 700;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      text-decoration: none;
-      transition: all 0.2s;
-    }
-    .share-email-btn:hover {
-      background-color: #2563eb;
-      transform: translateY(-2px);
-    }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
-  <!-- SHABBAT LOCKOUT SCREEN (ACTIVE ON SHABBAT) -->
-  <div id="shabbat-screen" class="shabbat-overlay">
+  <!-- SHABBAT SCREEN OVERLAY -->
+  <div id="shabbat-screen" class="shabbat-overlay" style="display: none;">
     <div class="shabbat-card">
       <div class="shabbat-candles">🕯️🕯️</div>
       <h2 class="shabbat-title">שבת שלום ומבורך דניאל!</h2>
@@ -154,432 +27,768 @@
     </div>
   </div>
 
-  <!-- HEADER -->
+  <!-- Top Header (Clean and distraction-free for Daniel) -->
   <header class="app-header">
-    <div class="header-content">
-      <div class="header-titles">
-        <h1 class="logo-title">דניאל לומד AI 🚀</h1>
-        <p class="logo-subtitle">המדריך האישי שלך לשימוש נכון, בטוח וכיפי בבינה מלאכותית</p>
+    <div class="header-container">
+      <div class="brand">
+        <span class="brand-icon">🎯</span>
+        <div class="brand-text">
+          <h1 class="brand-title">מאמן ה-AI האישי</h1>
+          <span class="brand-subtitle">לומדים צעד אחר צעד בקצב שלך</span>
+        </div>
       </div>
-
-      <div class="header-controls">
-        <button id="tts-toggle-btn" class="icon-toggle-btn" title="הפעל או כבה הקראה קולית">
-          <span class="icon">🔊</span>
-          <span class="btn-text">הקראה קולית: פעילה</span>
-        </button>
-        <button id="view-mode-btn" class="mode-switch-btn" title="מעבר בין אזור דניאל לאזור ליווי">
-          <span class="icon">🛡️</span>
-          <span class="btn-text">אזור אבא ומלווים</span>
+      <div class="header-actions">
+        <button id="global-tts-btn" class="icon-btn" title="הקרא לי את המסך" aria-label="הקרא לי">
+          <span class="btn-icon">🔊</span>
+          <span class="btn-text">הקרא לי</span>
         </button>
       </div>
     </div>
   </header>
 
-  <!-- MAIN CONTAINER -->
-  <main class="main-container">
-    
-    <!-- ============================================== -->
-    <!-- VIEW 1: DANIEL'S LEARNING ARENA (CLEAN & CALM) -->
-    <!-- ============================================== -->
-    <section id="daniel-view" class="view-section active">
-      
-      <!-- TOP MOTIVATION BAR -->
-      <div class="progress-banner">
-        <div class="progress-details">
-          <div class="avatar-box">
-            <span class="avatar-icon">🌟</span>
+  <!-- Notification Toast -->
+  <div id="toast" class="toast" role="alert" aria-live="assertive"></div>
+
+  <!-- Main App Container -->
+  <main class="app-main" id="main-content">
+
+    <!-- 1. Welcome Screen -->
+    <section id="view-welcome" class="view-section active">
+      <div class="card welcome-card">
+        <div class="welcome-header">
+          <div class="avatar-badge">👋</div>
+          <h2 class="hero-title" id="welcome-title">שלום דניאל</h2>
+          <p class="hero-subtitle">ברוכים הבאים למסע שלך בעולם ה-AI!</p>
+        </div>
+        
+        <div class="welcome-features">
+          <div class="feature-item">
+            <span class="feature-icon">✨</span>
+            <div class="feature-content">
+              <strong>צעדים קטנים וברורים</strong>
+              <span>בכל פעם נלמד דבר אחד קטן ושימושי לחיים ולעבודה.</span>
+            </div>
           </div>
-          <div>
-            <h2 class="welcome-text">היי דניאל! מוכן להתקדם בעולם ה-AI?</h2>
-            <p class="welcome-sub" id="progress-summary-text">השלמת 0 יחידות ומבחנים מעולים!</p>
+          <div class="feature-item">
+            <span class="feature-icon">👀</span>
+            <div class="feature-content">
+              <strong>רואים דוגמה מול העיניים</strong>
+              <span>מבינים למה זה עובד טוב ומתנסים בידיים.</span>
+            </div>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">⭐</span>
+            <div class="feature-content">
+              <strong>בלי לחץ ובקצב שלך</strong>
+              <span>עושים משימה אחת או שתיים מתי שנוח לך.</span>
+            </div>
           </div>
         </div>
 
-        <div class="progress-track-wrapper">
-          <div class="progress-bar-bg">
-            <div id="daniel-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
-          </div>
-          <span id="daniel-progress-percent" class="progress-percent-label">0%</span>
-        </div>
-      </div>
-
-      <!-- UNITS & CHECKPOINTS ROADMAP -->
-      <div class="units-container">
-        <div class="section-title-wrapper">
-          <h3 class="section-title">המסלול המודרג שלך להצלחה עם AI 🗺️</h3>
-          <p class="section-subtitle">לומדים 2 יחידות קצרות, עוברים מבחן מעשי בציון 85+ וממשיכים קדימה לשלב הבא!</p>
+        <div class="welcome-actions">
+          <button id="start-btn" class="primary-btn pulse-glow">
+            <span class="btn-icon">▶</span>
+            <span class="btn-text" id="start-btn-text">בוא נתחיל</span>
+          </button>
         </div>
 
-        <div id="units-grid" class="units-grid">
-          <!-- Dynamic Unit Cards & Checkpoint Stations injected by app.js -->
-        </div>
-      </div>
-
-      <!-- 5 GOLDEN RULES -->
-      <div class="golden-rules-section" style="margin-top: 3rem;">
-        <h3 class="section-title">5 כללי הזהב של דניאל בשימוש ב-AI 🛡️</h3>
-        <div class="rules-grid">
-          <div class="rule-card">
-            <span class="rule-icon">🔒</span>
-            <h4>1. פרטיות לפני הכל</h4>
-            <p>לעולם לא כותבים ל-AI תעודת זהות, סיסמאות סודיות או פרטי כרטיס אשראי.</p>
-          </div>
-          <div class="rule-card">
-            <span class="rule-icon">🎯</span>
-            <h4>2. בקשה קצרה וממוקדת</h4>
-            <p>מבקשים תמיד: "ב-2 משפטים קצרים" או "ב-3 צעדים פשוטים". זה מונע בלבול!</p>
-          </div>
-          <div class="rule-card">
-            <span class="rule-icon">🧐</span>
-            <h4>3. ה-AI יכול לטעות</h4>
-            <p>בינה מלאכותית לפעמים מנחשת. בנושאים חשובים תמיד בודקים עם אבא או גורם מוסמך.</p>
-          </div>
-          <div class="rule-card">
-            <span class="rule-icon">🤝</span>
-            <h4>4. כלי עזר - לא תחליף</h4>
-            <p>ה-AI נותן לנו רעיונות וטיוטות, אבל אנחנו אלה שמחליטים מה לשלוח ומה לעשות.</p>
-          </div>
-          <div class="rule-card">
-            <span class="rule-icon">✨</span>
-            <h4>5. כיף לנסות שוב ושוב</h4>
-            <p>אם התשובה לא הייתה מובנת, פשוט כותבים לו: "תסביר שוב ביותר פשוט".</p>
-          </div>
+        <div class="quick-restore-box">
+          <button id="restore-link-btn" class="link-btn">
+            📂 יש לך קובץ גיבוי שמור? לחץ כאן לשחזור
+          </button>
+          <input type="file" id="backup-file-input" accept=".json" style="display: none;">
         </div>
       </div>
     </section>
 
-    <!-- ============================================== -->
-    <!-- VIEW 2: CAREGIVER & PARENT DASHBOARD           -->
-    <!-- ============================================== -->
-    <section id="caregiver-view" class="view-section">
-      <div class="caregiver-header-banner">
-        <div>
-          <h2 class="cg-title">פאנל ניהול, ליווי והתאמה אישית עבור דניאל 🛡️</h2>
-          <p class="cg-sub">מעקב התקדמות, יצירת יחידות ומבחנים עם AI (Gemini/Groq), ובדיקת קישוריות</p>
+    <!-- 2. Diagnostic Assessment (10 Questions) -->
+    <section id="view-assessment" class="view-section">
+      <div class="card questionnaire-card">
+        <div class="card-top-bar">
+          <span class="step-indicator" id="assessment-step-text">שאלה 1 מתוך 10</span>
+          <button class="tts-small-btn" id="tts-question-btn" title="הקרא שאלה" aria-label="הקרא שאלה">
+            🔊 הקרא לי
+          </button>
         </div>
-        <button id="exit-cg-btn" class="secondary-btn">חזרה לאזור של דניאל ↩️</button>
-      </div>
-
-      <!-- ADMIN TABS -->
-      <div class="admin-tabs-nav">
-        <button class="adm-tab-btn active" data-tab="adm-overview">📊 תמונת מצב והתקדמות</button>
-        <button class="adm-tab-btn" data-tab="adm-assistant">🤖 עוזר AI ליצירת יחידות</button>
-        <button class="adm-tab-btn" data-tab="adm-units-mgr">📚 ניהול תכנים ויחידות</button>
-        <button class="adm-tab-btn" data-tab="adm-settings">🔌 חיבורי API והגדרות</button>
-      </div>
-
-      <!-- TAB 1: OVERVIEW -->
-      <div id="adm-overview" class="adm-tab-panel active">
-        <div class="stat-grid">
-          <div class="stat-card">
-            <span class="stat-num" id="adm-stat-units">0 / 10</span>
-            <span class="stat-label">יחידות שהושלמו</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-num" id="adm-stat-checkpoints">0 / 5</span>
-            <span class="stat-label">מבחני שלב שעבר (85+)</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-num" id="adm-stat-accuracy">100%</span>
-            <span class="stat-label">ממוצע ציונים</span>
-          </div>
+        
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="assessment-progress-bar" style="width: 10%;"></div>
         </div>
 
-        <div class="adm-sub-section">
-          <h4 class="sub-title">התקדמות יחידות הלימוד ומבחני השלב</h4>
-          <div id="adm-units-table" class="cg-table-wrapper"></div>
+        <div class="question-body">
+          <h2 class="question-title" id="question-title">טוען שאלה...</h2>
+          <p class="question-helper" id="question-helper"></p>
+          <div class="question-content" id="question-content"></div>
         </div>
 
-        <div class="adm-sub-section" style="margin-top: 1.5rem;">
-          <h4 class="sub-title">יומן תגבורים אדפטיביים (שאלות שדניאל התקשה בהן)</h4>
-          <div id="adm-reinforce-list" class="cg-feedback-list"></div>
+        <div class="card-footer-nav">
+          <button id="assessment-prev-btn" class="nav-btn secondary-btn" style="visibility: hidden;">
+            <span>הקודם</span>
+          </button>
+          <button id="assessment-next-btn" class="nav-btn primary-btn">
+            <span>הבא ▶</span>
+          </button>
         </div>
       </div>
+    </section>
 
-      <!-- TAB 2: AI ASSISTANT & LIVE PREVIEW -->
-      <div id="adm-assistant" class="adm-tab-panel">
-        <div class="assistant-split-layout">
-          <!-- Left: Prompt input to AI -->
-          <div class="assistant-chat-pane">
-            <div class="assistant-status-bar">
-              <span>ספק AI פעיל: <strong id="active-llm-label">Google Gemini / Groq (דינמי)</strong></span>
+    <!-- 3. Calibration Phase (5 rounds of paired comparisons) -->
+    <section id="view-calibration" class="view-section">
+      <div class="card calibration-card">
+        <div class="card-top-bar">
+          <span class="step-indicator" id="calibration-step-text">סבב 1 מתוך 5: בדיקת סגנון ניסוח</span>
+          <span class="badge-tag">כיול אישי</span>
+        </div>
+
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="calibration-progress-bar" style="width: 20%;"></div>
+        </div>
+
+        <div class="calibration-intro">
+          <h2 class="section-title">איזה ניסוח יותר ברור ונוח לך?</h2>
+          <p class="section-subtitle">לחץ על האפשרות שהכי קל לך להבין:</p>
+        </div>
+
+        <div class="comparison-grid">
+          <!-- Option A -->
+          <div class="option-card" id="option-card-a" data-choice="A" tabindex="0" role="button">
+            <div class="option-card-header">
+              <span class="option-letter">אפשרות א'</span>
+              <button class="tts-icon-btn" id="tts-opt-a" title="הקרא אפשרות זו">🔊</button>
             </div>
-            <p class="adm-helper-text">
-              כתוב כאן רעיון ליחידה חדשה שתרצה שדניאל ילמד (למשל: "איך לבקש מ-AI לעזור בארגון משימות", או "ניסוח מייל לחבר"):
-            </p>
+            <div class="option-text" id="option-text-a">טוען אפשרות א'...</div>
+            <div class="selection-indicator">
+              <span class="indicator-icon">✓</span>
+              <span class="indicator-text">בחרתי בזה</span>
+            </div>
+          </div>
+
+          <!-- Option B -->
+          <div class="option-card" id="option-card-b" data-choice="B" tabindex="0" role="button">
+            <div class="option-card-header">
+              <span class="option-letter">אפשרות ב'</span>
+              <button class="tts-icon-btn" id="tts-opt-b" title="הקרא אפשרות זו">🔊</button>
+            </div>
+            <div class="option-text" id="option-text-b">טוען אפשרות ב'...</div>
+            <div class="selection-indicator">
+              <span class="indicator-icon">✓</span>
+              <span class="indicator-text">בחרתי בזה</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-footer-nav">
+          <button id="calibration-next-btn" class="primary-btn" disabled>
+            <span>שמור והמשך לסבב הבא ▶</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Calming Transition Screen -->
+    <section id="view-transition" class="view-section">
+      <div class="card transition-card text-center">
+        <div class="transition-stars">✨ 🌟 ✨</div>
+        <h2 class="transition-title">קיבלתי את התשובות שלך!</h2>
+        <p class="transition-subtitle">
+          עכשיו אני מכין עבורך מסלול למידה מעשי ומותאם אישית.<br>
+          עוד רגע מתחילים לתרגל...
+        </p>
+
+        <div class="loading-spinner-box">
+          <div class="calm-loader"></div>
+          <span class="calm-status-text" id="calm-status-text">מתאים דוגמאות אישיות...</span>
+        </div>
+
+        <div class="transition-actions" style="margin-top: 2rem;">
+          <button id="continue-to-roadmap-btn" class="primary-btn">
+            <span>בוא נראה את המסלול שלי ▶</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Flexible Unit/Quest Roadmap Screen (המסלול שלי) -->
+    <section id="view-roadmap" class="view-section">
+      <div class="roadmap-header card">
+        <div class="roadmap-header-top">
+          <div>
+            <h2 class="roadmap-title">המסלול האישי שלי</h2>
+            <p class="roadmap-subtitle">מיומנויות AI מעשיות לחיים ולעבודה • צעד אחר צעד</p>
+          </div>
+          <div class="roadmap-badge-box">
+            <span class="badge-pill" id="total-progress-pill">0 מתוך 10 יחידות</span>
+          </div>
+        </div>
+
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="weekly-progress-bar" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- Units Grid / Journey Path -->
+      <div class="units-container" id="units-grid"></div>
+    </section>
+
+    <!-- 6. Interactive 4-Step Unit View (למידה פעילה עם וידוא הבנה) -->
+    <section id="view-unit" class="view-section">
+      <div class="day-nav-bar">
+        <button id="unit-back-btn" class="secondary-btn nav-back-btn">
+          <span class="btn-icon">↩</span>
+          <span>חזרה למסלול שלי</span>
+        </button>
+        <h2 class="day-current-title" id="unit-view-title">יחידת לימוד</h2>
+      </div>
+
+      <!-- Unit Flow Steps Container -->
+      <div class="card unit-flow-card">
+        
+        <!-- Top Unit Banner -->
+        <div class="unit-banner">
+          <div class="unit-pill" id="unit-topic-badge">יחידה 1</div>
+          <h2 class="unit-headline" id="unit-main-title">טוען יחידה...</h2>
+          <p class="unit-goal" id="unit-goal-desc"></p>
+        </div>
+
+        <!-- 4-Step Progressive Timeline -->
+        <div class="unit-steps-wrapper">
+          
+          <!-- STEP 1: המחשה מוחשית Side-by-Side -->
+          <div class="micro-step-box" id="step-demo-box">
+            <div class="step-header">
+              <span class="step-number-circle">1</span>
+              <h3 class="step-title">המחשה מוחשית: מה ההבדל בין שתי הבקשות?</h3>
+              <button class="tts-icon-btn" id="tts-demo-btn" title="הקרא שלב זה">🔊</button>
+            </div>
+            <p class="step-instruction">הנה שתי דרכים שונות לשאול את ה-AI, והנה מה שהוא עונה בפועל:</p>
             
-            <div class="chat-messages-container" id="admin-chat-messages">
-              <div class="ai-msg">
-                שלום! כתוב רעיון קצר ליחידת לימוד או מיומנות שתרצה שדניאל ירכוש, ואבנה עבורו יחידה מותאמת ב-4 שלבים.
+            <div class="demo-comparison-grid">
+              <!-- Bad Prompt Card -->
+              <div class="demo-card bad-demo">
+                <div class="demo-card-tag bad-tag">❌ בקשה כללית מדי</div>
+                <div class="demo-prompt" id="demo-bad-prompt">"הסבר לי על מחשבים"</div>
+                <div class="demo-result-box">
+                  <div class="demo-result-header">🤖 מה ה-AI ענה:</div>
+                  <div class="demo-result-text" id="demo-bad-result">
+                    "מחשב הוא מערכת מורכבת הכוללת יחידת עיבוד מרכזית (CPU), לוח אם, זיכרון גישה אקראית (RAM), ארכיטקטורת x86 ומערכות הפעלה מגוונות..." (ארוך ומבלבל)
+                  </div>
+                </div>
+              </div>
+
+              <!-- Good Prompt Card -->
+              <div class="demo-card good-demo">
+                <div class="demo-card-tag good-tag">✅ בקשה מדויקת ופשוטה</div>
+                <div class="demo-prompt" id="demo-good-prompt">"הסבר לי מה זה עכבר מחשב ב-2 משפטים פשוטים"</div>
+                <div class="demo-result-box">
+                  <div class="demo-result-header">🤖 מה ה-AI ענה:</div>
+                  <div class="demo-result-text" id="demo-good-result">
+                    "עכבר מחשב הוא מכשיר ידני שמזיז את החץ שעל המסך. בלחיצה עליו אפשר לפתוח תוכניות ולבחור דברים בקלות." (קצר וברור!)
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- STEP 2: הסבר קצר ומאיר עיניים -->
+          <div class="micro-step-box" id="step-explanation-box">
+            <div class="step-header">
+              <span class="step-number-circle">2</span>
+              <h3 class="step-title">למה זה עבד? הנה הסוד:</h3>
+              <button class="tts-icon-btn" id="tts-explanation-btn" title="הקרא שלב זה">🔊</button>
+            </div>
+            <div class="key-takeaway-card" id="unit-takeaway-text">
+              כשביקשנו מה-AI במפורש: <strong>"ב-2 משפטים פשוטים"</strong>, הוא לא הציף אותנו בטקסט ארוך, וענה בדיוק מה שרצינו!
+            </div>
+          </div>
+
+          <!-- STEP 3: וידוא הבנה חד-משמעי (Quiz) -->
+          <div class="micro-step-box" id="step-quiz-box">
+            <div class="step-header">
+              <span class="step-number-circle">3</span>
+              <h3 class="step-title">וידוא הבנה: בוא נבדוק שהבנו!</h3>
+              <button class="tts-icon-btn" id="tts-quiz-btn" title="הקרא שלב זה">🔊</button>
+            </div>
+            <p class="step-instruction" id="quiz-question-text">אם נרצה שה-AI יענה לנו בקצרה ובלי מילים מסובכות, מה הכי נכון לכתוב לו?</p>
+            
+            <div class="quiz-options-grid" id="quiz-options-container"></div>
+
+            <!-- Quiz Feedback Alert -->
+            <div class="quiz-feedback-box" id="quiz-feedback-box" style="display: none;"></div>
+          </div>
+
+          <!-- STEP 4: עשייה מעשית (Hands-On Execution) -->
+          <div class="micro-step-box locked-step" id="step-action-box">
+            <div class="step-header">
+              <span class="step-number-circle">4</span>
+              <h3 class="step-title">עכשיו תורך להתנסות!</h3>
+              <button class="tts-icon-btn" id="tts-action-btn" title="הקרא שלב זה">🔊</button>
+            </div>
+            
+            <div id="action-locked-notice" class="step-locked-alert">
+              <span>🔒 שלב זה ייפתח מיד לאחר שתענה נכון על שאלת וידוא ההבנה.</span>
+            </div>
+
+            <div id="action-unlocked-content" style="display: none;">
+              <p class="step-instruction" id="action-do-instruction">העתק את הפרומפט המדויק שהרכבנו והתנסה ב-AI:</p>
+              
+              <div class="example-box">
+                <div class="example-prompt-text" id="action-prompt-display">"..."</div>
+                <div class="example-actions">
+                  <button class="action-btn copy-btn" id="unit-copy-btn">
+                    <span class="btn-icon">📋</span>
+                    <span class="btn-text">העתק משפט</span>
+                  </button>
+                  <a href="https://chatgpt.com" target="_blank" rel="noopener noreferrer" class="action-btn open-ai-btn">
+                    <span class="btn-icon">🚀</span>
+                    <span class="btn-text">פתח את ChatGPT</span>
+                  </a>
+                  <button class="action-btn test-here-btn" id="unit-test-here-btn">
+                    <span class="btn-icon">🧪</span>
+                    <span class="btn-text">נסה כאן במערכת</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Finish Button & Reaction -->
+              <div class="task-finish-section" style="display: flex; flex-direction: column; align-items: center; gap: 0.8rem;">
+                <button class="primary-btn finish-task-btn" id="unit-finish-btn">
+                  <span class="btn-icon">✓</span>
+                  <span>סיימתי את היחידה!</span>
+                </button>
+                <button class="share-whatsapp-btn" id="unit-share-wa-btn" style="display: none;">
+                  <span>שלח עדכון לאבא ב-WhatsApp 📲</span>
+                </button>
+              </div>
+
+              <div class="feedback-box" id="unit-feedback-box" style="display: none;">
+                <h3 class="feedback-title">מעולה! איך הייתה היחידה הזו עבורך?</h3>
+                <div class="feedback-buttons">
+                  <button class="feedback-btn" data-rating="easy">
+                    <span class="fb-emoji">😊</span>
+                    <span class="fb-text">היה לי ברור</span>
+                  </button>
+                  <button class="feedback-btn" data-rating="medium">
+                    <span class="fb-emoji">😐</span>
+                    <span class="fb-text">קצת קשה</span>
+                  </button>
+                  <button class="feedback-btn" data-rating="hard">
+                    <span class="fb-emoji">😕</span>
+                    <span class="fb-text">לא הבנתי</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="completed-ribbon" id="unit-completed-ribbon" style="display: none;">
+                <span class="ribbon-icon">⭐</span>
+                <span class="ribbon-text">כל הכבוד! היחידה הושלמה בהצלחה!</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- 6.5 Interactive Checkpoint Test View (מבחן שלב כל 2 יחידות עם סף 85+) -->
+    <section id="view-checkpoint" class="view-section">
+      <div class="day-nav-bar">
+        <button id="checkpoint-back-btn" class="secondary-btn nav-back-btn">
+          <span class="btn-icon">↩</span>
+          <span>חזרה למסלול שלי</span>
+        </button>
+        <h2 class="day-current-title" id="checkpoint-view-header">מבחן שלב</h2>
+      </div>
+
+      <div class="card" style="max-width: 750px; margin: 0 auto;">
+        <div class="card-top-bar">
+          <span class="step-indicator" id="checkpoint-step-text">שאלה 1 מתוך 4</span>
+          <button class="tts-small-btn" id="tts-checkpoint-q-btn">🔊 הקרא שאלה</button>
+        </div>
+
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="checkpoint-progress-bar" style="width: 25%;"></div>
+        </div>
+
+        <div id="checkpoint-content-area">
+          <!-- Injected dynamically -->
+        </div>
+
+        <div class="card-footer-nav" id="checkpoint-nav-footer" style="margin-top: 2rem;">
+          <button id="checkpoint-next-btn" class="primary-btn" disabled>
+            <span>המשך לשאלה הבאה ▶</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. End of Journey / Milestone View -->
+    <section id="view-week-summary" class="view-section">
+      <div class="card summary-card">
+        <div class="summary-hero">
+          <div class="celebration-badge">🎉</div>
+          <h2 class="hero-title">הישג ענק, דניאל!</h2>
+          <p class="hero-subtitle">השלמת את מסלול המיומנויות הבסיסי ב-AI בהצלחה מרשימה!</p>
+        </div>
+
+        <div class="skills-acquired-box">
+          <h3 class="box-title">🏆 מה שלמדת והוכחת שהבנת:</h3>
+          <div class="skills-tags-grid" id="summary-skills-list"></div>
+        </div>
+
+        <div class="summary-actions">
+          <button id="save-week-summary-btn" class="primary-btn">
+            <span>חזרה למסלול שלי 🌟</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. HIDDEN ADMIN PORTAL (Accessible via #admin or PIN) -->
+    <section id="view-admin" class="view-section">
+      <div class="card admin-main-card">
+        <div class="admin-header-bar">
+          <div class="admin-title-box">
+            <span class="admin-icon">⚙️</span>
+            <div>
+              <h2 class="admin-title">מרכז ניהול ומעקב אישי</h2>
+              <span class="admin-subtitle">תצוגת מלווה / מנהל • בקרה, פתקים, ו-AI Assistant</span>
+            </div>
+          </div>
+          <button id="exit-admin-btn" class="secondary-btn">
+            <span>יציאה לממשק דניאל ↩</span>
+          </button>
+        </div>
+
+        <!-- Admin Navigation Tabs -->
+        <div class="admin-tabs-nav">
+          <button class="adm-tab-btn active" data-tab="adm-overview">📊 מעקב והתקדמות</button>
+          <button class="adm-tab-btn" data-tab="adm-assistant">🤖 עוזר AI ליצירת יחידות</button>
+          <button class="adm-tab-btn" data-tab="adm-curriculum">📚 ניהול יחידות ומסלול</button>
+          <button class="adm-tab-btn" data-tab="adm-notes">📝 פתקים והארות משותפים</button>
+          <button class="adm-tab-btn" data-tab="adm-settings">🔌 חיבורי API והגדרות</button>
+        </div>
+
+        <!-- TAB 1: OVERVIEW -->
+        <div id="adm-overview" class="adm-tab-panel active">
+          <div class="stat-grid">
+            <div class="stat-card">
+              <span class="stat-num" id="adm-stat-units">0 / 10</span>
+              <span class="stat-label">יחידות שהושלמו</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-num" id="adm-stat-accuracy">100%</span>
+              <span class="stat-label">דיוק בשאלות וידוא הבנה</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-num" id="adm-stat-reinforce">0</span>
+              <span class="stat-label">יחידות תגבור שהוזרקו</span>
+            </div>
+          </div>
+
+          <div class="adm-sub-section">
+            <h4 class="sub-title">התקדמות יחידות הלימוד</h4>
+            <div id="adm-units-table" class="cg-table-wrapper"></div>
+          </div>
+
+          <div class="adm-sub-section" style="margin-top: 1.5rem;">
+            <h4 class="sub-title">יומן תגבורים אדפטיביים (Needs Reinforcement)</h4>
+            <div id="adm-reinforce-list" class="cg-feedback-list"></div>
+          </div>
+        </div>
+
+        <!-- TAB 2: AI ASSISTANT & LIVE PREVIEW -->
+        <div id="adm-assistant" class="adm-tab-panel">
+          <div class="assistant-split-layout">
+            
+            <!-- Left: Chat conversation with AI -->
+            <div class="assistant-chat-pane">
+              <div class="assistant-status-bar">
+                <span>ספק AI פעיל: <strong id="active-llm-label">Gemini 1.5 Flash (עם Fallback אוטומטי)</strong></span>
+              </div>
+              <p class="adm-helper-text">
+                כתוב כאן מה אבא או אתה רוצים שדניאל ילמד, והעוזר יציע יחידה מדויקת במבנה 4 השלבים:
+              </p>
+              
+              <div class="chat-messages-container" id="admin-chat-messages">
+                <div class="ai-msg">
+                  שלום! מה תרצו שדניאל ילמד היום? אפשר לכתוב רעיון כללי (למשל: "איך לבקש מתכון לחביתה", "איך לנסח הודעה על איחור לעבודה", או "מושגים בתלוש שכר").
+                </div>
+              </div>
+
+              <div class="chat-input-bar">
+                <textarea id="admin-chat-input" class="styled-textarea" rows="2" placeholder="כתוב כאן בקשה לעוזר ה-AI..."></textarea>
+                <button id="admin-chat-send-btn" class="primary-btn">
+                  <span>שלח לרעיון</span>
+                  <span>🚀</span>
+                </button>
               </div>
             </div>
 
-            <div class="chat-input-bar">
-              <textarea id="admin-chat-input" class="styled-textarea" rows="2" placeholder="כתוב כאן רעיון ליחידה..."></textarea>
-              <button id="admin-chat-send-btn" class="primary-btn">
-                <span>צור יחידה עם AI</span>
-                <span>🚀</span>
+            <!-- Right: Live Preview & Editable Card -->
+            <div class="assistant-preview-pane">
+              <div class="preview-header">
+                <h4>תצוגה מקדימה ועריכה (Live Preview)</h4>
+                <span class="preview-badge">ניתן לעריכה ישירה</span>
+              </div>
+
+              <div id="live-card-preview-container" class="live-preview-box">
+                <p style="color: var(--text-muted); text-align: center; padding: 2rem 1rem;">
+                  כאשר תבקש רעיון מהעוזר, הכרטיסייה תופיע כאן בתצוגה חיה. תוכל לערוך כל שדה לפני שתוסיף אותה לדניאל.
+                </p>
+              </div>
+
+              <div class="preview-action-footer" id="preview-actions" style="display: none;">
+                <button id="adm-approve-card-btn" class="primary-btn" style="background-color: var(--success);">
+                  <span>✓ אשר והוסף למסלול של דניאל</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- TAB 3: CURRICULUM MANAGEMENT -->
+        <div id="adm-curriculum" class="adm-tab-panel">
+          <div class="adm-section-header">
+            <h4>רשימת כל יחידות הלימוד הפעילות</h4>
+            <button id="adm-add-blank-unit-btn" class="secondary-btn">
+              <span>+ יחידה חדשה ידנית</span>
+            </button>
+          </div>
+          <div id="adm-curriculum-list" class="curriculum-list-grid"></div>
+        </div>
+
+        <!-- TAB 4: SHARED NOTES (פתקים והארות משותפים) -->
+        <div id="adm-notes" class="adm-tab-panel">
+          <div class="notes-composer-box">
+            <h4>הוספת פתק או הארה חדשה</h4>
+            <div class="note-inputs-row">
+              <select id="note-author-select" class="styled-select" style="max-width: 160px;">
+                <option value="אושרי">אושרי</option>
+                <option value="אבא">אבא</option>
+              </select>
+              <input type="text" id="note-text-input" class="styled-input" placeholder="כתוב כאן הארה, רעיון או תובנה לגבי דניאל...">
+              <button id="add-note-btn" class="primary-btn">
+                <span>שמור פתק 📌</span>
               </button>
             </div>
           </div>
 
-          <!-- Right: Live Preview & Editable Card -->
-          <div class="assistant-preview-pane">
-            <h4 class="sub-title">תצוגה מקדימה ועריכה (Live Preview)</h4>
-            <div class="unit-editor-form">
-              <div class="form-row">
-                <label>כותרת היחידה:</label>
-                <input type="text" id="ed-title" class="styled-input">
-              </div>
-              <div class="form-row">
-                <label>קטגוריה:</label>
-                <input type="text" id="ed-category" class="styled-input" placeholder="למשל: תקשורת יומיומית">
-              </div>
-              <div class="form-row">
-                <label>מטרה חינוכית:</label>
-                <input type="text" id="ed-goal" class="styled-input">
-              </div>
+          <div class="notes-stream" id="notes-stream-container"></div>
+        </div>
 
-              <!-- 4 Steps Details -->
-              <div class="form-step-group">
-                <strong>שלב 1: הדגמת ניגודים</strong>
-                <div class="contrast-inputs">
+        <!-- TAB 5: API & BACKUP SETTINGS -->
+        <div id="adm-settings" class="adm-tab-panel">
+          <div class="cg-section">
+            <h4>שרשרת הגיבוי הרב-שכבתית (Multi-Tier Fallback Chain)</h4>
+            <p class="adm-helper-text">
+              המערכת מנסה לפנות לפי סדר העדיפות הבא. אם ספק נופל או עמוס, היא עוברת מיד לספק הבא מבלי לעצור:
+            </p>
+
+            <form onsubmit="return false;">
+              <!-- 1. Gemini -->
+              <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 0.6rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                   <div>
-                    <label>פרומפט מעורפל/חלש:</label>
-                    <input type="text" id="ed-bad-prompt" class="styled-input">
-                    <label>תוצאה מאכזבת:</label>
-                    <input type="text" id="ed-bad-result" class="styled-input">
+                    <strong>1. Google Gemini API Key (מומלץ וחינמי):</strong>
+                    <p>Google AI Studio (Gemini 2.5 Flash / 3.6 / 3.1 Flash-Lite)</p>
                   </div>
-                  <div>
-                    <label>פרומפט ממוקד וטוב:</label>
-                    <input type="text" id="ed-good-prompt" class="styled-input">
-                    <label>תוצאה מעולה ומובנת:</label>
-                    <input type="text" id="ed-good-result" class="styled-input">
+                  <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <input type="password" id="cfg-gemini-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Gemini..." autocomplete="off">
+                    <button type="button" id="btn-test-gemini" class="secondary-btn" style="white-space: nowrap; padding: 0.5rem 0.9rem; font-size: 0.88rem;">
+                      <span>בדוק Gemini 🧪</span>
+                    </button>
                   </div>
                 </div>
+                <div id="cfg-gemini-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
               </div>
 
-              <div class="form-step-group">
-                <label>שלב 2: הכלל הנלמד (משפט אחד):</label>
-                <input type="text" id="ed-takeaway" class="styled-input">
-              </div>
-
-              <div class="form-step-group">
-                <label>שלב 3: שאלת הבנה (אמריקאית):</label>
-                <input type="text" id="ed-quiz-q" class="styled-input">
-                <div class="options-inputs">
+              <!-- 2. Groq -->
+              <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 0.6rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                   <div>
-                    <label>תשובה נכונה:</label>
-                    <input type="text" id="ed-quiz-opt1" class="styled-input">
+                    <strong>2. Groq Cloud API Key (ספק מהיר וחינמי):</strong>
+                    <p>Groq Console (GPT-OSS 20B / Qwen 3.8 / ALLaM)</p>
                   </div>
-                  <div>
-                    <label>מסיח (תשובה שגויה):</label>
-                    <input type="text" id="ed-quiz-opt2" class="styled-input">
+                  <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <input type="password" id="cfg-groq-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Groq..." autocomplete="off">
+                    <button type="button" id="btn-test-groq" class="secondary-btn" style="white-space: nowrap; padding: 0.5rem 0.9rem; font-size: 0.88rem;">
+                      <span>בדוק Groq 🧪</span>
+                    </button>
                   </div>
                 </div>
+                <div id="cfg-groq-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
               </div>
 
-              <div class="form-step-group">
-                <label>שלב 4: משימת ביצוע לדניאל:</label>
-                <input type="text" id="ed-action" class="styled-input">
+              <!-- 3. Ollama -->
+              <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 0.6rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                  <div>
+                    <strong>3. מודל מקומי / Local Ollama URL:</strong>
+                    <p>ברירת מחדל: http://localhost:11434</p>
+                  </div>
+                  <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <input type="text" id="cfg-ollama-url" class="styled-input" style="max-width: 270px;" value="http://localhost:11434">
+                    <button type="button" id="btn-test-ollama" class="secondary-btn" style="white-space: nowrap; padding: 0.5rem 0.9rem; font-size: 0.88rem;">
+                      <span>בדוק Ollama 🧪</span>
+                    </button>
+                  </div>
+                </div>
+                <div id="cfg-ollama-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
               </div>
 
-              <div class="editor-actions">
-                <button id="ed-publish-btn" class="primary-btn">אשר והוסף יחידה זו למסלול של דניאל 🌟</button>
+              <!-- 4. Offline Synthesizer -->
+              <div class="setting-item">
+                <div>
+                  <strong>4. מנוע פנימי חכם (Built-in Offline Synthesizer):</strong>
+                  <p>פועל תמיד באופן אוטומטי ואוטונומי אם אין מפתחות או אין חיבור רשת.</p>
+                </div>
+                <span class="badge-tag" style="background-color:#ecfdf5;color:#059669; font-weight: bold;">תמיד פעיל ✅</span>
               </div>
+
+              <div style="margin-top: 1.2rem; display: flex; gap: 0.75rem;">
+                <button type="button" id="cfg-save-keys-btn" class="primary-btn">
+                  <span>שמור הגדרות מפתחות 💾</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Guides Collapsible Accordion -->
+          <div class="cg-section" style="margin-top: 2rem;">
+            <h4>מדריכי חיבור מהירים (שלב-אחר-שלב)</h4>
+            
+            <details class="guide-details">
+              <summary><strong>🔑 איך להוציא מפתח חינמי ל-Google Gemini תוך 60 שניות?</strong></summary>
+              <div class="guide-body">
+                <ol>
+                  <li>היכנס לאתר <a href="https://aistudio.google.com/" target="_blank" rel="noopener">Google AI Studio</a> והתחבר עם חשבון Google.</li>
+                  <li>לחץ על <strong>Get API key</strong> בתפריט הצדדי.</li>
+                  <li>לחץ על <strong>Create API key</strong> והעתק את המחרוזת.</li>
+                  <li>הדבק אותה כאן למעלה בשדה של Gemini ולחץ "שמור הגדרות מפתחות".</li>
+                </ol>
+              </div>
+            </details>
+
+            <details class="guide-details">
+              <summary><strong>⚡ איך להוציא מפתח חינמי ל-Groq (מהירות קיצונית)?</strong></summary>
+              <div class="guide-body">
+                <ol>
+                  <li>היכנס לאתר <a href="https://console.groq.com/" target="_blank" rel="noopener">Groq Console</a>.</li>
+                  <li>לחץ על <strong>API Keys</strong> -> <strong>Create API Key</strong>.</li>
+                  <li>העתק את המפתח והדבק אותו בשדה של Groq למעלה.</li>
+                </ol>
+              </div>
+            </details>
+
+            <details class="guide-details">
+              <summary><strong>💻 איך להפעיל מודל מקומי עם Ollama (ללא אינטרנט)?</strong></summary>
+              <div class="guide-body">
+                <p>התקן את Ollama מ-ollama.com, והרץ בטרמינל <code>ollama run llama3</code>. המערכת תפנה אוטומטית ל-<code>http://localhost:11434</code>.</p>
+              </div>
+            </details>
+          </div>
+
+          <!-- Backup / Restore -->
+          <div class="cg-section" style="margin-top: 2rem;">
+            <h4>גיבוי ושחזור נתונים</h4>
+            <div class="setting-item">
+              <div>
+                <strong>גיבוי מלא לקובץ JSON:</strong>
+                <p>שומר את כל הפרופיל, ההתקדמות, היחידות והפתקים.</p>
+              </div>
+              <button id="adm-export-btn" class="primary-btn">הורד קובץ גיבוי 💾</button>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>שחזור מגיבוי:</strong>
+                <p>טעינת קובץ גיבוי קיים למערכת.</p>
+              </div>
+              <button id="adm-import-btn" class="secondary-btn">טען קובץ גיבוי 📂</button>
+              <input type="file" id="adm-file-input" accept=".json" style="display: none;">
+            </div>
+            <div class="setting-item danger-item">
+              <div>
+                <strong>איפוס נתונים:</strong>
+                <p>מחיקת נתונים מלאה וחזרה להתחלה.</p>
+              </div>
+              <button id="adm-reset-btn" class="danger-btn">אפס את כל הנתונים ⚠️</button>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- TAB 3: UNITS MANAGEMENT -->
-      <div id="adm-units-mgr" class="adm-tab-panel">
-        <div class="cg-section">
-          <div class="section-flex-header">
-            <h4>ניהול יחידות הלימוד הפעילות</h4>
-            <button id="add-manual-unit-btn" class="secondary-btn">+ הוסף יחידה חדשה</button>
-          </div>
-          <div id="mgr-units-list" class="cg-mgr-list"></div>
-        </div>
-      </div>
-
-      <!-- TAB 4: API KEYS & SETTINGS -->
-      <div id="adm-settings" class="adm-tab-panel">
-        <div class="cg-section">
-          <h4>חיבורי API ובדיקות אסינכרוניות בלייב</h4>
-          <p class="adm-helper-text">
-            אם מוגדר מפתח Gemini, הוא נבחר אוטומטית כספק הראשי. אם מוגדר Groq, הוא משמש כספק מהיר או גיבוי:
-          </p>
-
-          <form onsubmit="return false;">
-            <!-- 1. Gemini -->
-            <div class="setting-item" style="display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem; padding: 1.1rem; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; margin-bottom: 1rem;">
-              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-                <div>
-                  <strong style="font-size: 1.05rem;">1. Google Gemini API Key (מומלץ וחינמי):</strong>
-                  <p style="margin: 0.2rem 0 0 0; color: #64748b; font-size: 0.9rem;">Google AI Studio (Gemini 2.5 Flash / 3.6 / 3.1 Flash-Lite)</p>
-                </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                  <input type="password" id="cfg-gemini-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Gemini..." autocomplete="off">
-                  <button type="button" id="btn-test-gemini" class="secondary-btn" style="white-space: nowrap; padding: 0.55rem 0.95rem; font-size: 0.88rem;">
-                    <span>בדוק Gemini 🧪</span>
-                  </button>
-                </div>
-              </div>
-              <div id="cfg-gemini-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
-            </div>
-
-            <!-- 2. Groq -->
-            <div class="setting-item" style="display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem; padding: 1.1rem; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; margin-bottom: 1rem;">
-              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-                <div>
-                  <strong style="font-size: 1.05rem;">2. Groq Cloud API Key (ספק מהיר וחינמי):</strong>
-                  <p style="margin: 0.2rem 0 0 0; color: #64748b; font-size: 0.9rem;">Groq Console (GPT-OSS 20B / Qwen 3.8 / ALLaM)</p>
-                </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                  <input type="password" id="cfg-groq-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Groq..." autocomplete="off">
-                  <button type="button" id="btn-test-groq" class="secondary-btn" style="white-space: nowrap; padding: 0.55rem 0.95rem; font-size: 0.88rem;">
-                    <span>בדוק Groq 🧪</span>
-                  </button>
-                </div>
-              </div>
-              <div id="cfg-groq-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
-            </div>
-
-            <!-- 3. Ollama -->
-            <div class="setting-item" style="display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem; padding: 1.1rem; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; margin-bottom: 1rem;">
-              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-                <div>
-                  <strong style="font-size: 1.05rem;">3. מודל מקומי / Local Ollama URL:</strong>
-                  <p style="margin: 0.2rem 0 0 0; color: #64748b; font-size: 0.9rem;">ברירת מחדל: http://localhost:11434</p>
-                </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                  <input type="text" id="cfg-ollama-url" class="styled-input" style="max-width: 270px;" value="http://localhost:11434">
-                  <button type="button" id="btn-test-ollama" class="secondary-btn" style="white-space: nowrap; padding: 0.55rem 0.95rem; font-size: 0.88rem;">
-                    <span>בדוק Ollama 🧪</span>
-                  </button>
-                </div>
-              </div>
-              <div id="cfg-ollama-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
-            </div>
-
-            <div style="margin-top: 1.2rem; display: flex; gap: 0.75rem; align-items: center;">
-              <button type="button" id="cfg-save-keys-btn" class="primary-btn">
-                <span>שמור הגדרות מפתחות 💾</span>
-              </button>
-            </div>
-          </form>
         </div>
 
-        <!-- Backup & Restore -->
-        <div class="cg-section" style="margin-top: 2rem;">
-          <h4>גיבוי ושחזור נתונים מלא (Export / Import)</h4>
-          <p class="adm-helper-text">
-            כל היחידות שנוצרו, הישגי המבחנים וההתקדמות של דניאל נשמרים בדפדפן. ניתן לייצא קובץ גיבוי:
-          </p>
-          <div style="display: flex; gap: 0.8rem; flex-wrap: wrap; margin-top: 1rem;">
-            <button id="adm-export-btn" class="secondary-btn">ייצא קובץ גיבוי מלא (JSON) 📤</button>
-            <button id="adm-import-btn" class="secondary-btn">שחזר מקובץ גיבוי 📥</button>
-            <input type="file" id="adm-file-input" style="display: none;" accept=".json">
-            <button id="adm-reset-btn" class="danger-btn" style="margin-right: auto;">איפוס מלא למצב התחלתי ⚠️</button>
-          </div>
-        </div>
       </div>
     </section>
 
   </main>
 
-  <!-- ============================================== -->
-  <!-- MODAL: DANIEL'S 4-STEP LESSON RUNNER           -->
-  <!-- ============================================== -->
-  <div id="lesson-modal" class="modal-overlay">
+  <!-- Interactive AI Practice Playground Modal (Built-in Simulator) -->
+  <div id="ai-playground-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card">
       <div class="modal-header">
-        <div>
-          <span id="modal-unit-category" class="badge-tag">תקשורת בטוחה</span>
-          <h2 id="modal-unit-title" class="modal-title">כותרת היחידה</h2>
+        <div class="modal-title-box">
+          <span class="modal-icon">🧪</span>
+          <h3 class="modal-title">התנסות מעשית ישירה ב-AI</h3>
         </div>
-        <button id="modal-close-btn" class="modal-close-btn" title="סגור חלון">✕</button>
+        <button id="close-playground-btn" class="modal-close-btn" aria-label="סגור">✕</button>
       </div>
+      <div class="modal-body">
+        <p class="playground-intro">המשפט שלך כבר מוכן כאן. תוכל לשלוח אותו ולראות מיד תשובה לדוגמה:</p>
+        <div class="playground-input-group">
+          <textarea id="playground-prompt-input" class="styled-textarea" rows="3" placeholder="הטקסט שלך יופיע כאן..."></textarea>
+          <button id="playground-send-btn" class="primary-btn">
+            <span class="btn-icon">🚀</span>
+            <span>שלח ל-AI</span>
+          </button>
+        </div>
 
-      <!-- Step Indicator Bar -->
-      <div class="step-indicator-bar">
-        <div class="step-dot active" data-step="1">1. הדגמה</div>
-        <div class="step-connector"></div>
-        <div class="step-dot" data-step="2">2. הכלל</div>
-        <div class="step-connector"></div>
-        <div class="step-dot" data-step="3">3. שאלה</div>
-        <div class="step-connector"></div>
-        <div class="step-dot" data-step="4">4. עשייה</div>
+        <div class="playground-response-box" id="playground-response-box" style="display: none;">
+          <div class="response-header">
+            <span>🤖 תשובת ה-AI:</span>
+            <button class="tts-icon-btn" id="tts-playground-resp" title="הקרא תשובה">🔊</button>
+          </div>
+          <div class="response-text" id="playground-response-text">טוען תשובה...</div>
+        </div>
       </div>
-
-      <div class="modal-body" id="modal-body-content">
-        <!-- Injected step contents -->
-      </div>
-
       <div class="modal-footer">
-        <button id="modal-read-aloud-btn" class="secondary-btn" style="margin-left: auto;">
-          <span>הקרא בקול 🔊</span>
+        <button id="playground-done-btn" class="primary-btn">
+          <span>✓ הבנתי, מוכן לסמן שסיימתי</span>
         </button>
-        <button id="modal-prev-step-btn" class="secondary-btn" style="display: none;">צעד קודם ⬅️</button>
-        <button id="modal-next-step-btn" class="primary-btn">הבנתי, בוא נמשיך! ➡️</button>
       </div>
     </div>
   </div>
 
-  <!-- ============================================== -->
-  <!-- MODAL: CHECKPOINT TEST MODAL (THRESHOLD 85+)   -->
-  <!-- ============================================== -->
-  <div id="checkpoint-modal" class="modal-overlay">
-    <div class="modal-card" style="max-width: 650px;">
+  <!-- Admin PIN Security Modal -->
+  <div id="admin-pin-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 420px; text-align: center;">
       <div class="modal-header">
-        <div>
-          <span class="badge-tag" style="background:#fef3c7;color:#b45309;">🎯 מבחן שלב מעשי</span>
-          <h2 id="checkpoint-title" class="modal-title">מבחן שלב 1</h2>
-        </div>
-        <button id="checkpoint-close-btn" class="modal-close-btn" title="סגור">✕</button>
+        <h3 class="modal-title">כניסה לממשק ניהול ומעקב</h3>
+        <button id="close-pin-modal-btn" class="modal-close-btn">✕</button>
       </div>
-
-      <div class="modal-body" id="checkpoint-body-content">
-        <!-- Dynamic test questions injected by app.js -->
+      <div class="modal-body">
+        <p style="margin-bottom: 1.2rem; color: var(--text-secondary);">הזן קוד PIN לכניסה (ברירת מחדל: 1234):</p>
+        <form onsubmit="return false;">
+          <input type="password" id="admin-pin-input" class="styled-input" style="font-size: 1.8rem; text-align: center; letter-spacing: 0.5rem;" maxlength="6" placeholder="••••" autocomplete="current-password">
+        </form>
+        <p id="pin-error-msg" style="color: var(--danger); font-size: 0.95rem; margin-top: 0.6rem; display: none;">קוד PIN שגוי. נסה שוב.</p>
       </div>
-
-      <div class="modal-footer" id="checkpoint-footer-actions">
-        <button id="checkpoint-read-aloud-btn" class="secondary-btn" style="margin-left: auto;">
-          <span>הקרא שאלה 🔊</span>
+      <div class="modal-footer" style="justify-content: center;">
+        <button id="submit-pin-btn" class="primary-btn" style="width: 100%;">
+          <span>כניסה לניהול ▶</span>
         </button>
-        <button id="checkpoint-next-btn" class="primary-btn" disabled>המשך לשאלה הבאה ➡️</button>
       </div>
     </div>
   </div>
 
-  <!-- CELEBRATION & SHARE OVERLAY -->
-  <div id="celebration-overlay" class="celebration-overlay">
-    <div class="celebration-card">
-      <div class="celebration-emoji">🎉 ⭐ 🏆</div>
-      <h2 id="celebration-title">כל הכבוד דניאל!</h2>
-      <p id="celebration-text">השלמת את הפעילות בהצלחה מרובה!</p>
-
-      <div style="margin: 1.5rem 0; display: flex; gap: 0.8rem; justify-content: center; flex-wrap: wrap;">
-        <button id="share-wa-btn" class="share-whatsapp-btn">
-          <span>שלח עדכון לאבא ב-WhatsApp 📲</span>
-        </button>
-        <button id="share-mail-btn" class="share-email-btn">
-          <span>שלח עדכון במייל ✉️</span>
-        </button>
-      </div>
-
-      <button id="celebration-close-btn" class="primary-btn">איזה כיף! חזרה למסלול 🌟</button>
+  <!-- Footer with Hidden Admin Trigger -->
+  <footer class="app-footer">
+    <div class="footer-container">
+      <span class="footer-credit" id="footer-admin-trigger" title="גרסה v2.0">
+        מאמן ה-AI של דניאל • גרסה 2.0
+      </span>
     </div>
-  </div>
-
-  <!-- AUDIO SUCCESS CHIME -->
-  <audio id="success-sound" preload="auto">
-    <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbqWE1KWizm31RNy1ho9Dcq2U5LXGvnn5UOS1hpM/Zpl88MHSuoHpVPTBjpM3WpWNCKnSpn31ZPy9ho87UqGZDKnKnn39dQTBhpM3WpWNCKnSpn31ZPy9ho87UqGZDKnKnn39dQTBho9DXqGZDKnKnn39dQTBh" type="audio/wav">
-  </audio>
-
-  <!-- TOAST -->
-  <div id="toast" class="toast">הודעת מערכת</div>
+  </footer>
 
   <script src="app.js"></script>
 </body>

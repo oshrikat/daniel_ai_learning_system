@@ -1411,13 +1411,17 @@ button {
   position: fixed;
   inset: 0;
   background-color: rgba(15, 23, 42, 0.65);
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   padding: 1.25rem;
   backdrop-filter: blur(4px);
   animation: fadeIn 0.2s ease;
+}
+
+.modal-overlay.active {
+  display: flex;
 }
 
 .modal-card {
@@ -1493,4 +1497,143 @@ button {
 .toast.show {
   transform: translateX(-50%) translateY(0);
   opacity: 1;
+}
+
+/* ==========================================================================
+   Added in Unified System: Checkpoints, Shabbat, Share Buttons & Spinner
+   ========================================================================== */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.loading-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.checkpoint-card {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 2px dashed #f59e0b;
+  border-radius: var(--radius-md);
+  padding: 1.4rem 1.6rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-sm);
+}
+.checkpoint-card.locked {
+  background: var(--locked-bg);
+  border-color: var(--locked-border);
+  opacity: 0.85;
+}
+.checkpoint-card.passed {
+  background: var(--success-light);
+  border: 2px solid var(--success-border);
+}
+.checkpoint-info {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+}
+.checkpoint-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 0.2rem;
+}
+.checkpoint-desc {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.share-whatsapp-btn {
+  background-color: #25d366;
+  color: #ffffff;
+  border: none;
+  padding: 0.75rem 1.4rem;
+  border-radius: var(--radius-md);
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  box-shadow: 0 4px 10px rgba(37, 211, 102, 0.25);
+  transition: all var(--transition-fast);
+}
+.share-whatsapp-btn:hover {
+  background-color: #1ebd5a;
+  transform: translateY(-2px);
+}
+
+.share-email-btn {
+  background-color: #3b82f6;
+  color: #ffffff;
+  border: none;
+  padding: 0.75rem 1.4rem;
+  border-radius: var(--radius-md);
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  box-shadow: 0 4px 10px rgba(59, 130, 246, 0.25);
+  transition: all var(--transition-fast);
+}
+.share-email-btn:hover {
+  background-color: #2563eb;
+  transform: translateY(-2px);
+}
+
+.shabbat-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #091e3a 0%, #1e3a8a 100%);
+  color: #ffffff;
+  z-index: 99999;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 2rem;
+  box-sizing: border-box;
+}
+.shabbat-overlay.active {
+  display: flex;
+}
+.shabbat-card {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-lg);
+  padding: 3rem 2rem;
+  max-width: 600px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+}
+.shabbat-candles {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+.shabbat-title {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #fef08a;
+  margin-bottom: 1rem;
+}
+.shabbat-desc {
+  font-size: 1.25rem;
+  line-height: 1.6;
+  color: #e2e8f0;
+  margin-bottom: 1.5rem;
 }
