@@ -1,18 +1,23 @@
 /**
- * מאמן ה-AI של דניאל v3.0 - מנוע מלא, בטוח ונקי
+ * מאמן ה-AI של דניאל v3.0 - מנוע האפליקציה המלא והמודולרי
  * 
- * תכונות מרכזיות:
- * 1. מסלול מודרג ונקי של 10 יחידות מותאמות אישית לדניאל (ללא כפילויות).
- * 2. תחנת מבחן שלב (Checkpoint) כל 2 יחידות עם סף מעבר מחייב של 85+.
- * 3. בנק שאלות מתחלפות ואקראיות (4 שאלות נבחרות בכל הרצה + ערבוב תשובות).
- * 4. שיתוף מהיר לאבא ב-WhatsApp בקליק אחד בסיום כל יחידה ומבחן.
- * 5. נעילת שבת אוטומטית (שישי 16:30 עד מוצ"ש 20:30) עם אפשרות מעקף מלווה.
- * 6. ממשק ניהול סמוי ומוגן PIN (#admin) עם שרשרת Fallback רב-מודלית (Gemini, Groq, Ollama).
- * 7. מיגרציה בטוחה ושקטה המשמרת מפתחות API קיימים מכל גרסאות העבר.
+ * ארכיטקטורה מנותקת תלויות (Decoupled Scalable Architecture):
+ * 1. שכבת הנתונים נשלפת מ-curriculum_data.js (Single Source of Truth).
+ * 2. מנגנון Preserve & Merge חכם: משמר 100% מההתקדמות והציונים של דניאל מ-localStorage,
+ *    וממזג אוטומטית יחידות חדשות שנוספות ב-Git מבלי לדרוס שום היסטוריה.
+ * 3. פדגוגיית 4 השלבים המשודרגת:
+ *    - שלב 1: המחשה מוחשית Side-by-Side.
+ *    - שלב 2: הכלל שלמדנו + אינדיקטור "רמזור ה-AI" (ירוק, צהוב, אדום).
+ *    - שלב 3: אסטרטגיה ובחירה לפני ביצוע.
+ *    - שלב 4: משימת 4 החלקים: ביצוע -> הבנה -> העברה ("שנה דבר אחד") -> שיקוף אישי.
+ * 4. מבחני שלב (Checkpoints) מבוססי סיטואציות חיים עם בנק שאלות מתחלף ורף 85+.
+ * 5. כפתור "מצב רגוע" (Calm Mode) לוויסות והרגעת עומסים.
+ * 6. נעילת שבת אוטומטית (שישי 16:30 עד מוצ"ש 20:30) עם מעקף מלווה.
+ * 7. ממשק ניהול סמוי (#admin) עם עורך יחידות חזותי ללא קוד, מחולל AI וכפתור העתקת JSON ל-Git.
  */
 
 // ============================================================================
-// 1. קבועים, מפתחות אחסון ובנק היחידות הנקי (Clean v3 Units)
+// 1. קבועים, מפתחות אחסון ומצב האפליקציה
 // ============================================================================
 
 const STORAGE_KEY = 'DANIEL_AI_V3_CLEAN';
@@ -24,535 +29,27 @@ const LEGACY_STORAGE_KEYS = [
 ];
 const ADMIN_PIN_DEFAULT = '1234';
 
-// 10 יחידות לימוד מעשיות, עשירות, מכבדות ומותאמות לסביבת עבודה, יצירה ועצמאות
-const DEFAULT_CURRICULUM_UNITS = [
-  {
-    id: 'unit_1',
-    title: 'איך מבקשים מה-AI תשובה פשוטה וקצרה',
-    category: 'בסיס ופשטות',
-    goal: 'ללמוד לבקש מה-AI הסבר קצר של 2 משפטים במקום לקבל הרצאה ארוכה ומבלבלת.',
-    isUnlocked: true,
-    isCompleted: false,
-    step1_demo: {
-      badPrompt: 'מה זה ענן במחשב?',
-      badResult: 'מחשוב ענן הינו מודל המאפשר גישה לפי דרישה למאגר משאבים וירטואליים שיתופיים, שרתים ואחסון המנוהלים ברשת...',
-      goodPrompt: 'תסביר לי ב-2 משפטים קצרים ובמילים פשוטות: מה זה ענן במחשב?',
-      goodResult: 'ענן זה כמו דיסק-און-קי ענקי שנמצא באינטרנט. הקבצים והתמונות שלך נשמרים שם בטוח, ואתה יכול לפתוח אותם מכל מחשב וטלפון.'
-    },
-    step2_takeaway: 'כשכותבים ל-AI "ב-2 משפטים קצרים ובמילים פשוטות", מקבלים תשובה שקל להבין מיד!',
-    step3_quiz: {
-      question: 'איך הכי כדאי לבקש מה-AI להסביר משהו חדש?',
-      options: [
-        { text: 'לבקש: "תסביר לי ב-2 משפטים קצרים ובמילים פשוטות"', isCorrect: true, explanation: 'בדיוק! זה גורם ל-AI לענות קצר, ברור ולעניין.' },
-        { text: 'לכתוב רק מילה אחת ולא להסביר מה רוצים', isCorrect: false, explanation: 'אם לא נגדיר לו, ה-AI עלול לכתוב תשובה ארוכה מדי ומסובכת.' }
-      ]
-    },
-    step4_action: {
-      prompt: 'תסביר לי ב-2 משפטים קצרים ובמילים פשוטות: מה זה אינטרנט?',
-      doText: 'העתק את הפרומפט ובדוק כמה קל ופשוט לבקש נכון:'
-    }
-  },
-  {
-    id: 'unit_2',
-    title: 'ניסוח הודעת וואטסאפ מכבדת על איחור לעבודה',
-    category: 'עבודה ותקשורת',
-    goal: 'להיעזר ב-AI לניסוח הודעה מהירה ומכבדת למנהל או למדריך כשיש פקק או עיכוב.',
-    isUnlocked: false,
-    isCompleted: false,
-    step1_demo: {
-      badPrompt: 'אני מאחר',
-      badResult: 'מתי תגיע? איפה אתה? למה אתה לא מודיע מסודר?',
-      goodPrompt: 'תנסח לי הודעת וואטסאפ מנומסת של 2 משפטים למנהל שלי, שאני מאחר ב-20 דקות בגלל פקק באוטובוס',
-      goodResult: 'בוקר טוב! לצערי יש פקק חריג בדרך ואאחר בכ-20 דקות. מתנצל על העיכוב ואעדכן ברגע שאגיע לעבודה.'
-    },
-    step2_takeaway: 'הודעה טובה כוללת: ברכת שלום, כמה זמן נאחר, סיבה קצרה, והתנצלות מנומסת.',
-    step3_quiz: {
-      question: 'מה חשוב שיהיה בהודעה למנהל כשמאחרים?',
-      options: [
-        { text: 'ברכת בוקר טוב, כמה דקות איחור ועדכון מתי מגיעים', isCorrect: true, explanation: 'נכון מאוד! זה מראה על אחריות, בגרות ונימוס.' },
-        { text: 'לא לשלוח כלום ולקוות שאף אחד לא ישים לב', isCorrect: false, explanation: 'לא כדאי! מנהלים מעריכים מאוד הודעה מוקדמת.' }
-      ]
-    },
-    step4_action: {
-      prompt: 'תנסח לי הודעת וואטסאפ מנומסת של 2 משפטים למנהל שלי, שאני מעט מתעכב ואגיע ב-08:30',
-      doText: 'העתק את ההודעה ובדוק איך הניסוח המנומס מרגיע את המצב:'
-    }
-  },
-  {
-    id: 'unit_3',
-    title: 'כלל הברזל: שמירה על פרטיות ומידע אישי',
-    category: 'בטיחות וסייבר',
-    goal: 'ללמוד איזה מידע אסור בשום אופן לכתוב ל-AI כדי לשמור על עצמנו בטוחים ברשת.',
-    isUnlocked: false,
-    isCompleted: false,
-    step1_demo: {
-      badPrompt: 'הנה תעודת הזהות שלי 012345678 והסיסמה שלי 1234, תבדוק לי משהו',
-      badResult: 'אזהרה! לעולם אל תשתף מידע רגיש, סיסמאות או תעודות זהות במערכות צ\'אט ציבוריות!',
-      goodPrompt: 'תסביר לי באופן כללי איך בודקים יתרת חשבון באתר הבנק, בלי לכתוב פרטים אישיים',
-      goodResult: 'נכנסים לאתר הבנק הרשמי, מקלידים את הקוד האישי רק באתר המאובטח של הבנק, ולוחצים על "עובר ושב".'
-    },
-    step2_takeaway: 'לעולם לא רושמים ל-AI: תעודת זהות, סיסמאות, מספר כרטיס אשראי או כתובת מגורים מדויקת!',
-    step3_quiz: {
-      question: 'האם מותר לרשום ל-AI את הסיסמה של המייל שלך כדי שיעזור לך?',
-      options: [
-        { text: 'בשום אופן לא! סיסמה שומרים תמיד בסוד בראש או במחברת בטוחה', isCorrect: true, explanation: 'אלופים! סיסמאות הן סודיות ואף פעם לא נותנים אותן לצ\'אט.' },
-        { text: 'כן, מותר לתת לו כי הוא מחשב חכם', isCorrect: false, explanation: 'ממש לא! ה-AI שומר שיחות ומידע עלול לדלוף החוצה.' }
-      ]
-    },
-    step4_action: {
-      prompt: 'תן לי 3 טיפים קצרים איך לשמור על הסיסמאות שלי בטוחות במחשב',
-      doText: 'העתק ובדוק 3 כללים חשובים לבטיחות הסיסמאות שלך:'
-    }
-  },
-  {
-    id: 'unit_4',
-    title: 'מציאת מתכון קל לאוכל שאוהבים',
-    category: 'כישורי חיים ועצמאות',
-    goal: 'להיעזר ב-AI כדי לקבל מתכון פשוט, ברור ובטוח ב-3 צעדים קצרים להכנה במטבח.',
-    isUnlocked: false,
-    isCompleted: false,
-    step1_demo: {
-      badPrompt: 'איך מכינים טוסט?',
-      badResult: 'להכנת קרוק מסייה צרפתי מסורתי, התחל בהכנת רוטב בשמל מורכב מרוכז על בסיס חמאה אירופאית...',
-      goodPrompt: 'תן לי מתכון פשוט ב-3 צעדים קצרים איך להכין טוסט גבינה צהובה טעים בטוסטר לחיץ',
-      goodResult: '1. מרח חמאה או קטשופ על 2 פרוסות לחם ושים גבינה צהובה באמצע.\n2. הנח בטוסטר הלחיץ וסגור בזהירות.\n3. חכה כ-4 דקות עד שהלחם זהוב והגבינה נמסה. זהירות, חם וטעים!'
-    },
-    step2_takeaway: 'כשמבקשים מתכון, מגדירים: "ב-3 צעדים קצרים" ו"מרכיבים שיש בכל בית".',
-    step3_quiz: {
-      question: 'איך תקבל מה-AI מתכון שקל וכיף להכין לבד?',
-      options: [
-        { text: 'נבקש: "מתכון פשוט ב-3 צעדים קצרים וברורים"', isCorrect: true, explanation: 'בול! כך מקבלים שלבים קלים שקל לעקוב אחריהם במטבח.' },
-        { text: 'נבקש מתכון של מסעדת שף בצרפתית', isCorrect: false, explanation: 'זה יהיה מתכון מסובך עם הרבה חומרים יקרים וקשים.' }
-      ]
-    },
-    step4_action: {
-      prompt: 'תן לי מתכון קל ב-3 שלבים קצרים להכנת סלט ירקות ישראלי טרי וטעים',
-      doText: 'העתק ובדוק את המתכון המהיר והבריא שה-AI מכין לך:'
-    }
-  },
-  {
-    id: 'unit_5',
-    title: 'סיכום טקסט ארוך ומעייף לנקודות קצרות',
-    category: 'מיקוד והבנה',
-    goal: 'ללמוד איך לתת ל-AI הודעה ארוכה ומסובכת ולבקש ממנו לסכם אותה ב-3 נקודות.',
-    isUnlocked: false,
-    isCompleted: false,
-    step1_demo: {
-      badPrompt: 'תקרא את זה: [טקסט של 20 שורות]',
-      badResult: 'קראתי. הטקסט דן בסוגיות שונות של נהלי העבודה בעולם המודרני ובממשקים שונים...',
-      goodPrompt: 'סכם לי את ההודעה הבאה ב-3 נקודות קצרות וברורות: מה צריך לעשות היום בעבודה?',
-      goodResult: '1. להגיע ב-08:30 לחדר הישיבות.\n2. לעבור על טפסי הציוד החדש.\n3. לנקות ולסדר את שולחן העבודה בסיום.'
-    },
-    step2_takeaway: 'כשמבקשים מה-AI "לסכם ב-3 נקודות", חוסכים זמן ומבינים מיד מה העיקר בלי להתעייף.',
-    step3_quiz: {
-      question: 'איך הכי מועיל להיעזר ב-AI כשמקבלים מכתב ארוך מהעירייה או מהבנק?',
-      options: [
-        { text: 'לבקש ממנו לסכם ב-3 נקודות פשוטות מה הם רוצים ממני', isCorrect: true, explanation: 'בדיוק! הוא מחלץ עבורך את השורה התחתונה במהירות.' },
-        { text: 'לבקש ממנו להפוך את המכתב לשיר ראפ באנגלית', isCorrect: false, explanation: 'זה אולי מצחיק, אבל לא יעזור להבין מה לעשות.' }
-      ]
-    },
-    step4_action: {
-      prompt: 'סכם לי ב-3 נקודות קצרות: למה חשוב לשתות מספיק מים ביום חם?',
-      doText: 'העתק את הפרומפט ובדוק איך ה-AI מסכם ב-3 נקודות קולעות:'
-    }
-  },
-  {
-    id: 'unit_6',
-    title: 'רעיון למתנה נחמדה לחבר או להורים',
-    category: 'יחסים וחברה',
-    goal: 'להשתמש ב-AI כשותף לחשיבה כדי למצוא רעיון משמח למתנה בתקציב שמתאים לנו.',
-    isUnlocked: false,
-    isCompleted: false,
-    step1_demo: {
-      badPrompt: 'מה לקנות לאבא מתנה?',
-      badResult: 'אפשר לקנות שעון יוקרה, רכב חדש, חופשה בהוואי, עניבה, ספר או בושם...',
-      goodPrompt: 'תן לי 2 רעיונות למתנה יפה ומרגשת לאבא שאוהב לשתות קפה ולקרוא עיתון, בתקציב של עד 50 שקלים',
-      goodResult: '1. ספל קפה איכותי ונוח שעליו כתוב "לאבא הכי תותח בעולם".\n2. חבילת קפה מיוחד בטעם שהוא אוהב יחד עם עוגיות קטנות.'
-    },
-    step2_takeaway: 'כשאומרים ל-AI מה האדם אוהב וכמה כסף רוצים להוציא, מקבלים רעיונות בול בפוני!',
-    step3_quiz: {
-      question: 'מה כדאי לכתוב ל-AI כדי לקבל רעיון מושלם למתנה לחבר?',
-      options: [
-        { text: 'מה החבר אוהב לעשות וכמה כסף נרצה להשקיע', isCorrect: true, explanation: 'נכון מאוד! ככה ה-AI מציע משהו מדויק שמתאים לכיס וללב.' },
-        { text: 'לכתוב רק: "מתנה מגניבה"', isCorrect: false, explanation: 'ה-AI לא מכיר את החבר ולא ידע מה הוא אוהב.' }
-      ]
-    },
-    step4_action: {
-      prompt: 'תן לי 2 רעיונות למתנה כיפית לחבר שאוהב לשמוע מוזיקה, בתקציב של עד 40 שקלים',
-      doText: 'העתק את הבקשה ובדוק את הרעיונות המקוריים של ה-AI:'
-    }
-  },
-  {
-    id: 'unit_7',
-    title: 'מתי לא סומכים על ה-AI ובודקים עם אדם',
-    category: 'ביקורתיות ואמת',
-    goal: 'להבין שה-AI לא תמיד צודק, ולדעת מתי חובה לשאול את אבא או מדריך אחראי.',
-    isUnlocked: false,
-    isCompleted: false,
-    step1_demo: {
-      badPrompt: 'יש לי כאב ראש חזק, איזה כדור לקחת וכמה?',
-      badResult: 'קח שילוב של תרופות שונות במינון של 500 מ"ג כל 4 שעות...',
-      goodPrompt: 'יש לי כאב ראש. מה כדאי לבדוק קודם? (תזכורת: לא לקחת תרופות בלי אישור אבא או רופא)',
-      goodResult: 'שתה כוס מים גדולה ונוח בחדר שקט. אם הכאב לא עובר, פנה מיד לאבא, לאמא או לרופא וספר להם איך אתה מרגיש.'
-    },
-    step2_takeaway: 'בנושאי בריאות, תרופות, כסף וחוזים — ה-AI הוא רק כלי עזר. תמיד מתייעצים עם אדם שאנחנו סומכים עליו!',
-    step3_quiz: {
-      question: 'אם ה-AI כותב לך לקחת תרופה מסוימת, מה הדבר הנכון לעשות?',
-      options: [
-        { text: 'בשום אופן לא לקחת לבד! לשאול מיד את אבא, אמא או רופא', isCorrect: true, explanation: 'מעולה! בריאות היא מעל הכל, ולגבי תרופות מדברים רק עם הורים ורופאים.' },
-        { text: 'לקחת מיד כי ה-AI כתב את זה במחשב', isCorrect: false, explanation: 'מסוכן מאוד! AI יכול לטעות ולא מכיר את הגוף שלך.' }
-      ]
-    },
-    step4_action: {
-      prompt: 'תן לי 3 דרכים טבעיות להירגע כשאני מרגיש עומס או לחץ (בלי תרופות)',
-      doText: 'העתק את השאלה ולמד 3 שיטות פשוטות להרגעה ונשימה:'
-    }
-  },
-  {
-    id: 'unit_8',
-    title: 'תכנון יום כיף או סדר יום בשלווה',
-    category: 'התארגנות וניהול זמן',
-    goal: 'להיעזר ב-AI כדי לבנות לו"ז רגוע ונעים ליום חופש, בלי לרוץ ובלי לחץ.',
-    isUnlocked: false,
-    isCompleted: false,
-    step1_demo: {
-      badPrompt: 'מה לעשות בשבת?',
-      badResult: 'תקום ב-05:00, צא למרתון של 20 ק"מ, סע לחיפה, משם לחרמון, בקר ב-8 מוזיאונים וחזור ב-23:00...',
-      goodPrompt: 'תבנה לי תוכנית רגועה ליום שישי בבוקר בין 09:00 ל-12:00, עם ארוחת בוקר וזמן מנוחה',
-      goodResult: '09:00 - ארוחת בוקר טעימה וקפה בנחת.\n10:00 - הליכה קצרה ונעימה בשכונה באוויר הנעים.\n11:00 - מנוחה, שמיעת שירים אהובים והתארגנות רגועה לקראת הצהריים.'
-    },
-    step2_takeaway: 'כשמגדירים ל-AI שעות מדויקות ומבקשים "תוכנית רגועה", מקבלים סדר יום נעים שכיף לממש.',
-    step3_quiz: {
-      question: 'איך נבקש מה-AI לעזור לנו לתכנן יום חופש מוצלח?',
-      options: [
-        { text: 'נגדיר לו את שעות היום ונבקש תוכנית נעימה עם זמני מנוחה', isCorrect: true, explanation: 'מדויק! ככה היום מאוזן ומהנה ולא מרגישים עומס.' },
-        { text: 'נבקש ממנו לדחוס 50 משימות שונות בשעה אחת', isCorrect: false, explanation: 'זה סתם יצור לחץ ועייפות גדולה.' }
-      ]
-    },
-    step4_action: {
-      prompt: 'תבנה לי תוכנית ערב נעימה של שעתיים (19:00 עד 21:00) שכוללת ארוחת ערב קלה ומוזיקה',
-      doText: 'העתק ובדוק איך ה-AI בונה עבורך שגרה שלווה ונעימה:'
-    }
-  },
-  {
-    id: 'unit_9',
-    title: 'ניסוח פנייה מנומסת לשירות לקוחות',
-    category: 'צרכנות נבונה',
-    goal: 'ללמוד איך לנסח הודעה קצרה ומכבדת אם חבילה שהזמנו מתעכבת או אם יש תקלה.',
-    isUnlocked: false,
-    isCompleted: false,
-    step1_demo: {
-      badPrompt: 'איפה החבילה שלי יא גנבים תביאו אותה מיד',
-      badResult: 'פנייתך נחסמה עקב שפה לא הולמת. אנא פנה בשפה מכבדת...',
-      goodPrompt: 'תנסח לי פנייה קצרה ומנומסת של 2 משפטים לשירות לקוחות: החבילה שלי מתעכבת ואשמח לעדכון',
-      goodResult: 'שלום רב, הזמנתי חבילה ומספר המעקב שלה מראה שהיא מתעכבת. אשמח מאוד אם תוכלו לבדוק מתי היא צפויה להגיע. תודה רבה!'
-    },
-    step2_takeaway: 'כשפונים בנימוס וברוגע, נציגי השירות שמחים לעזור ופותרים את הבעיה הרבה יותר מהר!',
-    step3_quiz: {
-      question: 'למה כדאי לכתוב הודעה מנומסת לשירות לקוחות כשמשהו מתעכב?',
-      options: [
-        { text: 'כי אנשים עוזרים בשמחה ובמהירות למי שמדבר אליהם בכבוד ובנועם', isCorrect: true, explanation: 'נכון מאוד! נימוס וכבוד פותחים דלתות ופותרים בעיות.' },
-        { text: 'כי אם נצעק ונקלל נקבל מתנות חינם', isCorrect: false, explanation: 'ממש לא! כעס וצעקות רק תוקעים את העזרה.' }
-      ]
-    },
-    step4_action: {
-      prompt: 'תנסח לי הודעה מנומסת לשירות לקוחות של חברת האינטרנט: הגלישה בבית מעט איטית היום',
-      doText: 'העתק את ההודעה ובדוק כמה נעים ומכבד הניסוח של ה-AI:'
-    }
-  },
-  {
-    id: 'unit_10',
-    title: 'יצירת תמונה מרהיבה בדימיון ובינה מלאכותית',
-    category: 'יצירה וכיף',
-    goal: 'ללמוד איך לתאר ל-AI תמונה בצורה עשירה בצבעים ובפרטים כדי ליצור משהו יפהפה.',
-    isUnlocked: false,
-    isCompleted: false,
-    step1_demo: {
-      badPrompt: 'מכונית',
-      badResult: 'תמונה בסיסית ומשעממת של מכונית אפורה עומדת בחניה...',
-      goodPrompt: 'תאר לי תמונה מרהיבה של ג\'יפ כחול זוהר שנוסע בדיונות זהובות בשקיעה, עם שמיים כתומים וכוכבים ראשונים',
-      goodResult: 'ג\'יפ שטח בצבע כחול מטאלי עוצמתי מטפס על דיונת חול זהובה ורכה. גלגליו מעיפים רסיסי חול בוהקים. ברקע שקיעה מדהימה בגווני אש וכתום, והשמיים נצבעים בכוכבים ראשונים.'
-    },
-    step2_takeaway: 'ככל שמוסיפים צבעים (כחול זוהר, שקיעה כתומה) ופעולה (מטפס על דיונה), התמונה הופכת ליצירת אמנות!',
-    step3_quiz: {
-      question: 'מה הופך בקשה לציור או תיאור תמונה מה-AI למוצלחת ביותר?',
-      options: [
-        { text: 'פירוט של צבעים מיוחדים, אווירה ופרטים מעניינים ברקע', isCorrect: true, explanation: 'אלופים! זה בדיוק הסוד של יוצרי ה-AI המובילים.' },
-        { text: 'לכתוב מילה אחת בלבד כמו "ציור"', isCorrect: false, explanation: 'זה כללי מדי וה-AI לא ידע מה אנחנו מדמיינים.' }
-      ]
-    },
-    step4_action: {
-      prompt: 'תאר לי תמונה קסומה של חללית ירוקה ונוצצת שנוחתת על כוכב לכת סגול עם פרחים זוהרים',
-      doText: 'העתק את הבקשה וראה איזה תיאור קסום וצבעוני ה-AI מייצר לך:'
-    }
+// טעינת בסיס הנתונים מ-curriculum_data.js
+function getBaseCurriculum() {
+  if (typeof getCurriculumData === 'function') {
+    return getCurriculumData();
   }
-];
+  return typeof CURRICULUM_DATA !== 'undefined' ? JSON.parse(JSON.stringify(CURRICULUM_DATA)) : [];
+}
 
-// ============================================================================
-// 2. מבחני השלב המודרגים (Checkpoints) - מבחן כל 2 יחידות עם בנק שאלות מתחלף
-// ============================================================================
-
-const CHECKPOINTS = [
-  {
-    id: 'cp_1',
-    afterUnitIndex: 1, // אחרי יחידות 1 ו-2 (יחידה 2)
-    title: 'מבחן שלב 1: פשטות ותקשורת מכבדת 🎯',
-    description: 'בדיקת הבנה של עקרונות הפשטות וניסוח הודעות מדויקות לעבודה (דרוש ציון 85+ לפתיחת יחידות 3-4)',
-    unlocksUnitIndex: 2, // פותח יחידה 3
-    isPassed: false,
-    lastScore: null,
-    questionBank: [
-      {
-        question: 'איך הכי נכון לבקש מה-AI הסבר על נושא לא מוכר כדי לא להסתבך?',
-        options: [
-          { text: 'לבקש במפורש: "הסבר לי ב-2 משפטים קצרים ובמילים פשוטות"', isCorrect: true },
-          { text: 'לרשום רק מילה אחת ולחכות להסבר של 10 עמודים', isCorrect: false },
-          { text: 'לבקש ממנו להשתמש בכמה שיותר מילים קשות בלועזית', isCorrect: false }
-        ]
-      },
-      {
-        question: 'כשמאחרים לעבודה עקב פקק, מה חובה לכלול בהודעה למנהל?',
-        options: [
-          { text: 'ברכת בוקר טוב, כמה דקות איחור, סיבה קצרה והתנצלות מנומסת', isCorrect: true },
-          { text: 'לשלוח רק סימן שאלה בלי לכתוב כלום', isCorrect: false },
-          { text: 'לא להודיע ולספר רק למחרת מה קרה', isCorrect: false }
-        ]
-      },
-      {
-        question: 'אם ה-AI נתן לך תשובה ארוכה מדי עם מילים שלא הבנת, מה תעשה?',
-        options: [
-          { text: 'אכתוב לו: "זה ארוך ומסובך, תסביר שוב במשפט אחד עם דוגמה פשוטה"', isCorrect: true },
-          { text: 'אסגור את המחשב ואחשוב שאי אפשר להבין כלום', isCorrect: false },
-          { text: 'אעתיק את התשובה המסובכת בלי להבין אותה', isCorrect: false }
-        ]
-      },
-      {
-        question: 'מדוע חשוב לבקש מה-AI "דוגמה יומיומית"?',
-        options: [
-          { text: 'כי דוגמה מוכרת מחברת את הרעיון לחיים ועוזרת לקלוט מיד', isCorrect: true },
-          { text: 'כי המחשב אוהב לכתוב סיפורים דמיוניים', isCorrect: false },
-          { text: 'אין שום הבדל, זה סתם מאריך את הטקסט', isCorrect: false }
-        ]
-      },
-      {
-        question: 'באיזו שעה הכי נכון לשלוח הודעה למנהל על איחור לעבודה?',
-        options: [
-          { text: 'ברגע שיודעים שיש פקק או עיכוב, עוד לפני תחילת המשמרת', isCorrect: true },
-          { text: 'חצי שעה אחרי שהמשמרת כבר הייתה צריכה להתחיל', isCorrect: false },
-          { text: 'בסוף יום העבודה כשחוזרים הביתה', isCorrect: false }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'cp_2',
-    afterUnitIndex: 3, // אחרי יחידות 3 ו-4 (יחידה 4)
-    title: 'מבחן שלב 2: סייבר, פרטיות וכישורי חיים 🎯',
-    description: 'בדיקת הבנה של שמירה על פרטיות ברשת וקבלת מתכונים קלים להכנה (דרוש ציון 85+ לפתיחת יחידות 5-6)',
-    unlocksUnitIndex: 4, // פותח יחידה 5
-    isPassed: false,
-    lastScore: null,
-    questionBank: [
-      {
-        question: 'איזה מהפרטים הבאים אסור בשום אופן לכתוב ל-AI בצ\'אט?',
-        options: [
-          { text: 'מספר תעודת זהות, סיסמה לחשבון ומספר כרטיס אשראי', isCorrect: true },
-          { text: 'שאלות על איך מכינים פסטה בבית', isCorrect: false },
-          { text: 'בקשה לניסוח ברכה ליום הולדת', isCorrect: false }
-        ]
-      },
-      {
-        question: 'מה הדרך הטובה ביותר לבקש מה-AI מתכון לארוחת ערב קלה?',
-        options: [
-          { text: 'לבקש "מתכון ב-3 צעדים קצרים עם מצרכים שיש בכל בית"', isCorrect: true },
-          { text: 'לבקש מתכון צרפתי מסובך שדורש שבוע הכנה', isCorrect: false },
-          { text: 'לכתוב רק "אוכל" בלי שום פירוט', isCorrect: false }
-        ]
-      },
-      {
-        question: 'אם אתר או צ\'אט מבקשים ממך את הסיסמה הסודית של הדוא"ל שלך, מה תעשה?',
-        options: [
-          { text: 'לא נותן בשום פנים ואופן, וקורא לאבא או לאדם מבוגר לבדוק', isCorrect: true },
-          { text: 'רושם לו מיד את הסיסמה בלי לחשוב', isCorrect: false },
-          { text: 'ממציא סיסמה חדשה ושולח לו', isCorrect: false }
-        ]
-      },
-      {
-        question: 'מדוע כדאי להיזהר במטבח כשמכינים טוסט בטוסטר לחיץ?',
-        options: [
-          { text: 'כי המכשיר והגבינה חמים מאוד ויכולים לגרום לכווייה אם לא נזהרים', isCorrect: true },
-          { text: 'כי הטוסטר עלול להשמיע מוזיקה חזקה', isCorrect: false },
-          { text: 'אין שום סכנה בטוסטר, אפשר לגעת בפלטה החמה חופשי', isCorrect: false }
-        ]
-      },
-      {
-        question: 'איפה הכי בטוח לשמור סיסמאות של אתרים חשובים?',
-        options: [
-          { text: 'במחברת אישית בטוחה בבית או בראש, לא במקום גלוי ברשת', isCorrect: true },
-          { text: 'לפרסם אותן בסטטוס בוואטסאפ שכולם יראו', isCorrect: false },
-          { text: 'לכתוב אותן על מדבקה ולהדביק על המסך בעבודה', isCorrect: false }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'cp_3',
-    afterUnitIndex: 5, // אחרי יחידות 5 ו-6 (יחידה 6)
-    title: 'מבחן שלב 3: סיכום מידע, חברה ויחסים 🎯',
-    description: 'בדיקת היכולת לסכם טקסטים ארוכים ולמצוא רעיונות למתנות ורגישות חברתית (ציון 85+ לפתיחת 7-8)',
-    unlocksUnitIndex: 6, // פותח יחידה 7
-    isPassed: false,
-    lastScore: null,
-    questionBank: [
-      {
-        question: 'קיבלת הודעה ארוכה של 30 שורות. איך תבקש מה-AI לתמצת אותה?',
-        options: [
-          { text: 'להדביק את ההודעה ולבקש: "סכם לי ב-3 נקודות קצרות וברורות מה העיקר"', isCorrect: true },
-          { text: 'לבקש ממנו להוסיף עוד 100 שורות של סיפורים', isCorrect: false },
-          { text: 'למחוק אותה מיד בלי לדעת מה כתוב', isCorrect: false }
-        ]
-      },
-      {
-        question: 'כשמחפשים רעיון למתנה לחבר, מה הכי עוזר ל-AI לדייק?',
-        options: [
-          { text: 'לספר לו מה התחביבים של החבר וכמה כסף נרצה להוציא', isCorrect: true },
-          { text: 'לכתוב לו רק: "תביא מתנה יקרה"', isCorrect: false },
-          { text: 'לא לכתוב לו כלום ולחכות שינחש', isCorrect: false }
-        ]
-      },
-      {
-        question: 'אם מישהו בעבודה עונה לך במילה אחת "בסדר", מה הפירוש הסביר ביותר?',
-        options: [
-          { text: 'שהוא עסוק כרגע וענה עניינית, וזה בסדר גמור ולא מעיד על כעס', isCorrect: true },
-          { text: 'שהוא שונא אותי ולעולם לא ידבר איתי יותר', isCorrect: false },
-          { text: 'שצריך לשלוח לו 50 הודעות בבת אחת כדי לבדוק מה קרה', isCorrect: false }
-        ]
-      },
-      {
-        question: 'איזה יתרון יש לסיכום ב-3 נקודות לעומת קריאת דף שלם?',
-        options: [
-          { text: 'זה חוסך מאמץ, מונע הצפה ומאפשר לדעת מיד מה הפעולות הנדרשות', isCorrect: true },
-          { text: 'זה גורם למחשב לפעול לאט יותר', isCorrect: false },
-          { text: 'אין שום יתרון, תמיד עדיף לקרוא הכל שוב ושוב', isCorrect: false }
-        ]
-      },
-      {
-        question: 'מה כדאי לצרף תמיד למתנה שנותנים לאבא או לחבר טוב?',
-        options: [
-          { text: 'פתק ברכה קצר וחם מהלב במילים כנות', isCorrect: true },
-          { text: 'את קבלת הקנייה עם המחיר המדויק', isCorrect: false },
-          { text: 'רשימה של דברים שאנחנו רוצים שהוא יקנה לנו בחזרה', isCorrect: false }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'cp_4',
-    afterUnitIndex: 7, // אחרי יחידות 7 ו-8 (יחידה 8)
-    title: 'מבחן שלב 4: ביקורתיות, תכנון זמן ושלווה 🎯',
-    description: 'בדיקת הבנה של מתי לא סומכים על AI ואיך לבנות סדר יום רגוע (דרוש ציון 85+ לפתיחת יחידות 9-10)',
-    unlocksUnitIndex: 8, // פותח יחידה 9
-    isPassed: false,
-    lastScore: null,
-    questionBank: [
-      {
-        question: 'אם אתה לא מרגיש טוב, האם כדאי לקחת תרופה שה-AI המליץ עליה בצ\'אט?',
-        options: [
-          { text: 'בשום אופן לא! שואלים אך ורק רופא מוסמך או את אבא ואמא', isCorrect: true },
-          { text: 'כן, המחשב יודע הכל על רפואה', isCorrect: false },
-          { text: 'כן, אם התשובה נשמעת יפה ומנומסת', isCorrect: false }
-        ]
-      },
-      {
-        question: 'איך כדאי לבקש מה-AI לבנות תוכנית ליום חופש כדי לא להילחץ?',
-        options: [
-          { text: 'להגדיר את השעות ולבקש במפורש "תוכנית רגועה עם זמני מנוחה"', isCorrect: true },
-          { text: 'לבקש ממנו לדחוס 15 משימות בלי שום הפסקה', isCorrect: false },
-          { text: 'להגיד לו לתכנן יום בלי אוכל ובלי שתייה', isCorrect: false }
-        ]
-      },
-      {
-        question: 'מה זה אומר שבינה מלאכותית לפעמים "הוזה" (מנחשת)?',
-        options: [
-          { text: 'שהיא כותבת משפטים שנשמעים בטוחים ונכונים, אך העובדות בהם שגויות לחלוטין', isCorrect: true },
-          { text: 'שהיא הולכת לישון בלילה', isCorrect: false },
-          { text: 'שהיא חולמת על רובוטים בחלל', isCorrect: false }
-        ]
-      },
-      {
-        question: 'מה עושים כשיש רגע של עומס או לחץ במהלך היום?',
-        options: [
-          { text: 'לוקחים כמה נשימות עמוקות ואיטיות, שותים כוס מים ונחים 5 דקות', isCorrect: true },
-          { text: 'שוברים משהו בחדר וצועקים על כולם', isCorrect: false },
-          { text: 'נשארים בלי לישון כל הלילה', isCorrect: false }
-        ]
-      },
-      {
-        question: 'מי האחראי הבלעדי על ההחלטות החשובות בחיים שלך?',
-        options: [
-          { text: 'אתה יחד עם האנשים הקרובים שאוהבים אותך (כמו אבא והמשפחה)', isCorrect: true },
-          { text: 'תוכנת המחשב של ה-AI', isCorrect: false },
-          { text: 'אנשים זרים באינטרנט', isCorrect: false }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'cp_5',
-    afterUnitIndex: 9, // אחרי יחידות 9 ו-10 (יחידה 10)
-    title: 'מבחן גמר מסכם: צרכנות, יצירתיות ושליטה ב-AI 🏆',
-    description: 'מבחן גמר של כל הידע: צרכנות נבונה, יצירת תמונות מרהיבות ושליטה עצמאית בכלי AI (ציון 85+)',
-    unlocksUnitIndex: null, // סיום המסלול
-    isPassed: false,
-    lastScore: null,
-    questionBank: [
-      {
-        question: 'כשחבילה מתעכבת ופונים לשירות לקוחות, מה הגישה המנצחת?',
-        options: [
-          { text: 'פנייה קצרה, מנומסת ועניינית עם פרטי ההזמנה ואיחולי יום טוב', isCorrect: true },
-          { text: 'שליחת הודעות כועסות עם קללות ואיומים', isCorrect: false },
-          { text: 'לא לפנות בכלל ולוותר על החבילה', isCorrect: false }
-        ]
-      },
-      {
-        question: 'מה הסוד ליצירת תיאור תמונה קסומה ומדהימה בעזרת AI?',
-        options: [
-          { text: 'שילוב של צבעים עשירים, תאורה, פרטים ברורים והאווירה המבוקשת', isCorrect: true },
-          { text: 'לכתוב רק מילה אחת סתמית בלי תיאור', isCorrect: false },
-          { text: 'לבקש מהמחשב לכבות את המסך', isCorrect: false }
-        ]
-      },
-      {
-        question: 'מה למדנו על התפקיד של ה-AI בחיים שלנו?',
-        options: [
-          { text: 'הוא כלי עזר מצוין וסבלני שעוזר לנו לנסח, לחשוב וליצור בקצב שלנו', isCorrect: true },
-          { text: 'הוא יחליף אותנו ויעשה הכל במקומנו בלי שנצטרך לחשוב', isCorrect: false },
-          { text: 'הוא משהו מסוכן שאסור לגעת בו לעולם', isCorrect: false }
-        ]
-      },
-      {
-        question: 'איך הכי נכון להגיב כשה-AI עונה תשובה שלא מוצאת חן בעינינו?',
-        options: [
-          { text: 'לתקן אותו בסבלנות: "לא התכוונתי לזה, תנסח לי שוב בצורה כזו וכזו"', isCorrect: true },
-          { text: 'להיעלב ממנו ולחשוב שהוא כועס עלינו', isCorrect: false },
-          { text: 'לכבות את המחשב מהשקע בכוח', isCorrect: false }
-        ]
-      },
-      {
-        question: 'איזה כלל מבין כללי הזהב שומר עליך הכי הרבה ברשת?',
-        options: [
-          { text: 'אבטחת מידע אישי: סיסמאות ותעודות זהות לעולם לא משתפים בצ\'אט', isCorrect: true },
-          { text: 'לכתוב כמה שיותר מהר בלי לקרוא', isCorrect: false },
-          { text: 'להסכים לכל הצעה שרואים באתרים', isCorrect: false }
-        ]
-      }
-    ]
+function getBaseCheckpoints() {
+  if (typeof getCheckpointsData === 'function') {
+    return getCheckpointsData();
   }
-];
+  return typeof CHECKPOINTS_DATA !== 'undefined' ? JSON.parse(JSON.stringify(CHECKPOINTS_DATA)) : [];
+}
 
-// ============================================================================
-// 3. מצב האפליקציה (State Engine) ומנגנון המיגרציה
-// ============================================================================
+function getBaseClusters() {
+  if (typeof getClustersData === 'function') {
+    return getClustersData();
+  }
+  return typeof CLUSTERS_DATA !== 'undefined' ? JSON.parse(JSON.stringify(CLUSTERS_DATA)) : [];
+}
 
 let appState = {
   version: 3,
@@ -562,9 +59,9 @@ let appState = {
     name: 'דניאל',
     age: 28
   },
-  curriculumUnits: JSON.parse(JSON.stringify(DEFAULT_CURRICULUM_UNITS)),
-  checkpoints: JSON.parse(JSON.stringify(CHECKPOINTS)),
-  needsReinforcementQueue: [],
+  clusters: getBaseClusters(),
+  curriculumUnits: getBaseCurriculum(),
+  checkpoints: getBaseCheckpoints(),
   caregiverNotes: [
     {
       id: 'note_1',
@@ -583,49 +80,85 @@ let appState = {
   feedbackHistory: []
 };
 
-// שחזור ומיגרציה בטוחה
-function performMigrationIfNeeded() {
+// ============================================================================
+// 2. מנגנון Preserve & Merge חכם (סנכרון Git ללא דריסת היסטוריה מקומית)
+// ============================================================================
+
+function performSmartMergeAndMigration() {
   try {
     const rawV3 = localStorage.getItem(STORAGE_KEY);
+    const baseUnits = getBaseCurriculum();
+    const baseCPs = getBaseCheckpoints();
+    const baseClusters = getBaseClusters();
+
+    appState.clusters = baseClusters;
+
     if (rawV3) {
       const parsed = JSON.parse(rawV3);
       if (parsed && typeof parsed === 'object') {
-        // מיזוג זהיר
         if (parsed.user) appState.user = parsed.user;
         if (parsed.apiConfig) appState.apiConfig = { ...appState.apiConfig, ...parsed.apiConfig };
         if (Array.isArray(parsed.caregiverNotes)) appState.caregiverNotes = parsed.caregiverNotes;
         if (Array.isArray(parsed.quizHistory)) appState.quizHistory = parsed.quizHistory;
         if (Array.isArray(parsed.feedbackHistory)) appState.feedbackHistory = parsed.feedbackHistory;
 
-        // מיזוג יחידות: שומרים על 10 היחידות הנקיות ומסמנים מה שכבר הושלם
+        // מיזוג חכם של היחידות:
+        // לוקחים תמיד את כל היחידות המעודכנות מ-curriculum_data.js (כולל יחידות חדשות שנוספו ב-Git)
+        // ומשמרים את הסטטוס (isCompleted, feedback) של יחידות שדניאל כבר ביצע!
+        const completedMap = new Map();
         if (Array.isArray(parsed.curriculumUnits)) {
-          const completedIds = new Set(parsed.curriculumUnits.filter(u => u.isCompleted).map(u => u.id));
-          appState.curriculumUnits.forEach((unit, idx) => {
-            if (completedIds.has(unit.id) || (parsed.curriculumUnits[idx] && parsed.curriculumUnits[idx].isCompleted)) {
-              unit.isCompleted = true;
+          parsed.curriculumUnits.forEach(u => {
+            if (u.isCompleted) completedMap.set(u.id, { isCompleted: true, feedback: u.feedback });
+          });
+        }
+
+        appState.curriculumUnits = baseUnits.map(unit => {
+          if (completedMap.has(unit.id)) {
+            const saved = completedMap.get(unit.id);
+            return { ...unit, isCompleted: true, feedback: saved.feedback };
+          }
+          return unit;
+        });
+
+        // יחידות מותאמות אישית שהמלווה הוסיף באופן מקומי
+        if (Array.isArray(parsed.curriculumUnits)) {
+          const customUnits = parsed.curriculumUnits.filter(u => u.id && u.id.startsWith('unit_custom_'));
+          customUnits.forEach(cu => {
+            if (!appState.curriculumUnits.some(u => u.id === cu.id)) {
+              appState.curriculumUnits.push(cu);
             }
           });
         }
 
         // מיזוג מבחני שלב
-        if (Array.isArray(parsed.checkpoints) && parsed.checkpoints.length === CHECKPOINTS.length) {
-          appState.checkpoints = parsed.checkpoints;
-        } else {
-          appState.checkpoints = JSON.parse(JSON.stringify(CHECKPOINTS));
+        const cpMap = new Map();
+        if (Array.isArray(parsed.checkpoints)) {
+          parsed.checkpoints.forEach(cp => {
+            if (cp.isPassed) cpMap.set(cp.id, { isPassed: true, lastScore: cp.lastScore });
+          });
         }
 
+        appState.checkpoints = baseCPs.map(cp => {
+          if (cpMap.has(cp.id)) {
+            const saved = cpMap.get(cp.id);
+            return { ...cp, isPassed: true, lastScore: saved.lastScore };
+          }
+          return cp;
+        });
+
+        saveAppState();
         return;
       }
     }
 
-    // אם אין V3, בודקים גרסאות ישנות כדי לחלץ מפתחות API ונתונים חשובים
+    // אם אין V3, בודקים גרסאות ישנות כדי לחלץ מפתחות API ופתקים
     for (const legacyKey of LEGACY_STORAGE_KEYS) {
       const legacyRaw = localStorage.getItem(legacyKey);
       if (legacyRaw) {
         try {
           const legacyData = JSON.parse(legacyRaw);
           if (legacyData && typeof legacyData === 'object') {
-            console.log(`[Migration] Migrating critical settings from ${legacyKey}...`);
+            console.log(`[Migration] Migrating settings from legacy storage (${legacyKey})...`);
             if (legacyData.apiConfig) {
               appState.apiConfig.geminiKey = legacyData.apiConfig.geminiKey || appState.apiConfig.geminiKey;
               appState.apiConfig.groqKey = legacyData.apiConfig.groqKey || appState.apiConfig.groqKey;
@@ -650,7 +183,7 @@ function performMigrationIfNeeded() {
       }
     }
   } catch (err) {
-    console.error('Critical error in migration:', err);
+    console.error('Critical error in smart merge and migration:', err);
   }
 }
 
@@ -663,7 +196,7 @@ function saveAppState() {
 }
 
 // ============================================================================
-// 4. שירותי קול, צלילים ושיתוף וואטסאפ (Sound & Sharing Services)
+// 3. שירותי קול, צלילים ושיתוף וואטסאפ (Sound & Sharing Services)
 // ============================================================================
 
 const SoundService = {
@@ -764,7 +297,6 @@ function copyToClipboard(text, btnElement) {
       }, 2000);
     });
   } else {
-    // Fallback
     const ta = document.createElement('textarea');
     ta.value = text;
     document.body.appendChild(ta);
@@ -776,7 +308,7 @@ function copyToClipboard(text, btnElement) {
 }
 
 // ============================================================================
-// 5. מנגנון נעילת שבת אוטומטי (Shabbat Lockout Engine)
+// 4. נעילת שבת ומצב רגוע (Shabbat Lock & Calm Mode)
 // ============================================================================
 
 function isShabbatNow() {
@@ -785,9 +317,7 @@ function isShabbatNow() {
   const hour = now.getHours();
   const minute = now.getMinutes();
   const timeVal = hour + minute / 60;
-  // שישי מ-16:30 ואילך
   if (day === 5 && timeVal >= 16.5) return true;
-  // שבת עד 20:30
   if (day === 6 && timeVal < 20.5) return true;
   return false;
 }
@@ -803,8 +333,24 @@ function checkAndApplyShabbatLock() {
   }
 }
 
+function openCalmModal() {
+  const modal = document.getElementById('calm-modal');
+  if (modal) {
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
+}
+
+function closeCalmModal() {
+  const modal = document.getElementById('calm-modal');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+}
+
 // ============================================================================
-// 6. ניהול תצוגות (View Switching)
+// 5. ניהול תצוגות (View Switching)
 // ============================================================================
 
 function showView(viewName) {
@@ -823,7 +369,7 @@ function showView(viewName) {
 }
 
 // ============================================================================
-// 7. תצוגת מסלול המיומנויות של דניאל (Roadmap & Gatekeeping)
+// 6. תצוגת מסלול המיומנויות של דניאל (Roadmap & Gatekeeping)
 // ============================================================================
 
 function renderRoadmap() {
@@ -833,19 +379,39 @@ function renderRoadmap() {
 
   const units = appState.curriculumUnits;
   let completedCount = 0;
+  let currentClusterId = null;
 
   units.forEach((unit, idx) => {
     if (unit.isCompleted) completedCount++;
 
-    // חישוב נעילה מודרגת:
+    // הצגת כותרת אשכול תוכן כשמתחלף אשכול
+    if (unit.clusterId && unit.clusterId !== currentClusterId) {
+      currentClusterId = unit.clusterId;
+      const clusterObj = (appState.clusters || []).find(c => c.id === currentClusterId);
+      if (clusterObj) {
+        const clusterHeader = document.createElement('div');
+        clusterHeader.className = 'cluster-header-card';
+        clusterHeader.style.cssText = 'background: #f1f5f9; border-right: 4px solid #2563eb; padding: 0.85rem 1.25rem; border-radius: var(--radius-sm); margin: 1.4rem 0 0.4rem 0;';
+        clusterHeader.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <span style="font-size: 1.4rem;">${clusterObj.icon || '📚'}</span>
+            <div>
+              <h3 style="margin: 0; font-size: 1.2rem; color: #1e293b;">${clusterObj.title}</h3>
+              <p style="margin: 0.2rem 0 0 0; font-size: 0.95rem; color: #64748b;">${clusterObj.description}</p>
+            </div>
+          </div>
+        `;
+        container.appendChild(clusterHeader);
+      }
+    }
+
+    // חישוב פתיחת יחידות מודרגת:
     // יחידה 0 תמיד פתוחה.
-    // יחידה אי-זוגית (1, 3, 5...) נפתחת אם היחידה שלפניה הושלמה.
-    // יחידה זוגית (2, 4, 6, 8...) נפתחת רק אם היחידה שלפניה הושלמה וגם מבחן השלב שלפניה עבר בציון 85+!
+    // יחידה נפתחת אם היחידה שלפניה הושלמה, ובמידה והיה מבחן שלב ביניהן – הוא חייב להיות בציון 85+ (isPassed)!
     let isUnlocked = false;
     if (idx === 0) {
       isUnlocked = true;
     } else if (idx % 2 === 0) {
-      // יחידה 3 (idx=2), יחידה 5 (idx=4)... דורשת מעבר מבחן שלב שלפניה
       const prevCp = (appState.checkpoints || []).find(c => c.afterUnitIndex === idx - 1);
       isUnlocked = units[idx - 1].isCompleted && (prevCp ? prevCp.isPassed : true);
     } else {
@@ -868,12 +434,18 @@ function renderRoadmap() {
       statusBadgeText = 'פתוח עכשיו';
     }
 
+    // תגית רמזור AI
+    const trafficEmoji = unit.trafficLight === 'red' ? '🔴' : unit.trafficLight === 'yellow' ? '🟡' : '🟢';
+
     card.className = `unit-card ${statusClass}`;
     card.innerHTML = `
       <div class="unit-card-info">
         <span class="unit-status-icon">${statusIcon}</span>
         <div>
-          <span class="badge-tag" style="margin-bottom: 0.35rem; display: inline-block;">${unit.category || 'מיומנות מעשית'}</span>
+          <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.35rem;">
+            <span class="badge-tag">${unit.category || 'מיומנות מעשית'}</span>
+            <span style="font-size: 0.9rem;" title="${unit.trafficLightDesc || 'רמזור AI'}">${trafficEmoji}</span>
+          </div>
           <h3 class="unit-name-title">${unit.title}</h3>
           <span class="unit-skills-preview">${unit.goal}</span>
         </div>
@@ -915,7 +487,7 @@ function renderRoadmap() {
           <span style="font-size: 2.2rem; line-height: 1;">${cp.isPassed ? '🏆' : (isCpUnlocked ? '🎯' : '🔒')}</span>
           <div>
             <span class="badge-tag" style="background:#fef3c7;color:#b45309;display:inline-block;margin-bottom:0.35rem;">
-              ${cp.isPassed ? `עברת בהצלחה (ציון ${cp.lastScore}) ✓` : 'מבחן שלב מעשי (דרוש ציון 85+)'}
+              ${cp.isPassed ? `עברת בהצלחה (ציון ${cp.lastScore}) ✓` : 'סימולציית חיים מעשית (דרוש ציון 85+)'}
             </span>
             <h3 class="checkpoint-title">${cp.title}</h3>
             <span class="checkpoint-desc">${cp.description}</span>
@@ -942,15 +514,23 @@ function renderRoadmap() {
     }
   });
 
+  // עדכון תגי הסטטוס העצמאיים (ללא גלישת מילים וללא חיתוך מלבנים)
   const passedCPs = (appState.checkpoints || []).filter(c => c.isPassed).length;
-  const pill = document.getElementById('total-progress-pill');
-  if (pill) pill.textContent = `${completedCount} מתוך ${units.length} יחידות הושלמו | ${passedCPs} מתוך ${(appState.checkpoints || []).length} מבחני שלב`;
+  const unitsText = document.getElementById('units-stat-text');
+  if (unitsText) unitsText.textContent = `${completedCount} מתוך ${units.length} יחידות`;
+
+  const cpText = document.getElementById('checkpoints-stat-text');
+  if (cpText) cpText.textContent = `${passedCPs} מתוך ${(appState.checkpoints || []).length} מבחנים`;
+
+  const legacyPill = document.getElementById('total-progress-pill');
+  if (legacyPill) legacyPill.textContent = `${completedCount} מתוך ${units.length} יחידות | ${passedCPs} מבחנים`;
+
   const bar = document.getElementById('weekly-progress-bar');
   if (bar) bar.style.width = `${(completedCount / units.length) * 100}%`;
 }
 
 // ============================================================================
-// 8. נגן יחידת הלימוד ב-4 שלבים (Interactive 4-Step Player)
+// 7. נגן יחידת הלימוד ב-4 שלבים משימתיים (4-Step Mission Unit Player)
 // ============================================================================
 
 function renderUnitPlayer(unitId) {
@@ -987,11 +567,11 @@ function renderUnitPlayer(unitId) {
   const ttsDemoBtn = document.getElementById('tts-demo-btn');
   if (ttsDemoBtn) {
     ttsDemoBtn.onclick = () => {
-      SoundService.speakText(`שלב ראשון, המחשה: שים לב להבדל בין שתי הבקשות. כשאומרים: ${unit.step1_demo.badPrompt}, מקבלים תשובה ארוכה. כשאומרים מדויק: ${unit.step1_demo.goodPrompt}, מקבלים תשובה קצרה ומעולה.`);
+      SoundService.speakText(`שלב ראשון, המחשה: שים לב להבדל בין שתי הבקשות. כשאומרים: ${unit.step1_demo.badPrompt}, מקבלים תשובה ארוכה ומבלבלת. כשאומרים מדויק: ${unit.step1_demo.goodPrompt}, מקבלים תשובה קצרה ומעולה.`);
     };
   }
 
-  // שלב 2: הסבר קצר ומאיר עיניים
+  // שלב 2: הסבר קצר + רמזור ה-AI
   const takeawayEl = document.getElementById('unit-takeaway-text');
   if (takeawayEl) takeawayEl.innerHTML = unit.step2_takeaway;
   const ttsExpBtn = document.getElementById('tts-explanation-btn');
@@ -999,13 +579,21 @@ function renderUnitPlayer(unitId) {
     ttsExpBtn.onclick = () => SoundService.speakText(unit.step2_takeaway);
   }
 
-  // שלב 3: וידוא הבנה (Quiz)
-  const quiz = unit.step3_quiz;
+  const trafficBox = document.getElementById('traffic-light-container');
+  const trafficDesc = document.getElementById('traffic-light-desc');
+  if (trafficBox && trafficDesc) {
+    const light = unit.trafficLight || 'green';
+    trafficBox.className = `traffic-light-box ${light}`;
+    trafficDesc.textContent = unit.trafficLightDesc || (light === 'red' ? 'רמזור אדום: חובה להתייעץ עם אדם קרוב!' : light === 'yellow' ? 'רמזור צהוב: בודקים במקור שני!' : 'רמזור ירוק: אפשר להשתמש לבד בכיף!');
+  }
+
+  // שלב 3: אסטרטגיה ובחירה לפני ביצוע (Strategy & Choice before execution)
+  const quizObj = unit.step3_strategy || unit.step3_quiz;
   const quizQEl = document.getElementById('quiz-question-text');
-  if (quizQEl) quizQEl.textContent = quiz.question;
+  if (quizQEl) quizQEl.textContent = quizObj.question;
   const ttsQuizBtn = document.getElementById('tts-quiz-btn');
   if (ttsQuizBtn) {
-    ttsQuizBtn.onclick = () => SoundService.speakText(quiz.question);
+    ttsQuizBtn.onclick = () => SoundService.speakText(quizObj.question);
   }
 
   const quizOptionsContainer = document.getElementById('quiz-options-container');
@@ -1028,7 +616,7 @@ function renderUnitPlayer(unitId) {
     if (actionUnlockedContent) actionUnlockedContent.style.display = 'none';
   }
 
-  quiz.options.forEach((opt) => {
+  quizObj.options.forEach((opt) => {
     const btn = document.createElement('button');
     btn.className = 'quiz-option-btn';
     btn.innerHTML = `
@@ -1045,7 +633,7 @@ function renderUnitPlayer(unitId) {
 
         if (quizFeedbackBox) {
           quizFeedbackBox.className = 'quiz-feedback-box success';
-          quizFeedbackBox.innerHTML = `<span>מעולה דניאל! ${opt.explanation || 'תשובה מדויקת!'} שלב 4 נפתח עבורך כעת! 🌟</span>`;
+          quizFeedbackBox.innerHTML = `<span>מעולה דניאל! ${opt.explanation || 'בחירה נכונה של אסטרטגיה!'} משימת הביצוע נפתחה כעת למטה! 🌟</span>`;
           quizFeedbackBox.style.display = 'block';
         }
 
@@ -1067,7 +655,7 @@ function renderUnitPlayer(unitId) {
 
         if (quizFeedbackBox) {
           quizFeedbackBox.className = 'quiz-feedback-box error';
-          quizFeedbackBox.innerHTML = `<span>לא מדויק: ${opt.explanation || 'נסה שוב לחשוב על הכלל שלמדנו!'} נסה שוב! 💪</span>`;
+          quizFeedbackBox.innerHTML = `<span>לא מדויק: ${opt.explanation || 'חשוב שוב מה הכלל שלמדנו!'} נסה שוב! 💪</span>`;
           quizFeedbackBox.style.display = 'block';
         }
 
@@ -1083,28 +671,115 @@ function renderUnitPlayer(unitId) {
     if (quizOptionsContainer) quizOptionsContainer.appendChild(btn);
   });
 
-  // שלב 4: עשייה מעשית
-  const promptDisplay = document.getElementById('action-prompt-display');
-  if (promptDisplay) promptDisplay.textContent = `"${unit.step4_action.prompt}"`;
-  const doInstruction = document.getElementById('action-do-instruction');
-  if (doInstruction) doInstruction.textContent = unit.step4_action.doText;
+  // שלב 4: משימת 4 החלקים המלאה (ביצוע -> הבנה -> העברה -> שיקוף)
+  const missionData = unit.step4_mission || {
+    executePrompt: unit.step4_action?.prompt || '',
+    doText: unit.step4_action?.doText || 'העתק את הפרומפט והרץ ב-AI:',
+    comprehensionQ: 'מה ביקשת מה-AI לעשות?',
+    comprehensionOpts: [
+      { text: 'לבקש תשובה קצרה ומדויקת', isCorrect: true },
+      { text: 'לכתוב ספר ארוך', isCorrect: false }
+    ],
+    transferPrompt: 'עכשיו שנה מילה אחת בפרומפט ובדוק מה השתנה בתשובה!',
+    teachBackText: 'היום למדתי שכשמבקשים מדויק, מקבלים מענה מושלם.'
+  };
 
-  const ttsActionBtn = document.getElementById('tts-action-btn');
-  if (ttsActionBtn) {
-    ttsActionBtn.onclick = () => SoundService.speakText(`שלב 4: עכשיו תורך. ${unit.step4_action.doText}. הפרומפט הוא: ${unit.step4_action.prompt}`);
-  }
+  const part1 = document.getElementById('mission-part-1');
+  const part2 = document.getElementById('mission-part-2');
+  const part3 = document.getElementById('mission-part-3');
+  const part4 = document.getElementById('mission-part-4');
+
+  // חלק 1: ביצוע
+  const promptDisplay = document.getElementById('action-prompt-display');
+  if (promptDisplay) promptDisplay.textContent = `"${missionData.executePrompt}"`;
+  const doInstruction = document.getElementById('action-do-instruction');
+  if (doInstruction) doInstruction.textContent = missionData.doText;
 
   const copyBtn = document.getElementById('unit-copy-btn');
   if (copyBtn) {
-    copyBtn.onclick = () => copyToClipboard(unit.step4_action.prompt, copyBtn);
+    copyBtn.onclick = () => copyToClipboard(missionData.executePrompt, copyBtn);
   }
 
+  const part1DoneBtn = document.getElementById('part-1-done-btn');
+  if (part1DoneBtn) {
+    part1DoneBtn.onclick = () => {
+      SoundService.playSuccessSound();
+      if (part2) {
+        part2.style.display = 'block';
+        part2.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    };
+  }
+
+  // חלק 2: הבנה
+  const compQ = document.getElementById('mission-comprehend-q');
+  if (compQ) compQ.textContent = missionData.comprehensionQ;
+  const compOptions = document.getElementById('mission-comprehend-options');
+  const compFeedback = document.getElementById('mission-comprehend-feedback');
+
+  if (compOptions) {
+    compOptions.innerHTML = '';
+    (missionData.comprehensionOpts || []).forEach(opt => {
+      const btn = document.createElement('button');
+      btn.className = 'quiz-option-btn';
+      btn.innerHTML = `<span class="quiz-btn-icon">⚪</span><span class="quiz-btn-text">${opt.text}</span>`;
+      btn.onclick = () => {
+        if (opt.isCorrect) {
+          btn.classList.add('correct');
+          btn.querySelector('.quiz-btn-icon').textContent = '✓';
+          SoundService.playSuccessSound();
+          if (compFeedback) {
+            compFeedback.className = 'quiz-feedback-box success';
+            compFeedback.innerHTML = '<span>בול דניאל! הבנת מצוין מה ביקשנו! חלק 3 נפתח כעת! 🎯</span>';
+            compFeedback.style.display = 'block';
+          }
+          if (part3) {
+            part3.style.display = 'block';
+            part3.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        } else {
+          btn.classList.add('incorrect');
+          btn.querySelector('.quiz-btn-icon').textContent = '✕';
+          SoundService.playErrorSound();
+          if (compFeedback) {
+            compFeedback.className = 'quiz-feedback-box error';
+            compFeedback.innerHTML = '<span>לא מדויק, נסה לחשוב שוב מה היה כתוב בפרומפט.</span>';
+            compFeedback.style.display = 'block';
+          }
+        }
+      };
+      compOptions.appendChild(btn);
+    });
+  }
+
+  // חלק 3: העברה ("שנה דבר אחד")
+  const transferDisplay = document.getElementById('mission-transfer-display');
+  if (transferDisplay) transferDisplay.textContent = missionData.transferPrompt;
+  const part3DoneBtn = document.getElementById('part-3-done-btn');
+  if (part3DoneBtn) {
+    part3DoneBtn.onclick = () => {
+      SoundService.playSuccessSound();
+      if (part4) {
+        part4.style.display = 'block';
+        part4.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    };
+  }
+
+  // חלק 4: שיקוף אישי
+  const teachBackDisplay = document.getElementById('mission-teach-back-display');
+  if (teachBackDisplay) teachBackDisplay.textContent = `💡 ${missionData.teachBackText}`;
+
+  // כפתורי סיום, משוב ושיתוף וואטסאפ
   const finishBtn = document.getElementById('unit-finish-btn');
   const feedbackBox = document.getElementById('unit-feedback-box');
   const ribbon = document.getElementById('unit-completed-ribbon');
   const waBtn = document.getElementById('unit-share-wa-btn');
 
   if (unit.isCompleted) {
+    if (part2) part2.style.display = 'block';
+    if (part3) part3.style.display = 'block';
+    if (part4) part4.style.display = 'block';
     if (finishBtn) finishBtn.style.display = 'none';
     if (feedbackBox) feedbackBox.style.display = 'none';
     if (ribbon) ribbon.style.display = 'flex';
@@ -1115,6 +790,9 @@ function renderUnitPlayer(unitId) {
       };
     }
   } else {
+    if (part2) part2.style.display = 'none';
+    if (part3) part3.style.display = 'none';
+    if (part4) part4.style.display = 'none';
     if (finishBtn) finishBtn.style.display = 'inline-flex';
     if (feedbackBox) feedbackBox.style.display = 'none';
     if (ribbon) ribbon.style.display = 'none';
@@ -1124,6 +802,7 @@ function renderUnitPlayer(unitId) {
       finishBtn.onclick = () => {
         finishBtn.style.display = 'none';
         if (feedbackBox) feedbackBox.style.display = 'block';
+        feedbackBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       };
     }
 
@@ -1152,7 +831,7 @@ function renderUnitPlayer(unitId) {
 }
 
 // ============================================================================
-// 9. מנוע מבחני שלב (Checkpoint Test Engine עם שאלות מתחלפות וסף 85+)
+// 8. מנוע מבחני שלב (Checkpoints - Life Scenarios Engine)
 // ============================================================================
 
 let currentCheckpoint = null;
@@ -1305,12 +984,12 @@ function finishCheckpointTest() {
         <p style="font-size: 1.15rem; color: var(--text-secondary); max-width: 500px; margin: 0 auto 1.5rem auto;">
           ${passed 
             ? 'כל הכבוד דניאל! עברת את מבחן השלב בהצלחה מרובה! השלב הבא במסלול נפתח עבורך כעת.'
-            : `קיבלת ציון ${finalScore}. כדי להמשיך לשלב הבא יש לקבל 85 ומעלה. לא נורא, מכל ניסיון לומדים! לחץ למטה ונעשה את המבחן שוב עם שאלות חדשות.`}
+            : `קיבלת ציון ${finalScore}. כדי להמשיך לשלב הבא יש לקבל 85 ומעלה. לא נורא, מכל ניסיון לומדים! לחץ למטה ונעשה את המבחן שוב עם סיטואציות חדשות.`}
         </p>
 
         ${passed ? `
           <div style="margin: 1.5rem 0;">
-            <button class="share-whatsapp-btn" onclick="shareProgressToWhatsApp('היי אבא! עברתי בהצלחה את ${currentCheckpoint.title} בציון ${finalScore}! 🏆 היחידות הבאות נפתחו!')">
+            <button class="share-whatsapp-btn" onclick="shareProgressToWhatsApp('היי אבא! עברתי בהצלחה את ${currentCheckpoint.title} בציון ${finalScore}! 🏆 השלבים הבאים נפתחו!')">
               <span>שלח עדכון לאבא ב-WhatsApp 📲</span>
             </button>
           </div>
@@ -1322,7 +1001,7 @@ function finishCheckpointTest() {
   if (footer) {
     footer.innerHTML = passed
       ? `<button class="primary-btn" onclick="showView('roadmap');renderRoadmap();" style="width: 100%;"><span>מעולה! חזרה למסלול האישי 🌟</span></button>`
-      : `<button class="primary-btn" onclick="openCheckpointTest(currentCheckpoint)" style="width: 100%;"><span>נסה שוב עם שאלות חדשות 🔄</span></button>`;
+      : `<button class="primary-btn" onclick="openCheckpointTest(currentCheckpoint)" style="width: 100%;"><span>נסה שוב עם סיטואציות חדשות 🔄</span></button>`;
   }
 
   SoundService.speakText(passed 
@@ -1332,18 +1011,16 @@ function finishCheckpointTest() {
 }
 
 // ============================================================================
-// 10. שירותי בינה מלאכותית (AIService - Multi-Model Fallback & Generator)
+// 9. שירותי בינה מלאכותית (AIService - Multi-Model Fallback & Generator)
 // ============================================================================
 
 const AIService = {
-  // שרשרת מודלים פעילה ומעודכנת ל-Gemini (ללא 1.5 שהוצא משימוש)
   geminiModels: [
     'gemini-2.5-flash',
     'gemini-3.6-flash',
     'gemini-2.5-pro'
   ],
 
-  // מודלים פעילים ב-Groq
   groqModels: [
     'openai/gpt-oss-20b',
     'qwen/qwen3.8-27b',
@@ -1437,27 +1114,35 @@ const AIService = {
   "title": "שם היחידה בעברית",
   "category": "קטגוריה (למשל: עבודה ותקשורת / כישורי חיים / יצירה)",
   "goal": "מטרת היחידה במשפט אחד פשוט",
+  "trafficLight": "green",
+  "trafficLightDesc": "ירוק: אפשר להשתמש לבד. / צהוב: בודקים במקור שני / אדום: חובה אדם",
   "step1_demo": {
-    "badPrompt": "דוגמה לבקשה לא מוצלחת או כללית מדי",
+    "badPrompt": "דוגמה לבקשה כללית או לא טובה",
     "badResult": "תשובה ארוכה, מסובכת או מבלבלת שה-AI נותן",
     "goodPrompt": "דוגמה לבקשה מדויקת ופשוטה",
     "goodResult": "תשובה קצרה, נעימה וממוקדת בדיוק במה שרצינו"
   },
   "step2_takeaway": "הסבר תמציתי ומאיר עיניים של 1-2 משפטים מדוע הבקשה הטובה הצליחה",
-  "step3_quiz": {
-    "question": "שאלת הבנה ברורה עם 2 אפשרויות",
+  "step3_strategy": {
+    "question": "שאלת בחירה ואסטרטגיה לפני ביצוע",
     "options": [
-      { "text": "התשובה הנכונה", "isCorrect": true, "explanation": "הסבר קצר ומעודד" },
-      { "text": "התשובה השגויה", "isCorrect": false, "explanation": "הסבר עדין מדוע זה לא מדויק" }
+      { "text": "התשובה הנכונה", "isCorrect": true, "explanation": "הסבר מעודד" },
+      { "text": "התשובה השגויה", "isCorrect": false, "explanation": "הסבר עדין" }
     ]
   },
-  "step4_action": {
-    "prompt": "משפט מוכן להעתקה ולתרגול",
-    "doText": "הוראה קצרה ומעשית מה לעשות"
+  "step4_mission": {
+    "executePrompt": "משפט מוכן להעתקה ולתרגול",
+    "doText": "הוראה קצרה ומעשית מה לעשות",
+    "comprehensionQ": "מה ביקשת מה-AI לעשות?",
+    "comprehensionOpts": [
+      { "text": "תשובה נכונה", "isCorrect": true },
+      { "text": "תשובה שגויה", "isCorrect": false }
+    ],
+    "transferPrompt": "משימת העברה: שנה מילה אחת ובדוק מה השתנה",
+    "teachBackText": "היום למדתי ש..."
   }
 }`;
 
-    // 1. ניסיון ב-Gemini
     if (appState.apiConfig.geminiKey) {
       for (const model of this.geminiModels) {
         if (progressCb) progressCb(`מייצר יחידה באמצעות Gemini (${model})...`);
@@ -1487,7 +1172,6 @@ const AIService = {
       }
     }
 
-    // 2. ניסיון ב-Groq
     if (appState.apiConfig.groqKey) {
       for (const model of this.groqModels) {
         if (progressCb) progressCb(`מייצר יחידה באמצעות Groq (${model})...`);
@@ -1523,7 +1207,6 @@ const AIService = {
       }
     }
 
-    // 3. Fallback מקומי מחולל יחידה
     if (progressCb) progressCb('מייצר יחידה מובנית במנוע המקומי...');
     const localUnit = this.synthesizeLocalUnit(topicPrompt);
     return { unit: localUnit, provider: 'מנוע למידה פנימי' };
@@ -1532,7 +1215,6 @@ const AIService = {
   cleanAndParseJSON(text) {
     try {
       let clean = text.trim();
-      // הסרת בלוקי markdown של ```json ו-```
       if (clean.includes('```')) {
         clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
       }
@@ -1551,8 +1233,10 @@ const AIService = {
   synthesizeLocalUnit(topic) {
     return {
       title: `${topic} - צעד אחר צעד`,
-      category: 'מיומנות מעשית אישית',
+      category: 'מיומנות אישית',
       goal: `ללמוד איך להיעזר ב-AI בצורה פשוטה, ממוקדת וברורה בנושא: ${topic}.`,
+      trafficLight: 'green',
+      trafficLightDesc: 'ירוק: אפשר להשתמש לבד. רעיונות ופשטות.',
       step1_demo: {
         badPrompt: `ספר לי על ${topic}`,
         badResult: `נושא ה-${topic} הינו תחום נרחב הכולל שלל נדבכים מתקדמים ותהליכים תאורטיים מורכבים...`,
@@ -1560,29 +1244,35 @@ const AIService = {
         goodResult: `${topic} הוא נושא מעשי ושימושי. כשמבקשים הסבר פשוט, אפשר להבין אותו מיד ולהשתמש בו ביום-יום בקלות.`
       },
       step2_takeaway: `כשמבקשים מה-AI להתמקד ב-"2 משפטים פשוטים" לגבי ${topic}, מקבלים את השורה התחתונה מיד!`,
-      step3_quiz: {
+      step3_strategy: {
         question: `מה הדרך הטובה ביותר ללמוד על ${topic} בלי להתבלבל?`,
         options: [
           { text: 'לבקש הסבר קצר של 2 משפטים עם דוגמה פשוטה', isCorrect: true, explanation: 'נכון מאוד! זה מאפשר הבנה הדרגתית ונעימה.' },
           { text: 'לקרוא מאמר אקדמי ארוך ומעייף', isCorrect: false, explanation: 'זה עלול להציף ולעייף.' }
         ]
       },
-      step4_action: {
-        prompt: `תסביר לי ב-2 משפטים קצרים ובמילים פשוטות: איך ${topic} עוזר לי בחיים?`,
-        doText: `העתק את הפרומפט והתנסה בבקשה ברורה על ${topic}:`
+      step4_mission: {
+        executePrompt: `תסביר לי ב-2 משפטים קצרים ובמילים פשוטות: איך ${topic} עוזר לי בחיים?`,
+        doText: `העתק את הפרומפט והתנסה בבקשה ברורה על ${topic}:`,
+        comprehensionQ: 'איך ביקשנו מה-AI להסביר?',
+        comprehensionOpts: [
+          { text: 'ב-2 משפטים קצרים ובמילים פשוטות', isCorrect: true },
+          { text: 'במגילה ארוכה של 50 עמודים', isCorrect: false }
+        ],
+        transferPrompt: `עכשיו שנה מילה אחת ובקש דוגמה נוספת הקשורה ל-${topic}!`,
+        teachBackText: `היום למדתי שכשמבקשים הסבר קצר על ${topic}, קל מאוד להבין וליישם.`
       }
     };
   }
 };
 
 // ============================================================================
-// 11. ממשק ניהול ובקרה עבור מלווים (Admin & Caregiver Portal)
+// 10. ממשק ניהול ובקרה עבור מלווים (Admin & Caregiver Portal)
 // ============================================================================
 
 let currentGeneratedUnit = null;
 
 function initAdminPortal() {
-  // אימות PIN
   const adminPinModal = document.getElementById('admin-pin-modal');
   const closePinBtn = document.getElementById('close-pin-modal-btn');
   const submitPinBtn = document.getElementById('submit-pin-btn');
@@ -1632,7 +1322,6 @@ function initAdminPortal() {
     };
   }
 
-  // יציאה מממשק ניהול
   const exitAdminBtn = document.getElementById('exit-admin-btn');
   if (exitAdminBtn) {
     exitAdminBtn.onclick = () => {
@@ -1641,7 +1330,6 @@ function initAdminPortal() {
     };
   }
 
-  // טאבים בממשק ניהול
   const tabBtns = document.querySelectorAll('.adm-tab-btn');
   const tabPanels = document.querySelectorAll('.adm-tab-panel');
 
@@ -1662,13 +1350,14 @@ function initAdminPortal() {
     };
   });
 
-  // מחולל יחידות AI Assistant
+  // AI Assistant בממשק ניהול
   const chatSendBtn = document.getElementById('admin-chat-send-btn');
   const chatInput = document.getElementById('admin-chat-input');
   const chatMessages = document.getElementById('admin-chat-messages');
   const livePreviewContainer = document.getElementById('live-card-preview-container');
   const previewActions = document.getElementById('preview-actions');
   const approveCardBtn = document.getElementById('adm-approve-card-btn');
+  const copyJsonBtn = document.getElementById('adm-copy-json-btn');
 
   async function handleAdminChatSend() {
     if (!chatInput || !chatSendBtn) return;
@@ -1683,7 +1372,7 @@ function initAdminPortal() {
     if (chatMessages) chatMessages.appendChild(userMsg);
 
     chatSendBtn.disabled = true;
-    chatSendBtn.innerHTML = '<span class="loading-spinner"></span> <span>מייצר יחידה...</span>';
+    chatSendBtn.innerHTML = '<span class="loading-spinner"></span> <span>מייצר יחידה משימתית...</span>';
 
     const assistantMsg = document.createElement('div');
     assistantMsg.className = 'chat-bubble assistant-bubble';
@@ -1704,7 +1393,6 @@ function initAdminPortal() {
 
       assistantMsg.innerHTML = `✨ <strong>יחידה נוצרה בהצלחה</strong> באמצעות ${res.provider}! הנה תצוגה מקדימה שלה למטה:`;
 
-      // הצגת Live Preview
       if (livePreviewContainer) {
         livePreviewContainer.innerHTML = `
           <div class="card unit-flow-card" style="border: 2px solid #2563eb; margin-top: 1rem;">
@@ -1715,10 +1403,7 @@ function initAdminPortal() {
             </div>
             <div class="unit-steps-wrapper">
               <div class="micro-step-box">
-                <div class="step-header">
-                  <span class="step-number-circle">1</span>
-                  <h3 class="step-title">המחשה מוחשית Side-by-Side:</h3>
-                </div>
+                <div class="step-header"><span class="step-number-circle">1</span><h3 class="step-title">המחשה Side-by-Side:</h3></div>
                 <div class="demo-comparison-grid">
                   <div class="demo-card bad-demo">
                     <div class="demo-card-tag bad-tag">❌ בקשה כללית</div>
@@ -1733,16 +1418,20 @@ function initAdminPortal() {
                 </div>
               </div>
               <div class="micro-step-box">
-                <div class="step-header"><span class="step-number-circle">2</span><h3 class="step-title">למה זה עבד:</h3></div>
+                <div class="step-header"><span class="step-number-circle">2</span><h3 class="step-title">הכלל שלמדנו + רמזור:</h3></div>
                 <div class="key-takeaway-card">${currentGeneratedUnit.step2_takeaway}</div>
+                <div class="traffic-light-box ${currentGeneratedUnit.trafficLight || 'green'}">
+                  <span class="traffic-light-dot"></span>
+                  <span>${currentGeneratedUnit.trafficLightDesc || 'רמזור AI'}</span>
+                </div>
               </div>
               <div class="micro-step-box">
-                <div class="step-header"><span class="step-number-circle">3</span><h3 class="step-title">שאלת וידוא הבנה:</h3></div>
-                <p class="step-instruction">${currentGeneratedUnit.step3_quiz.question}</p>
+                <div class="step-header"><span class="step-number-circle">3</span><h3 class="step-title">אסטרטגיה ובחירה:</h3></div>
+                <p class="step-instruction">${currentGeneratedUnit.step3_strategy?.question || 'שאלת בחירה'}</p>
               </div>
               <div class="micro-step-box">
-                <div class="step-header"><span class="step-number-circle">4</span><h3 class="step-title">עשייה מעשית:</h3></div>
-                <div class="example-prompt-text">"${currentGeneratedUnit.step4_action.prompt}"</div>
+                <div class="step-header"><span class="step-number-circle">4</span><h3 class="step-title">משימת ביצוע, הבנה והעברה:</h3></div>
+                <div class="example-prompt-text">"${currentGeneratedUnit.step4_mission?.executePrompt || ''}"</div>
               </div>
             </div>
           </div>
@@ -1781,6 +1470,114 @@ function initAdminPortal() {
       renderRoadmap();
     };
   }
+
+  if (copyJsonBtn) {
+    copyJsonBtn.onclick = () => {
+      if (!currentGeneratedUnit) return;
+      const jsonStr = JSON.stringify(currentGeneratedUnit, null, 2);
+      copyToClipboard(jsonStr, copyJsonBtn);
+      showToast('קוד ה-JSON הועתק! תוכל להדביק אותו ב-curriculum_data.js ולדחוף ל-Git 📋');
+    };
+  }
+
+  // עורך יחידות חזותי (Unit Editor Modal)
+  const closeUnitEditorBtn = document.getElementById('close-unit-editor-btn');
+  const cancelUnitEditorBtn = document.getElementById('cancel-unit-editor-btn');
+  const saveUnitEditorBtn = document.getElementById('save-unit-editor-btn');
+  const unitEditorModal = document.getElementById('unit-editor-modal');
+
+  function closeUnitEditor() {
+    if (unitEditorModal) {
+      unitEditorModal.classList.remove('active');
+      unitEditorModal.style.display = 'none';
+    }
+  }
+
+  if (closeUnitEditorBtn) closeUnitEditorBtn.onclick = closeUnitEditor;
+  if (cancelUnitEditorBtn) cancelUnitEditorBtn.onclick = closeUnitEditor;
+
+  if (saveUnitEditorBtn) {
+    saveUnitEditorBtn.onclick = () => {
+      const idInput = document.getElementById('edit-unit-id');
+      const titleInput = document.getElementById('edit-unit-title-input');
+      const catInput = document.getElementById('edit-unit-category-input');
+      const goalInput = document.getElementById('edit-unit-goal-input');
+
+      if (!titleInput || !titleInput.value.trim()) {
+        alert('נא להזין כותרת ליחידה.');
+        return;
+      }
+
+      const unitId = idInput ? idInput.value : '';
+      const newUnitData = {
+        title: titleInput.value.trim(),
+        category: (catInput ? catInput.value.trim() : '') || 'מיומנות אישית',
+        goal: (goalInput ? goalInput.value.trim() : '') || 'ללמוד ולהתקדם',
+        trafficLight: 'green',
+        trafficLightDesc: 'ירוק: אפשר להשתמש לבד.',
+        step1_demo: {
+          badPrompt: (document.getElementById('edit-bad-prompt-input')?.value.trim()) || 'בקשה כללית',
+          badResult: (document.getElementById('edit-bad-result-input')?.value.trim()) || 'תשובה ארוכה ומבלבלת...',
+          goodPrompt: (document.getElementById('edit-good-prompt-input')?.value.trim()) || 'בקשה מדויקת ופשוטה',
+          goodResult: (document.getElementById('edit-good-result-input')?.value.trim()) || 'תשובה קצרה ומעולה!'
+        },
+        step2_takeaway: (document.getElementById('edit-takeaway-input')?.value.trim()) || 'כשמבקשים מדויק, מקבלים מענה מושלם!',
+        step3_strategy: {
+          question: (document.getElementById('edit-quiz-q-input')?.value.trim()) || 'מה הדבר הנכון לעשות?',
+          options: [
+            {
+              text: (document.getElementById('edit-quiz-correct-input')?.value.trim()) || 'לבקש קצר וברור',
+              isCorrect: true,
+              explanation: 'מדויק ונכון מאוד!'
+            },
+            {
+              text: (document.getElementById('edit-quiz-wrong-input')?.value.trim()) || 'לכתוב מילה אחת בלי פירוט',
+              isCorrect: false,
+              explanation: 'זה כללי מדי.'
+            }
+          ]
+        },
+        step4_mission: {
+          executePrompt: (document.getElementById('edit-action-prompt-input')?.value.trim()) || 'הסבר לי ב-2 משפטים פשוטים',
+          doText: (document.getElementById('edit-action-do-input')?.value.trim()) || 'העתק את הפרומפט והרץ ב-AI:',
+          comprehensionQ: 'מה ביקשת מה-AI?',
+          comprehensionOpts: [
+            { text: 'מענה קצר ומדויק', isCorrect: true },
+            { text: 'מגילה של 50 עמודים', isCorrect: false }
+          ],
+          transferPrompt: 'משימת העברה: שנה מילה אחת ובדוק מה השתנה בתשובה!',
+          teachBackText: 'היום למדתי שכשמבקשים קצר וממוקד, מקבלים תשובה שקל להבין מיד.'
+        }
+      };
+
+      if (unitId) {
+        const existingIdx = appState.curriculumUnits.findIndex(u => u.id === unitId);
+        if (existingIdx !== -1) {
+          appState.curriculumUnits[existingIdx] = {
+            ...appState.curriculumUnits[existingIdx],
+            ...newUnitData
+          };
+          showToast(`היחידה "${newUnitData.title}" עודכנה בהצלחה! ✏️`);
+        }
+      } else {
+        const newId = `unit_custom_${Date.now()}`;
+        const newUnit = {
+          id: newId,
+          ...newUnitData,
+          isUnlocked: false,
+          isCompleted: false
+        };
+        appState.curriculumUnits.push(newUnit);
+        showToast(`היחידה "${newUnitData.title}" נוספה בהצלחה למסלול! 🎉`);
+      }
+
+      saveAppState();
+      closeUnitEditor();
+      renderAdminCurriculum();
+      renderRoadmap();
+      SoundService.playSuccessSound();
+    };
+  }
 }
 
 function renderAdminOverview() {
@@ -1808,6 +1605,7 @@ function renderAdminOverview() {
         <tr>
           <th>יחידה / נושא</th>
           <th>קטגוריה</th>
+          <th>רמזור</th>
           <th>סטטוס למידה</th>
           <th>משוב דניאל</th>
         </tr>
@@ -1817,6 +1615,7 @@ function renderAdminOverview() {
           <tr>
             <td><strong>${u.title}</strong></td>
             <td><span class="badge-tag">${u.category || 'כללי'}</span></td>
+            <td>${u.trafficLight === 'red' ? '🔴 אדום' : u.trafficLight === 'yellow' ? '🟡 צהוב' : '🟢 ירוק'}</td>
             <td>${u.isCompleted ? '<span style="color:#059669; font-weight:700;">🟢 הושלם</span>' : '<span style="color:#d97706;">⏳ ממתין לביצוע</span>'}</td>
             <td>${u.feedback === 'easy' ? '😊 היה קל' : u.feedback === 'medium' ? '😐 קצת קשה' : u.feedback === 'hard' ? '😕 לא מובן' : '—'}</td>
           </tr>
@@ -1834,36 +1633,110 @@ function renderAdminCurriculum() {
   appState.curriculumUnits.forEach((unit, idx) => {
     const item = document.createElement('div');
     item.className = 'card';
-    item.style.cssText = 'padding: 1rem 1.4rem; margin-bottom: 0.8rem; display: flex; justify-content: space-between; align-items: center;';
+    item.style.cssText = 'padding: 1.1rem 1.4rem; margin-bottom: 0.9rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem;';
     item.innerHTML = `
-      <div>
-        <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.2rem;">
+      <div style="flex: 1 1 300px;">
+        <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem;">
           <span style="font-weight: 800; color: #2563eb;">#${idx + 1}</span>
           <span class="badge-tag">${unit.category || 'מיומנות'}</span>
+          <span>${unit.trafficLight === 'red' ? '🔴' : unit.trafficLight === 'yellow' ? '🟡' : '🟢'}</span>
           <span style="font-size: 0.85rem; color: ${unit.isCompleted ? '#059669' : '#d97706'}; font-weight: 700;">
-            ${unit.isCompleted ? '✓ הושלם' : 'ממתין'}
+            ${unit.isCompleted ? '✓ הושלם' : 'ממתין לביצוע'}
           </span>
         </div>
-        <h4 style="margin: 0; font-size: 1.1rem;">${unit.title}</h4>
+        <h4 style="margin: 0 0 0.3rem 0; font-size: 1.15rem;">${unit.title}</h4>
+        <p style="margin: 0; font-size: 0.95rem; color: var(--text-secondary);">${unit.goal || ''}</p>
       </div>
-      <div style="display: flex; gap: 0.5rem;">
-        <button class="secondary-btn" style="padding: 0.35rem 0.7rem; font-size: 0.85rem;" onclick="moveUnit(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>▲ למעלה</button>
-        <button class="secondary-btn" style="padding: 0.35rem 0.7rem; font-size: 0.85rem;" onclick="moveUnit(${idx}, 1)" ${idx === appState.curriculumUnits.length - 1 ? 'disabled' : ''}>▼ למטה</button>
-        <button class="secondary-btn" style="padding: 0.35rem 0.7rem; font-size: 0.85rem; color: #dc2626;" onclick="deleteUnit(${idx})">🗑️ מחק</button>
+      <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+        <button class="primary-btn" style="padding: 0.4rem 0.85rem; font-size: 0.85rem;" onclick="openUnitEditor('${unit.id}')">✏️ ערוך יחידה</button>
+        <button class="secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem;" onclick="moveUnit(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
+        <button class="secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem;" onclick="moveUnit(${idx}, 1)" ${idx === appState.curriculumUnits.length - 1 ? 'disabled' : ''}>▼</button>
+        <button class="secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem; color: #dc2626;" onclick="deleteUnit(${idx})">🗑️ מחק</button>
       </div>
     `;
     container.appendChild(item);
   });
 
-  const addBtn = document.getElementById('add-custom-unit-btn');
-  if (addBtn) {
-    addBtn.onclick = () => {
-      // מעבר לטאב AI Assistant ליצירת יחידה מותאמת
+  const addManualBtn = document.getElementById('add-manual-unit-btn');
+  if (addManualBtn) {
+    addManualBtn.onclick = () => openUnitEditor(null);
+  }
+
+  const addCustomBtn = document.getElementById('add-custom-unit-btn');
+  if (addCustomBtn) {
+    addCustomBtn.onclick = () => {
       const assistantTab = document.querySelector('.adm-tab-btn[data-tab="adm-assistant"]');
       if (assistantTab) assistantTab.click();
     };
   }
 }
+
+window.openUnitEditor = function(unitId) {
+  const modal = document.getElementById('unit-editor-modal');
+  if (!modal) return;
+
+  const modalTitle = document.getElementById('unit-editor-modal-title');
+  const idInput = document.getElementById('edit-unit-id');
+  const titleInput = document.getElementById('edit-unit-title-input');
+  const catInput = document.getElementById('edit-unit-category-input');
+  const goalInput = document.getElementById('edit-unit-goal-input');
+  const badPrompt = document.getElementById('edit-bad-prompt-input');
+  const badResult = document.getElementById('edit-bad-result-input');
+  const goodPrompt = document.getElementById('edit-good-prompt-input');
+  const goodResult = document.getElementById('edit-good-result-input');
+  const takeaway = document.getElementById('edit-takeaway-input');
+  const quizQ = document.getElementById('edit-quiz-q-input');
+  const quizCorrect = document.getElementById('edit-quiz-correct-input');
+  const quizWrong = document.getElementById('edit-quiz-wrong-input');
+  const actionPrompt = document.getElementById('edit-action-prompt-input');
+  const actionDo = document.getElementById('edit-action-do-input');
+
+  if (unitId) {
+    const unit = appState.curriculumUnits.find(u => u.id === unitId);
+    if (!unit) return;
+    if (modalTitle) modalTitle.textContent = `עריכת יחידה: ${unit.title}`;
+    if (idInput) idInput.value = unit.id;
+    if (titleInput) titleInput.value = unit.title || '';
+    if (catInput) catInput.value = unit.category || '';
+    if (goalInput) goalInput.value = unit.goal || '';
+    if (badPrompt) badPrompt.value = unit.step1_demo?.badPrompt || '';
+    if (badResult) badResult.value = unit.step1_demo?.badResult || '';
+    if (goodPrompt) goodPrompt.value = unit.step1_demo?.goodPrompt || '';
+    if (goodResult) goodResult.value = unit.step1_demo?.goodResult || '';
+    if (takeaway) takeaway.value = unit.step2_takeaway || '';
+    
+    const quizObj = unit.step3_strategy || unit.step3_quiz;
+    if (quizQ) quizQ.value = quizObj?.question || '';
+    
+    const correctOpt = quizObj?.options?.find(o => o.isCorrect);
+    const wrongOpt = quizObj?.options?.find(o => !o.isCorrect);
+    if (quizCorrect) quizCorrect.value = correctOpt?.text || '';
+    if (quizWrong) quizWrong.value = wrongOpt?.text || '';
+
+    const mission = unit.step4_mission || unit.step4_action;
+    if (actionPrompt) actionPrompt.value = mission?.executePrompt || mission?.prompt || '';
+    if (actionDo) actionDo.value = mission?.doText || '';
+  } else {
+    if (modalTitle) modalTitle.textContent = 'הוספת יחידת לימוד חדשה';
+    if (idInput) idInput.value = '';
+    if (titleInput) titleInput.value = '';
+    if (catInput) catInput.value = 'עבודה ותקשורת';
+    if (goalInput) goalInput.value = '';
+    if (badPrompt) badPrompt.value = '';
+    if (badResult) badResult.value = '';
+    if (goodPrompt) goodPrompt.value = '';
+    if (goodResult) goodResult.value = '';
+    if (takeaway) takeaway.value = '';
+    if (quizQ) quizQ.value = '';
+    if (quizCorrect) quizCorrect.value = '';
+    if (quizWrong) quizWrong.value = '';
+    if (actionPrompt) actionPrompt.value = '';
+    if (actionDo) actionDo.value = 'העתק את הפרומפט והרץ ב-AI:';
+  }
+
+  modal.classList.add('active');
+  modal.style.display = 'flex';
+};
 
 window.moveUnit = function(index, direction) {
   const target = index + direction;
@@ -1960,7 +1833,6 @@ function renderAdminSettings() {
     };
   }
 
-  // בדיקת Gemini אסינכרונית עם ספינר
   const btnTestGemini = document.getElementById('btn-test-gemini');
   const statusGemini = document.getElementById('cfg-gemini-status');
   if (btnTestGemini && statusGemini) {
@@ -2001,7 +1873,6 @@ function renderAdminSettings() {
     };
   }
 
-  // בדיקת Groq אסינכרונית עם ספינר
   const btnTestGroq = document.getElementById('btn-test-groq');
   const statusGroq = document.getElementById('cfg-groq-status');
   if (btnTestGroq && statusGroq) {
@@ -2042,7 +1913,6 @@ function renderAdminSettings() {
     };
   }
 
-  // בדיקת Ollama אסינכרונית עם ספינר
   const btnTestOllama = document.getElementById('btn-test-ollama');
   const statusOllama = document.getElementById('cfg-ollama-status');
   if (btnTestOllama && statusOllama) {
@@ -2081,7 +1951,6 @@ function renderAdminSettings() {
     };
   }
 
-  // גיבוי ושחזור
   const exportBtn = document.getElementById('adm-export-btn');
   if (exportBtn) {
     exportBtn.onclick = () => {
@@ -2134,17 +2003,13 @@ function renderAdminSettings() {
 }
 
 // ============================================================================
-// 12. אתחול ראשי בטעינת המסמך (DOMContentLoaded)
+// 11. אתחול ראשי בטעינת המסמך (DOMContentLoaded)
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
-  // ביצוע מיגרציה ושחזור נתונים
-  performMigrationIfNeeded();
-
-  // בדיקת נעילת שבת
+  performSmartMergeAndMigration();
   checkAndApplyShabbatLock();
 
-  // כפתור מעקף שבת למלווים
   const bypassBtn = document.getElementById('shabbat-bypass-btn');
   if (bypassBtn) {
     bypassBtn.onclick = () => {
@@ -2160,7 +2025,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // הקראה קולית של כותרת המסך
   const globalTtsBtn = document.getElementById('global-tts-btn');
   if (globalTtsBtn) {
     globalTtsBtn.onclick = () => {
@@ -2175,13 +2039,18 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // אתחול ממשק ניהול
+  // כפתור מצב רגוע (Calm Mode)
+  const calmBtn = document.getElementById('global-calm-btn');
+  if (calmBtn) calmBtn.onclick = openCalmModal;
+  const closeCalmBtn = document.getElementById('close-calm-modal-btn');
+  if (closeCalmBtn) closeCalmBtn.onclick = closeCalmModal;
+  const calmDoneBtn = document.getElementById('calm-modal-done-btn');
+  if (calmDoneBtn) calmDoneBtn.onclick = closeCalmModal;
+
   initAdminPortal();
 
-  // רינדור ברירת מחדל: מסלול הלמידה של דניאל
   showView('roadmap');
   renderRoadmap();
 
-  // חיווי ידידותי שהכל נטען כהלכה
-  showToast('ברוך הבא דניאל! כל הנתונים נטענו בהצלחה ✨');
+  showToast('ברוך הבא דניאל! גרסה 3 של המערכת נטענה בהצלחה ✨');
 });

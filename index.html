@@ -39,6 +39,9 @@
         </div>
       </div>
       <div class="header-actions">
+        <button id="global-calm-btn" class="calm-btn" title="מצב רגוע ונשימה" style="min-height: 44px;">
+          <span>🧘 מצב רגוע</span>
+        </button>
         <button id="global-tts-btn" class="icon-btn" title="הקרא לי את המסך" aria-label="הקרא לי">
           <span class="btn-icon">🔊</span>
           <span class="btn-text">הקרא לי</span>
@@ -60,12 +63,19 @@
     <section id="view-roadmap" class="view-section active">
       <div class="roadmap-header card">
         <div class="roadmap-header-top">
-          <div>
+          <div class="roadmap-title-group">
             <h2 class="roadmap-title">המסלול האישי של דניאל 🚀</h2>
             <p class="roadmap-subtitle">מיומנויות AI מעשיות לחיים ולעבודה • צעד אחר צעד • מבחן שלב כל 2 יחידות</p>
           </div>
           <div class="roadmap-badge-box">
-            <span class="badge-pill" id="total-progress-pill">0 מתוך 10 יחידות הושלמו</span>
+            <div class="stat-badge-pill" id="units-progress-pill">
+              <span class="badge-icon">📚</span>
+              <span id="units-stat-text">0 מתוך 10 יחידות</span>
+            </div>
+            <div class="stat-badge-pill checkpoint-badge-pill" id="checkpoints-progress-pill">
+              <span class="badge-icon">🏆</span>
+              <span id="checkpoints-stat-text">0 מתוך 5 מבחנים</span>
+            </div>
           </div>
         </div>
 
@@ -181,15 +191,19 @@
             </div>
           </div>
 
-          <!-- STEP 2: הסבר קצר ומאיר עיניים -->
+          <!-- STEP 2: הסבר קצר ומאיר עיניים ורמזור החלטות -->
           <div class="micro-step-box" id="step-explanation-box">
             <div class="step-header">
               <span class="step-number-circle">2</span>
-              <h3 class="step-title">למה זה עבד? הנה הסוד:</h3>
+              <h3 class="step-title">למה זה עבד? הנה הסוד ורמזור ה-AI:</h3>
               <button class="tts-icon-btn" id="tts-explanation-btn" title="הקרא שלב זה">🔊</button>
             </div>
             <div class="key-takeaway-card" id="unit-takeaway-text">
               כשביקשנו מה-AI במפורש: <strong>"ב-2 משפטים פשוטים"</strong>, הוא ענה בדיוק מה שרצינו בלי לבלבל!
+            </div>
+            <div id="traffic-light-container" class="traffic-light-box green">
+              <span class="traffic-light-dot"></span>
+              <span id="traffic-light-desc">רמזור ירוק: אפשר להשתמש לבד.</span>
             </div>
           </div>
 
@@ -219,24 +233,74 @@
             </div>
 
             <div id="action-unlocked-content" style="display: none;">
-              <p class="step-instruction" id="action-do-instruction">העתק את הפרומפט המדויק שהרכבנו והתנסה ב-AI:</p>
-              
-              <div class="example-box">
-                <div class="example-prompt-text" id="action-prompt-display">"..."</div>
-                <div class="example-actions">
-                  <button class="action-btn copy-btn" id="unit-copy-btn">
-                    <span class="btn-icon">📋</span>
-                    <span class="btn-text">העתק משפט</span>
+              <!-- Mission Step 1: ביצוע (Execute) -->
+              <div class="mission-part" id="mission-part-1">
+                <div class="mission-part-header">
+                  <span class="mission-part-badge">חלק 1 מתוך 4</span>
+                  <h4 class="mission-part-title">ביצוע מעשי: הרצת הבקשה</h4>
+                </div>
+                <p class="step-instruction" id="action-do-instruction">העתק את הפרומפט המדויק שהרכבנו והרץ אותו ב-AI:</p>
+                <div class="example-box">
+                  <div class="example-prompt-text" id="action-prompt-display">"..."</div>
+                  <div class="example-actions">
+                    <button class="action-btn copy-btn" id="unit-copy-btn">
+                      <span class="btn-icon">📋</span>
+                      <span class="btn-text">העתק משפט</span>
+                    </button>
+                    <a href="https://chatgpt.com" target="_blank" rel="noopener noreferrer" class="action-btn open-ai-btn">
+                      <span class="btn-icon">🚀</span>
+                      <span class="btn-text">פתח ChatGPT</span>
+                    </a>
+                  </div>
+                </div>
+                <div style="margin-top: 0.8rem;">
+                  <button id="part-1-done-btn" class="primary-btn" style="padding: 0.5rem 1.1rem; font-size: 0.95rem;">
+                    <span>הרצתי וראיתי את התשובה ▶ המשך לשלב הבא</span>
                   </button>
                 </div>
               </div>
 
-              <!-- Finish Button, WhatsApp Share & Feedback -->
-              <div class="task-finish-section" style="display: flex; flex-direction: column; align-items: center; gap: 0.9rem;">
-                <button class="primary-btn finish-task-btn" id="unit-finish-btn">
-                  <span class="btn-icon">✓</span>
-                  <span>סיימתי את היחידה! ⭐</span>
+              <!-- Mission Step 2: הבנה (Comprehend) -->
+              <div class="mission-part" id="mission-part-2" style="display: none;">
+                <div class="mission-part-header">
+                  <span class="mission-part-badge" style="background:#059669;">חלק 2 מתוך 4</span>
+                  <h4 class="mission-part-title">הבנה: מה ביקשנו מה-AI?</h4>
+                </div>
+                <p class="step-instruction" id="mission-comprehend-q">מה ביקשת מה-AI לעשות?</p>
+                <div class="quiz-options-grid" id="mission-comprehend-options"></div>
+                <div class="quiz-feedback-box" id="mission-comprehend-feedback" style="display: none;"></div>
+              </div>
+
+              <!-- Mission Step 3: העברה (Transfer - "שנה דבר אחד") -->
+              <div class="mission-part" id="mission-part-3" style="display: none;">
+                <div class="mission-part-header">
+                  <span class="mission-part-badge" style="background:#7c3aed;">חלק 3 מתוך 4</span>
+                  <h4 class="mission-part-title">משימת העברה: שנה דבר אחד ובדוק!</h4>
+                </div>
+                <p class="step-instruction">עכשיו נבדוק שהבנת את העיקרון: קח את אותו המשפט, שנה בו מילה אחת וראה איך ה-AI שוב עונה לך בדיוק לפי הכלל!</p>
+                <div class="transfer-prompt-card" id="mission-transfer-display">...</div>
+                <button id="part-3-done-btn" class="primary-btn" style="padding: 0.5rem 1.1rem; font-size: 0.95rem; margin-top: 0.5rem;">
+                  <span>ניסיתי וראיתי את התוצאה החדשה ▶ המשך לחלק הסיכום</span>
                 </button>
+              </div>
+
+              <!-- Mission Step 4: שיקוף אישי (Teach-Back) -->
+              <div class="mission-part" id="mission-part-4" style="display: none;">
+                <div class="mission-part-header">
+                  <span class="mission-part-badge" style="background:#f59e0b;">חלק 4 מתוך 4</span>
+                  <h4 class="mission-part-title">שיקוף אישי (Teach-Back): מה למדנו היום?</h4>
+                </div>
+                <div class="teach-back-card" id="mission-teach-back-display">...</div>
+                <div style="margin-top: 1rem; text-align: center;">
+                  <button class="primary-btn finish-task-btn" id="unit-finish-btn" style="min-height: 48px; font-size: 1.1rem; padding: 0.8rem 1.8rem;">
+                    <span class="btn-icon">⭐</span>
+                    <span>סיימתי בהצלחה את כל שלבי המשימה!</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- WhatsApp Share & Feedback -->
+              <div class="task-finish-section" style="display: flex; flex-direction: column; align-items: center; gap: 0.9rem;">
                 <button class="share-whatsapp-btn" id="unit-share-wa-btn" style="display: none;">
                   <span>שלח עדכון לאבא ב-WhatsApp 📲</span>
                 </button>
@@ -410,9 +474,15 @@
         <!-- TAB 3: CURRICULUM MANAGEMENT -->
         <div id="adm-curriculum" class="adm-tab-panel">
           <div class="cg-section">
-            <div class="section-flex-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-              <h4>רשימת יחידות הלימוד הפעילות במסלול</h4>
-              <button id="add-custom-unit-btn" class="secondary-btn">+ הוסף יחידה חדשה</button>
+            <div class="section-flex-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 1.2rem;">
+              <div>
+                <h4 style="margin: 0; font-size: 1.2rem;">רשימת יחידות הלימוד הפעילות במסלול</h4>
+                <p style="margin: 0.3rem 0 0 0; font-size: 0.95rem; color: var(--text-secondary);">ערוך, שנה סדר או הוסף יחידות לימוד חדשות ומותאמות אישית לדניאל</p>
+              </div>
+              <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+                <button id="add-manual-unit-btn" class="primary-btn" style="padding: 0.5rem 1.1rem; font-size: 0.95rem;">➕ הוסף יחידה ידנית</button>
+                <button id="add-custom-unit-btn" class="secondary-btn" style="padding: 0.5rem 1.1rem; font-size: 0.95rem;">🤖 צור יחידה עם AI</button>
+              </div>
             </div>
             <div id="mgr-curriculum-list" class="curriculum-list-grid"></div>
           </div>
@@ -574,6 +644,113 @@
     </div>
   </footer>
 
+  
+
+  <!-- Modal: Visual Unit Editor for Caregivers (עריכה והוספת יחידות בקלות) -->
+  <div id="unit-editor-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 780px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="unit-editor-modal-title">עריכת יחידת לימוד</h3>
+        <button id="close-unit-editor-btn" class="modal-close-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="unit-editor-form" onsubmit="return false;">
+          <input type="hidden" id="edit-unit-id">
+          <div class="unit-editor-grid">
+            <div class="form-group">
+              <label class="form-field-label">כותרת היחידה:</label>
+              <input type="text" id="edit-unit-title-input" class="styled-input" placeholder="למשל: איך לבקש מה-AI הסבר קצר" required>
+            </div>
+            <div class="form-group">
+              <label class="form-field-label">קטגוריה:</label>
+              <input type="text" id="edit-unit-category-input" class="styled-input" placeholder="למשל: עבודה ותקשורת" required>
+            </div>
+            <div class="form-group-full">
+              <label class="form-field-label">מטרת היחידה (משפט קצר ומעצים):</label>
+              <input type="text" id="edit-unit-goal-input" class="styled-input" placeholder="למשל: ללמוד לבקש מה-AI תשובה של 2 משפטים" required>
+            </div>
+            <div class="form-group">
+              <label class="form-field-label">שלב 1: דוגמה לבקשה כללית (פחות טובה):</label>
+              <input type="text" id="edit-bad-prompt-input" class="styled-input" placeholder="למשל: תסביר לי על מחשבים">
+            </div>
+            <div class="form-group">
+              <label class="form-field-label">שלב 1: תשובת AI ארוכה ומבלבלת:</label>
+              <textarea id="edit-bad-result-input" class="styled-textarea" rows="2" placeholder="תשובה ארוכה מדי..."></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-field-label">שלב 1: דוגמה לבקשה מדויקת (טובה):</label>
+              <input type="text" id="edit-good-prompt-input" class="styled-input" placeholder="למשל: תסביר ב-2 משפטים פשוטים">
+            </div>
+            <div class="form-group">
+              <label class="form-field-label">שלב 1: תשובת AI קצרה ומעולה:</label>
+              <textarea id="edit-good-result-input" class="styled-textarea" rows="2" placeholder="תשובה קצרה וברורה..."></textarea>
+            </div>
+            <div class="form-group-full">
+              <label class="form-field-label">שלב 2: הכלל שלמדנו (הסבר תמציתי ומאיר עיניים):</label>
+              <textarea id="edit-takeaway-input" class="styled-textarea" rows="2" placeholder="כשביקשנו ב-2 משפטים, קיבלנו בדיוק מה שרצינו!"></textarea>
+            </div>
+            <div class="form-group-full">
+              <label class="form-field-label">שלב 3: שאלת וידוא הבנה:</label>
+              <input type="text" id="edit-quiz-q-input" class="styled-input" placeholder="שאלת הבנה קצרה">
+            </div>
+            <div class="form-group">
+              <label class="form-field-label">תשובה נכונה לשאלה:</label>
+              <input type="text" id="edit-quiz-correct-input" class="styled-input" placeholder="התשובה הנכונה">
+            </div>
+            <div class="form-group">
+              <label class="form-field-label">תשובה שגויה (מסיח):</label>
+              <input type="text" id="edit-quiz-wrong-input" class="styled-input" placeholder="התשובה השגויה">
+            </div>
+            <div class="form-group">
+              <label class="form-field-label">שלב 4: פרומפט למשימה מעשית:</label>
+              <input type="text" id="edit-action-prompt-input" class="styled-input" placeholder="משפט להעתקה ותרגול">
+            </div>
+            <div class="form-group">
+              <label class="form-field-label">שלב 4: הוראת ביצוע המשימה:</label>
+              <input type="text" id="edit-action-do-input" class="styled-input" placeholder="העתק ובדוק את התשובה...">
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button id="cancel-unit-editor-btn" class="secondary-btn">ביטול</button>
+        <button id="save-unit-editor-btn" class="primary-btn">💾 שמור יחידה במסלול</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Modal: Calm Mode (תרגול נשימה ושלווה) -->
+  <div id="calm-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 520px; text-align: center;">
+      <div class="modal-header">
+        <h3 class="modal-title">🧘 רגע של שלווה ונשימה</h3>
+        <button id="close-calm-modal-btn" class="modal-close-btn">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 1.5rem 1rem;">
+        <div style="font-size: 3.5rem; margin-bottom: 1rem;">🌊 🕯️ ✨</div>
+        <p style="font-size: 1.25rem; font-weight: 700; color: #1e3a8a; margin-bottom: 0.8rem;">
+          זה בסדר גמור לקחת הפסקה!
+        </p>
+        <p style="font-size: 1.1rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 1.5rem;">
+          שב בנוח על הכיסא, שים יד על הבטן, וקח 3 נשימות עמוקות ואיטיות:<br>
+          <strong>שאיפה איטית 4 שניות... עצירה 2 שניות... ונשיפה איטית 4 שניות.</strong>
+        </p>
+        <div style="background: #eff6ff; padding: 1rem; border-radius: 8px; border: 1.5px solid #bfdbfe; font-size: 1rem; color: #1e40af;">
+          💡 <strong>תזכורת חמה:</strong> אתה מתקדם נהדר. כשאתה מוכן, נמשיך יחד בדיוק מאיפה שעצרת.
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: center;">
+        <button id="calm-modal-done-btn" class="primary-btn" style="min-height: 44px; padding: 0.6rem 1.6rem;">
+          <span>אני מרגיש רגוע, בוא נמשיך 🌟</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Core Scripts -->
+  <script src="curriculum_data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
