@@ -1580,8 +1580,11 @@ function initAdminPortal() {
   }
 }
 
+/**
+ * Renders the Admin Overview dashboard tab: summary metric cards and curriculum units progress table.
+ */
 function renderAdminOverview() {
-  const units = appState.curriculumUnits;
+  const units = appState.curriculumUnits || [];
   const completed = units.filter(u => u.isCompleted).length;
   const total = units.length;
 
@@ -1600,6 +1603,18 @@ function renderAdminOverview() {
 
   const table = document.getElementById('adm-units-table');
   if (table) {
+    const rowsHtml = units.length > 0
+      ? units.map(u => `
+          <tr>
+            <td><strong>${u.title}</strong></td>
+            <td><span class="badge-tag">${u.category || 'כללי'}</span></td>
+            <td>${u.trafficLight === 'red' ? '🔴 אדום' : u.trafficLight === 'yellow' ? '🟡 צהוב' : '🟢 ירוק'}</td>
+            <td>${u.isCompleted ? '<span style="color:#059669; font-weight:700;">🟢 הושלם</span>' : '<span style="color:#d97706;">⏳ ממתין לביצוע</span>'}</td>
+            <td>${u.feedback === 'easy' ? '😊 היה קל' : u.feedback === 'medium' ? '😐 קצת קשה' : u.feedback === 'hard' ? '😕 לא מובן' : '—'}</td>
+          </tr>
+        `).join('')
+      : `<tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">אין יחידות לימוד להצגה</td></tr>`;
+
     table.innerHTML = `
       <thead>
         <tr>
@@ -1611,15 +1626,7 @@ function renderAdminOverview() {
         </tr>
       </thead>
       <tbody>
-        ${units.map(u => `
-          <tr>
-            <td><strong>${u.title}</strong></td>
-            <td><span class="badge-tag">${u.category || 'כללי'}</span></td>
-            <td>${u.trafficLight === 'red' ? '🔴 אדום' : u.trafficLight === 'yellow' ? '🟡 צהוב' : '🟢 ירוק'}</td>
-            <td>${u.isCompleted ? '<span style="color:#059669; font-weight:700;">🟢 הושלם</span>' : '<span style="color:#d97706;">⏳ ממתין לביצוע</span>'}</td>
-            <td>${u.feedback === 'easy' ? '😊 היה קל' : u.feedback === 'medium' ? '😐 קצת קשה' : u.feedback === 'hard' ? '😕 לא מובן' : '—'}</td>
-          </tr>
-        `).join('')}
+        ${rowsHtml}
       </tbody>
     `;
   }

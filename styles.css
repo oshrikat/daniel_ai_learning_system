@@ -1937,48 +1937,79 @@ button {
   border: 1px solid #e2e8f0;
   border-radius: var(--radius-md);
   background-color: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+  direction: rtl;
 }
 
-/* Table styling */
-.cg-table-wrapper table {
+/* Table base styling for admin overview table */
+.cg-table-wrapper table,
+#adm-units-table {
   width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
+  border-collapse: collapse;
   font-size: 0.95rem;
+  direction: rtl;
+  text-align: right;
 }
 
-/* Table header */
-.cg-table-wrapper thead th {
+/* Table header styling */
+.cg-table-wrapper thead th,
+#adm-units-table thead th {
   background-color: var(--bg-card-subtle);
   color: var(--text-primary);
-  text-align: start;
-  padding: 0.9rem 1rem;
+  text-align: right;
+  padding: 0.85rem 1rem;
   font-weight: 700;
-  border-bottom: 2px solid #e2e8f0;
+  border-bottom: 2px solid #cbd5e1;
+  border-left: 1px solid #f1f5f9;
+  white-space: nowrap;
 }
 
-/* Table cells */
-.cg-table-wrapper tbody td {
-  padding: 0.8rem 1rem;
-  border-bottom: 1px solid #f1f5f9;
+.cg-table-wrapper thead th:last-child,
+#adm-units-table thead th:last-child {
+  border-left: none;
 }
 
-/* Zebra striping for rows */
-.cg-table-wrapper tbody tr:nth-child(even) {
-  background-color: var(--bg-card-subtle);
+/* Table cell styling */
+.cg-table-wrapper tbody td,
+#adm-units-table tbody td {
+  padding: 0.85rem 1rem;
+  text-align: right;
+  vertical-align: middle;
+  border-bottom: 1px solid #e2e8f0;
+  border-left: 1px solid #f8fafc;
 }
 
-/* Hover state */
-.cg-table-wrapper tbody tr:hover {
+.cg-table-wrapper tbody td:last-child,
+#adm-units-table tbody td:last-child {
+  border-left: none;
+}
+
+/* Zebra striping for table rows */
+.cg-table-wrapper tbody tr:nth-child(even),
+#adm-units-table tbody tr:nth-child(even) {
   background-color: #f8fafc;
 }
 
-/* Responsive: on very small screens, make table more compact */
-@media (max-width: 480px) {
+/* Hover state for table rows */
+.cg-table-wrapper tbody tr:hover,
+#adm-units-table tbody tr:hover {
+  background-color: #f1f5f9;
+  transition: background-color var(--transition-fast);
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 768px) {
+  .cg-table-wrapper table,
+  #adm-units-table {
+    font-size: 0.88rem;
+    min-width: 580px;
+  }
+
   .cg-table-wrapper thead th,
-  .cg-table-wrapper tbody td {
-    padding: 0.6rem 0.8rem;
-    font-size: 0.9rem;
+  .cg-table-wrapper tbody td,
+  #adm-units-table thead th,
+  #adm-units-table tbody td {
+    padding: 0.65rem 0.75rem;
   }
 }
 
