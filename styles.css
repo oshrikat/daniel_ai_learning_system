@@ -1929,3 +1929,76 @@ button {
 .calm-btn:hover {
   background-color: #dbeafe;
 }
+
+/* Table wrapper - ensures scrolling if content overflows */
+.cg-table-wrapper {
+  overflow-x: auto;
+  margin: 1rem 0;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card);
+}
+
+/* Table styling */
+.cg-table-wrapper table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.95rem;
+}
+
+/* Table header */
+.cg-table-wrapper thead th {
+  background-color: var(--bg-card-subtle);
+  color: var(--text-primary);
+  text-align: start;
+  padding: 0.9rem 1rem;
+  font-weight: 700;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+/* Table cells */
+.cg-table-wrapper tbody td {
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+/* Zebra striping for rows */
+.cg-table-wrapper tbody tr:nth-child(even) {
+  background-color: var(--bg-card-subtle);
+}
+
+/* Hover state */
+.cg-table-wrapper tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+/* Responsive: on very small screens, make table more compact */
+@media (max-width: 480px) {
+  .cg-table-wrapper thead th,
+  .cg-table-wrapper tbody td {
+    padding: 0.6rem 0.8rem;
+    font-size: 0.9rem;
+  }
+}
+
+/* Custom scrollbar for WebKit browsers (Chrome, Edge, Safari) */
+.admin-tabs-nav::-webkit-scrollbar {
+  height: 8px;
+}
+.admin-tabs-nav::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+.admin-tabs-nav::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 4px;
+}
+.admin-tabs-nav::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+/* For Firefox */
+.admin-tabs-nav {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
