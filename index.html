@@ -61,6 +61,10 @@
 
     <!-- 1. Flexible Unit/Quest Roadmap Screen (המסלול של דניאל - מסך ראשי) -->
     <section id="view-roadmap" class="view-section active">
+
+      <!-- Dynamic Track Navigation Tabs (Switch between General/AI, Accounting, etc.) -->
+      <div id="track-nav-container" class="track-tabs-nav"></div>
+
       <div class="roadmap-header card">
         <div class="roadmap-header-top">
           <div class="roadmap-title-group">
@@ -152,8 +156,8 @@
           <p class="unit-goal" id="unit-goal-desc"></p>
         </div>
 
-        <!-- 4-Step Progressive Timeline -->
-        <div class="unit-steps-wrapper">
+        <!-- 4-Step Progressive Timeline (Legacy Engine) -->
+        <div class="unit-steps-wrapper" id="unit-steps-wrapper">
           
           <!-- STEP 1: המחשה מוחשית Side-by-Side -->
           <div class="micro-step-box" id="step-demo-box">
@@ -332,6 +336,9 @@
           </div>
 
         </div>
+
+        <!-- Dynamic Block Engine Container (for Block-based Tracks e.g. Accounting) -->
+        <div id="unit-blocks-wrapper" class="unit-blocks-wrapper" style="display: none;"></div>
       </div>
     </section>
 
@@ -752,7 +759,8 @@
 
 
   <!-- Core Scripts -->
-  <script src="curriculum_data.js"></script>
+  <script src="data/curriculum_general.js"></script>
+  <script src="data/curriculum_accounting.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

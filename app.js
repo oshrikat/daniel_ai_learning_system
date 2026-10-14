@@ -51,9 +51,69 @@ function getBaseClusters() {
   return typeof CLUSTERS_DATA !== 'undefined' ? JSON.parse(JSON.stringify(CLUSTERS_DATA)) : [];
 }
 
+/**
+ * רישום מסלולי הלימוד במערכת (Dynamic Track Registry)
+ * מאפשר הוספת מסלול חדש בעתיד באמצעות שורה אחת בלבד כאן וקובץ נתונים מתאים
+ */
+const TRACKS = [
+  {
+    id: 'general',
+    label: 'מסלול 1: מיומנויות AI וכלים מעשיים 🤖',
+    shortLabel: 'כללי ו-AI',
+    icon: '🎯',
+    dataVar: 'CURRICULUM_DATA',
+    engine: 'legacy'
+  },
+  {
+    id: 'accounting',
+    label: 'מסלול 2: יסודות הנהלת חשבונות 📊',
+    shortLabel: 'הנהלת חשבונות',
+    icon: '💼',
+    dataVar: 'ACCOUNTING_CURRICULUM',
+    engine: 'blocks'
+  }
+];
+
+/**
+ * החזרת הגדרת המסלול הפעיל הנוכחי
+ * @returns {object}
+ */
+function getActiveTrack() {
+  const currentId = appState.activeTrackId || 'general';
+  return TRACKS.find(t => t.id === currentId) || TRACKS[0];
+}
+
+/**
+ * שליפת יחידות הלימוד עבור מסלול מסוים (כולל סטטוס השלמה)
+ * @param {object} [track]
+ * @returns {Array}
+ */
+function getTrackUnits(track) {
+  if (!track) track = getActiveTrack();
+  if (track.engine === 'legacy') {
+    return appState.curriculumUnits || [];
+  }
+  let raw = [];
+  if (typeof window !== 'undefined' && window[track.dataVar]) {
+    raw = window[track.dataVar];
+  } else if (track.dataVar === 'ACCOUNTING_CURRICULUM' && typeof ACCOUNTING_CURRICULUM !== 'undefined') {
+    raw = ACCOUNTING_CURRICULUM;
+  }
+  const completedList = (appState.trackProgress && appState.trackProgress[track.id]) || [];
+  return raw.map(u => {
+    const uid = u.unit_id || u.id;
+    return {
+      ...u,
+      id: uid,
+      isCompleted: completedList.includes(uid)
+    };
+  });
+}
+
 let appState = {
   version: 3,
   currentView: 'roadmap',
+  activeTrackId: 'general',
   activeUnitId: 'unit_1',
   user: {
     name: 'דניאל',
@@ -62,6 +122,10 @@ let appState = {
   clusters: getBaseClusters(),
   curriculumUnits: getBaseCurriculum(),
   checkpoints: getBaseCheckpoints(),
+  trackProgress: {
+    general: [],
+    accounting: []
+  },
   caregiverNotes: [
     {
       id: 'note_1',
@@ -96,6 +160,15 @@ function performSmartMergeAndMigration() {
     if (rawV3) {
       const parsed = JSON.parse(rawV3);
       if (parsed && typeof parsed === 'object') {
+        if (parsed.activeTrackId) appState.activeTrackId = parsed.activeTrackId;
+        if (parsed.trackProgress && typeof parsed.trackProgress === 'object') {
+          appState.trackProgress = {
+            general: Array.isArray(parsed.trackProgress.general) ? parsed.trackProgress.general : [],
+            accounting: Array.isArray(parsed.trackProgress.accounting) ? parsed.trackProgress.accounting : []
+          };
+        } else {
+          appState.trackProgress = { general: [], accounting: [] };
+        }
         if (parsed.user) appState.user = parsed.user;
         if (parsed.apiConfig) appState.apiConfig = { ...appState.apiConfig, ...parsed.apiConfig };
         if (Array.isArray(parsed.caregiverNotes)) appState.caregiverNotes = parsed.caregiverNotes;
@@ -108,7 +181,12 @@ function performSmartMergeAndMigration() {
         const completedMap = new Map();
         if (Array.isArray(parsed.curriculumUnits)) {
           parsed.curriculumUnits.forEach(u => {
-            if (u.isCompleted) completedMap.set(u.id, { isCompleted: true, feedback: u.feedback });
+            if (u.isCompleted) {
+              completedMap.set(u.id, { isCompleted: true, feedback: u.feedback });
+              if (!appState.trackProgress.general.includes(u.id)) {
+                appState.trackProgress.general.push(u.id);
+              }
+            }
           });
         }
 
@@ -372,161 +450,733 @@ function showView(viewName) {
 // 6. תצוגת מסלול המיומנויות של דניאל (Roadmap & Gatekeeping)
 // ============================================================================
 
+/**
+ * רינדור טאבים דינמיים להחלפת מסלול לימודים
+ */
+function renderTrackTabs() {
+  const container = document.getElementById('track-nav-container');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const activeTrack = getActiveTrack();
+
+  TRACKS.forEach(track => {
+    const btn = document.createElement('button');
+    btn.className = `track-tab-btn ${track.id === activeTrack.id ? 'active' : ''}`;
+    btn.type = 'button';
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', track.id === activeTrack.id ? 'true' : 'false');
+    btn.innerHTML = `
+      <span class="track-tab-icon">${track.icon}</span>
+      <span class="track-tab-title">${track.label}</span>
+    `;
+    btn.onclick = () => {
+      if (appState.activeTrackId !== track.id) {
+        appState.activeTrackId = track.id;
+        saveAppState();
+        renderTrackTabs();
+        renderRoadmap();
+      }
+    };
+    container.appendChild(btn);
+  });
+}
+
 function renderRoadmap() {
   const container = document.getElementById('units-grid');
   if (!container) return;
   container.innerHTML = '';
 
-  const units = appState.curriculumUnits;
-  let completedCount = 0;
-  let currentClusterId = null;
+  const activeTrack = getActiveTrack();
+  const cpBadgeBox = document.getElementById('checkpoints-progress-pill');
 
-  units.forEach((unit, idx) => {
-    if (unit.isCompleted) completedCount++;
+  if (activeTrack.engine === 'legacy') {
+    // מסלול 1: מיומנויות AI וכלים מעשיים (Legacy Engine)
+    if (cpBadgeBox) cpBadgeBox.style.display = '';
 
-    // הצגת כותרת אשכול תוכן כשמתחלף אשכול
-    if (unit.clusterId && unit.clusterId !== currentClusterId) {
-      currentClusterId = unit.clusterId;
-      const clusterObj = (appState.clusters || []).find(c => c.id === currentClusterId);
-      if (clusterObj) {
-        const clusterHeader = document.createElement('div');
-        clusterHeader.className = 'cluster-header-card';
-        clusterHeader.style.cssText = 'background: #f1f5f9; border-right: 4px solid #2563eb; padding: 0.85rem 1.25rem; border-radius: var(--radius-sm); margin: 1.4rem 0 0.4rem 0;';
-        clusterHeader.innerHTML = `
-          <div style="display: flex; align-items: center; gap: 0.6rem;">
-            <span style="font-size: 1.4rem;">${clusterObj.icon || '📚'}</span>
-            <div>
-              <h3 style="margin: 0; font-size: 1.2rem; color: #1e293b;">${clusterObj.title}</h3>
-              <p style="margin: 0.2rem 0 0 0; font-size: 0.95rem; color: #64748b;">${clusterObj.description}</p>
+    const titleEl = document.querySelector('.roadmap-title');
+    if (titleEl) titleEl.textContent = 'המסלול האישי של דניאל 🚀';
+    const subEl = document.querySelector('.roadmap-subtitle');
+    if (subEl) subEl.textContent = 'מיומנויות AI מעשיות לחיים ולעבודה • צעד אחר צעד • מבחן שלב כל 2 יחידות';
+
+    const units = appState.curriculumUnits;
+    let completedCount = 0;
+    let currentClusterId = null;
+
+    units.forEach((unit, idx) => {
+      if (unit.isCompleted) completedCount++;
+
+      // הצגת כותרת אשכול תוכן כשמתחלף אשכול
+      if (unit.clusterId && unit.clusterId !== currentClusterId) {
+        currentClusterId = unit.clusterId;
+        const clusterObj = (appState.clusters || []).find(c => c.id === currentClusterId);
+        if (clusterObj) {
+          const clusterHeader = document.createElement('div');
+          clusterHeader.className = 'cluster-header-card';
+          clusterHeader.style.cssText = 'background: #f1f5f9; border-right: 4px solid #2563eb; padding: 0.85rem 1.25rem; border-radius: var(--radius-sm); margin: 1.4rem 0 0.4rem 0;';
+          clusterHeader.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <span style="font-size: 1.4rem;">${clusterObj.icon || '📚'}</span>
+              <div>
+                <h3 style="margin: 0; font-size: 1.2rem; color: #1e293b;">${clusterObj.title}</h3>
+                <p style="margin: 0.2rem 0 0 0; font-size: 0.95rem; color: #64748b;">${clusterObj.description}</p>
+              </div>
             </div>
-          </div>
-        `;
-        container.appendChild(clusterHeader);
+          `;
+          container.appendChild(clusterHeader);
+        }
       }
-    }
 
-    // חישוב פתיחת יחידות מודרגת:
-    // יחידה 0 תמיד פתוחה.
-    // יחידה נפתחת אם היחידה שלפניה הושלמה, ובמידה והיה מבחן שלב ביניהן – הוא חייב להיות בציון 85+ (isPassed)!
-    let isUnlocked = false;
-    if (idx === 0) {
-      isUnlocked = true;
-    } else if (idx % 2 === 0) {
-      const prevCp = (appState.checkpoints || []).find(c => c.afterUnitIndex === idx - 1);
-      isUnlocked = units[idx - 1].isCompleted && (prevCp ? prevCp.isPassed : true);
-    } else {
-      isUnlocked = units[idx - 1].isCompleted;
-    }
-    unit.isUnlocked = isUnlocked;
+      // חישוב פתיחת יחידות מודרגת:
+      // יחידה 0 תמיד פתוחה.
+      // יחידה נפתחת אם היחידה שלפניה הושלמה, ובמידה והיה מבחן שלב ביניהן – הוא חייב להיות בציון 85+ (isPassed)!
+      let isUnlocked = false;
+      if (idx === 0) {
+        isUnlocked = true;
+      } else if (idx % 2 === 0) {
+        const prevCp = (appState.checkpoints || []).find(c => c.afterUnitIndex === idx - 1);
+        isUnlocked = units[idx - 1].isCompleted && (prevCp ? prevCp.isPassed : true);
+      } else {
+        isUnlocked = units[idx - 1].isCompleted;
+      }
+      unit.isUnlocked = isUnlocked;
 
-    const card = document.createElement('div');
-    let statusClass = 'locked-unit';
-    let statusIcon = '🔒';
-    let statusBadgeText = 'נעול';
+      const card = document.createElement('div');
+      let statusClass = 'locked-unit';
+      let statusIcon = '🔒';
+      let statusBadgeText = 'נעול';
 
-    if (unit.isCompleted) {
-      statusClass = 'completed-unit';
-      statusIcon = '🟢';
-      statusBadgeText = '✓ הושלם';
-    } else if (isUnlocked) {
-      statusClass = 'active-unit';
-      statusIcon = '🔵';
-      statusBadgeText = 'פתוח עכשיו';
-    }
+      if (unit.isCompleted) {
+        statusClass = 'completed-unit';
+        statusIcon = '🟢';
+        statusBadgeText = '✓ הושלם';
+      } else if (isUnlocked) {
+        statusClass = 'active-unit';
+        statusIcon = '🔵';
+        statusBadgeText = 'פתוח עכשיו';
+      }
 
-    // תגית רמזור AI
-    const trafficEmoji = unit.trafficLight === 'red' ? '🔴' : unit.trafficLight === 'yellow' ? '🟡' : '🟢';
+      // תגית רמזור AI
+      const trafficEmoji = unit.trafficLight === 'red' ? '🔴' : unit.trafficLight === 'yellow' ? '🟡' : '🟢';
 
-    card.className = `unit-card ${statusClass}`;
-    card.innerHTML = `
-      <div class="unit-card-info">
-        <span class="unit-status-icon">${statusIcon}</span>
-        <div>
-          <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.35rem;">
-            <span class="badge-tag">${unit.category || 'מיומנות מעשית'}</span>
-            <span style="font-size: 0.9rem;" title="${unit.trafficLightDesc || 'רמזור AI'}">${trafficEmoji}</span>
-          </div>
-          <h3 class="unit-name-title">${unit.title}</h3>
-          <span class="unit-skills-preview">${unit.goal}</span>
-        </div>
-      </div>
-      <div class="day-action-box">
-        <span class="badge-tag">${statusBadgeText}</span>
-        ${isUnlocked ? `<button class="primary-btn" style="padding: 0.6rem 1.2rem; font-size: 1rem; min-height: 44px;">
-          <span>היכנס ליחידה</span>
-          <span>▶</span>
-        </button>` : ''}
-      </div>
-    `;
-
-    if (isUnlocked) {
-      card.onclick = () => {
-        appState.activeUnitId = unit.id;
-        showView('unit');
-        renderUnitPlayer(unit.id);
-      };
-    } else {
-      card.onclick = () => {
-        showToast('עליך להשלים את היחידות ומבחן השלב הקודמים כדי לפתוח יחידה זו! 💪');
-      };
-    }
-
-    container.appendChild(card);
-
-    // בדיקה האם יש תחנת מבחן שלב אחרי יחידה זו
-    const cp = (appState.checkpoints || []).find(c => c.afterUnitIndex === idx);
-    if (cp) {
-      const prev1 = units[idx - 1];
-      const prev2 = units[idx];
-      const isCpUnlocked = prev1 && prev1.isCompleted && prev2 && prev2.isCompleted;
-
-      const cpCard = document.createElement('div');
-      cpCard.className = `checkpoint-card ${cp.isPassed ? 'passed' : (!isCpUnlocked ? 'locked' : '')}`;
-      cpCard.innerHTML = `
-        <div class="checkpoint-info">
-          <span style="font-size: 2.2rem; line-height: 1;">${cp.isPassed ? '🏆' : (isCpUnlocked ? '🎯' : '🔒')}</span>
+      card.className = `unit-card ${statusClass}`;
+      card.innerHTML = `
+        <div class="unit-card-info">
+          <span class="unit-status-icon">${statusIcon}</span>
           <div>
-            <span class="badge-tag" style="background:#fef3c7;color:#b45309;display:inline-block;margin-bottom:0.35rem;">
-              ${cp.isPassed ? `עברת בהצלחה (ציון ${cp.lastScore}) ✓` : 'סימולציית חיים מעשית (דרוש ציון 85+)'}
-            </span>
-            <h3 class="checkpoint-title">${cp.title}</h3>
-            <span class="checkpoint-desc">${cp.description}</span>
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.35rem;">
+              <span class="badge-tag">${unit.category || 'מיומנות מעשית'}</span>
+              <span style="font-size: 0.9rem;" title="${unit.trafficLightDesc || 'רמזור AI'}">${trafficEmoji}</span>
+            </div>
+            <h3 class="unit-name-title">${unit.title}</h3>
+            <span class="unit-skills-preview">${unit.goal}</span>
           </div>
         </div>
         <div class="day-action-box">
-          <span class="badge-tag" style="${cp.isPassed ? 'background:#ecfdf5;color:#059669;' : ''}">
-            ${cp.isPassed ? '✓ הושלם' : (isCpUnlocked ? 'מוכן למבחן' : 'נעול')}
-          </span>
-          ${isCpUnlocked ? `<button class="primary-btn" style="padding: 0.6rem 1.2rem; font-size: 1rem; min-height: 44px; background: #f59e0b;">
-            <span>${cp.isPassed ? 'בצע שוב' : 'התחל מבחן'}</span>
+          <span class="badge-tag">${statusBadgeText}</span>
+          ${isUnlocked ? `<button class="primary-btn" style="padding: 0.6rem 1.2rem; font-size: 1rem; min-height: 44px;">
+            <span>היכנס ליחידה</span>
             <span>▶</span>
           </button>` : ''}
         </div>
       `;
 
-      if (isCpUnlocked) {
-        cpCard.onclick = () => openCheckpointTest(cp);
+      if (isUnlocked) {
+        card.onclick = () => {
+          appState.activeUnitId = unit.id;
+          showView('unit');
+          renderUnitPlayer(unit.id);
+        };
       } else {
-        cpCard.onclick = () => showToast('תחנת מבחן זו תיפתח ברגע שתסיים את 2 היחידות שמעליה! 🌟');
+        card.onclick = () => {
+          showToast('עליך להשלים את היחידות ומבחן השלב הקודמים כדי לפתוח יחידה זו! 💪');
+        };
       }
 
-      container.appendChild(cpCard);
-    }
+      container.appendChild(card);
+
+      // בדיקה האם יש תחנת מבחן שלב אחרי יחידה זו
+      const cp = (appState.checkpoints || []).find(c => c.afterUnitIndex === idx);
+      if (cp) {
+        const prev1 = units[idx - 1];
+        const prev2 = units[idx];
+        const isCpUnlocked = prev1 && prev1.isCompleted && prev2 && prev2.isCompleted;
+
+        const cpCard = document.createElement('div');
+        cpCard.className = `checkpoint-card ${cp.isPassed ? 'passed' : (!isCpUnlocked ? 'locked' : '')}`;
+        cpCard.innerHTML = `
+          <div class="checkpoint-info">
+            <span style="font-size: 2.2rem; line-height: 1;">${cp.isPassed ? '🏆' : (isCpUnlocked ? '🎯' : '🔒')}</span>
+            <div>
+              <span class="badge-tag" style="background:#fef3c7;color:#b45309;display:inline-block;margin-bottom:0.35rem;">
+                ${cp.isPassed ? `עברת בהצלחה (ציון ${cp.lastScore}) ✓` : 'סימולציית חיים מעשית (דרוש ציון 85+)'}
+              </span>
+              <h3 class="checkpoint-title">${cp.title}</h3>
+              <span class="checkpoint-desc">${cp.description}</span>
+            </div>
+          </div>
+          <div class="day-action-box">
+            <span class="badge-tag" style="${cp.isPassed ? 'background:#ecfdf5;color:#059669;' : ''}">
+              ${cp.isPassed ? '✓ הושלם' : (isCpUnlocked ? 'מוכן למבחן' : 'נעול')}
+            </span>
+            ${isCpUnlocked ? `<button class="primary-btn" style="padding: 0.6rem 1.2rem; font-size: 1rem; min-height: 44px; background: #f59e0b;">
+              <span>${cp.isPassed ? 'בצע שוב' : 'התחל מבחן'}</span>
+              <span>▶</span>
+            </button>` : ''}
+          </div>
+        `;
+
+        if (isCpUnlocked) {
+          cpCard.onclick = () => openCheckpointTest(cp);
+        } else {
+          cpCard.onclick = () => showToast('תחנת מבחן זו תיפתח ברגע שתסיים את 2 היחידות שמעליה! 🌟');
+        }
+
+        container.appendChild(cpCard);
+      }
+    });
+
+    // עדכון תגי הסטטוס העצמאיים (ללא גלישת מילים וללא חיתוך מלבנים)
+    const passedCPs = (appState.checkpoints || []).filter(c => c.isPassed).length;
+    const unitsText = document.getElementById('units-stat-text');
+    if (unitsText) unitsText.textContent = `${completedCount} מתוך ${units.length} יחידות`;
+
+    const cpText = document.getElementById('checkpoints-stat-text');
+    if (cpText) cpText.textContent = `${passedCPs} מתוך ${(appState.checkpoints || []).length} מבחנים`;
+
+    const bar = document.getElementById('weekly-progress-bar');
+    if (bar) bar.style.width = `${(completedCount / Math.max(1, units.length)) * 100}%`;
+
+  } else {
+    // מסלול 2: יסודות הנהלת חשבונות (Dynamic Block Engine)
+    if (cpBadgeBox) cpBadgeBox.style.display = 'none';
+
+    const titleEl = document.querySelector('.roadmap-title');
+    if (titleEl) titleEl.textContent = 'מסלול הנהלת חשבונות: צעד אחר צעד 📊';
+    const subEl = document.querySelector('.roadmap-subtitle');
+    if (subEl) subEl.textContent = 'יסודות חובה וזכות, מע"מ, עסקאות משותפות ומשגור • למידה מבוססת משימות וטבלאות';
+
+    const units = getTrackUnits(activeTrack);
+    let completedCount = 0;
+
+    units.forEach((unit, idx) => {
+      if (unit.isCompleted) completedCount++;
+
+      // פתיחה סדרתית: יחידה 0 תמיד פתוחה; יחידה נפתחת כשהקודמת הושלמה
+      const isUnlocked = idx === 0 || !!(units[idx - 1] && units[idx - 1].isCompleted);
+      unit.isUnlocked = isUnlocked;
+
+      const card = document.createElement('div');
+      let statusClass = 'locked-unit';
+      let statusIcon = '🔒';
+      let statusBadgeText = 'נעול';
+
+      if (unit.isCompleted) {
+        statusClass = 'completed-unit';
+        statusIcon = '🟢';
+        statusBadgeText = '✓ הושלם';
+      } else if (isUnlocked) {
+        statusClass = 'active-unit';
+        statusIcon = '🔵';
+        statusBadgeText = 'פתוח עכשיו';
+      }
+
+      const firstText = (unit.blocks || []).find(b => b.type === 'text');
+      const previewDesc = firstText ? firstText.content : 'יחידת לימוד מעשית מבוססת בלוקים ומשימות';
+
+      card.className = `unit-card ${statusClass}`;
+      card.innerHTML = `
+        <div class="unit-card-info">
+          <span class="unit-status-icon">${statusIcon}</span>
+          <div>
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.35rem;">
+              <span class="badge-tag">יחידה ${idx + 1}</span>
+              <span class="badge-tag" style="background: #e0f2fe; color: #0369a1;">⏱️ ${unit.target_minutes || 5} דק'</span>
+            </div>
+            <h3 class="unit-name-title">${unit.title}</h3>
+            <span class="unit-skills-preview">${previewDesc}</span>
+          </div>
+        </div>
+        <div class="day-action-box">
+          <span class="badge-tag">${statusBadgeText}</span>
+          ${isUnlocked ? `<button class="primary-btn" style="padding: 0.6rem 1.2rem; font-size: 1rem; min-height: 44px;">
+            <span>${unit.isCompleted ? 'צפה שוב' : 'היכנס ליחידה'}</span>
+            <span>▶</span>
+          </button>` : ''}
+        </div>
+      `;
+
+      if (isUnlocked) {
+        card.onclick = () => {
+          appState.activeUnitId = unit.id;
+          showView('unit');
+          renderUnitPlayer(unit.id);
+        };
+      } else {
+        card.onclick = () => {
+          showToast('עליך להשלים את היחידה הקודמת כדי לפתוח יחידה זו! 💪');
+        };
+      }
+
+      container.appendChild(card);
+    });
+
+    const unitsText = document.getElementById('units-stat-text');
+    if (unitsText) unitsText.textContent = `${completedCount} מתוך ${units.length} יחידות`;
+
+    const bar = document.getElementById('weekly-progress-bar');
+    if (bar) bar.style.width = `${(completedCount / Math.max(1, units.length)) * 100}%`;
+  }
+}
+
+// ============================================================================
+// 6.5. מנוע הבלוקים הדינמי - תקן בלוקים (Dynamic Block Engine v1.0)
+// ============================================================================
+
+/**
+ * דיספצ'ר ראשי לרינדור בלוק לימוד
+ * @param {object} block - אובייקט הבלוק לפי מפרט LESSON_ENGINE_SPEC
+ * @param {number} index - אינדקס הבלוק ביחידה
+ * @param {object} unit - יחידת הלימוד
+ * @returns {HTMLElement}
+ */
+function renderBlock(block, index, unit) {
+  const container = document.createElement('div');
+  container.className = `lesson-block block-type-${block.type || 'text'}`;
+
+  switch (block.type) {
+    case 'text':
+      renderTextBlock(container, block);
+      break;
+    case 'compare':
+      renderCompareBlock(container, block);
+      break;
+    case 'callout':
+      renderCalloutBlock(container, block);
+      break;
+    case 'interactive_scale':
+      renderScaleBlock(container, block);
+      break;
+    case 'checklist_steps':
+      renderChecklistBlock(container, block);
+      break;
+    case 'journal_grid':
+      renderJournalGridBlock(container, block);
+      break;
+    case 'spreadsheet_task':
+      renderSpreadsheetBlock(container, block);
+      break;
+    case 'exercise':
+      renderExerciseBlock(container, block);
+      break;
+    case 'ai_eval_qa':
+      renderAiEvalBlock(container, block);
+      break;
+    default:
+      container.innerHTML = `<p class="block-text-content">${block.content || ''}</p>`;
+  }
+
+  return container;
+}
+
+/**
+ * בלוק 1: כותרת וטקסט (text)
+ */
+function renderTextBlock(container, block) {
+  const p = document.createElement('p');
+  p.className = `block-text-content style-${block.style || 'normal'}`;
+  p.textContent = block.content || '';
+  container.appendChild(p);
+}
+
+/**
+ * בלוק 2: כרטיס השוואה נכון מול שגוי (compare)
+ */
+function renderCompareBlock(container, block) {
+  const good = block.good || { label: 'נכון', desc: '' };
+  const bad = block.bad || { label: 'טעות נפוצה', desc: '' };
+  container.innerHTML = `
+    ${block.title ? `<h4 class="block-section-title">${block.title}</h4>` : ''}
+    <div class="block-compare-grid">
+      <div class="compare-card compare-good">
+        <div class="compare-badge good-badge">✅ ${good.label}</div>
+        <p class="compare-desc">${good.desc}</p>
+      </div>
+      <div class="compare-card compare-bad">
+        <div class="compare-badge bad-badge">❌ ${bad.label}</div>
+        <p class="compare-desc">${bad.desc}</p>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * בלוק 3: תיבת הדגשה / כלל / טיפ (callout)
+ */
+function renderCalloutBlock(container, block) {
+  const icons = { tip: '💡', rule: '🛡️', warning: '⚠️', info: 'ℹ️' };
+  const icon = icons[block.style] || '📌';
+  container.innerHTML = `
+    <div class="callout-card callout-${block.style || 'info'}">
+      <div class="callout-header">
+        <span class="callout-icon">${icon}</span>
+        <strong class="callout-title">${block.title || 'שים לב'}</strong>
+      </div>
+      <p class="callout-text">${block.text || ''}</p>
+    </div>
+  `;
+}
+
+/**
+ * בלוק 4: מאזניים אינטראקטיביים (interactive_scale)
+ */
+function renderScaleBlock(container, block) {
+  const isBalanced = block.is_balanced !== undefined ? block.is_balanced : (block.left_weight === block.right_weight);
+  container.innerHTML = `
+    ${block.title ? `<h4 class="block-section-title">${block.title}</h4>` : ''}
+    <div class="scale-visual-card ${isBalanced ? 'balanced' : 'unbalanced'}">
+      <div class="scale-pans-wrapper">
+        <div class="scale-pan scale-pan-left">
+          <div class="scale-pan-label">${block.left_label || 'חובה'}</div>
+          <div class="scale-pan-weight">${Number(block.left_weight || 0).toLocaleString()} ₪</div>
+        </div>
+        <div class="scale-fulcrum">
+          <span class="scale-icon">⚖️</span>
+          <span class="scale-status-pill ${isBalanced ? 'status-balanced' : 'status-unbalanced'}">
+            ${isBalanced ? 'מאוזן לחלוטין ✓' : 'לא מאוזן'}
+          </span>
+        </div>
+        <div class="scale-pan scale-pan-right">
+          <div class="scale-pan-label">${block.right_label || 'זכות'}</div>
+          <div class="scale-pan-weight">${Number(block.right_weight || 0).toLocaleString()} ₪</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * בלוק 5: צ'ק-ליסט שלבים (checklist_steps)
+ */
+function renderChecklistBlock(container, block) {
+  container.innerHTML = `
+    ${block.title ? `<h4 class="block-section-title">${block.title}</h4>` : ''}
+    <div class="checklist-items-box">
+      ${(block.steps || []).map((step, sIdx) => `
+        <label class="checklist-item-row" data-step-idx="${sIdx}">
+          <input type="checkbox" class="checklist-checkbox" />
+          <span class="checklist-text">${step}</span>
+        </label>
+      `).join('')}
+    </div>
+  `;
+  container.querySelectorAll('.checklist-checkbox').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const row = e.target.closest('.checklist-item-row');
+      if (row) row.classList.toggle('checked', e.target.checked);
+    });
+  });
+}
+
+/**
+ * בלוק 6: טבלת פקודת יומן (journal_grid)
+ */
+function renderJournalGridBlock(container, block) {
+  const rows = block.expected_rows || [];
+  let totalDebitExpected = 0;
+  let totalCreditExpected = 0;
+  rows.forEach(r => {
+    totalDebitExpected += Number(r.debit) || 0;
+    totalCreditExpected += Number(r.credit) || 0;
   });
 
-  // עדכון תגי הסטטוס העצמאיים (ללא גלישת מילים וללא חיתוך מלבנים)
-  const passedCPs = (appState.checkpoints || []).filter(c => c.isPassed).length;
-  const unitsText = document.getElementById('units-stat-text');
-  if (unitsText) unitsText.textContent = `${completedCount} מתוך ${units.length} יחידות`;
+  const tableHtml = `
+    <div class="journal-block-card">
+      <div class="journal-instruction">
+        <span class="journal-pencil-icon">📝</span>
+        <span>${block.instruction || 'ערוך פקודת יומן'}</span>
+      </div>
+      <div class="journal-table-wrapper">
+        <table class="journal-grid-table">
+          <thead>
+            <tr>
+              <th>שם החשבון</th>
+              <th style="width: 140px;">חובה (₪)</th>
+              <th style="width: 140px;">זכות (₪)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row, rIdx) => `
+              <tr class="journal-row" data-row-idx="${rIdx}">
+                <td class="journal-acc-cell">
+                  <span class="acc-name">${row.account}</span>
+                </td>
+                <td>
+                  <input type="number" class="styled-input journal-debit-input" placeholder="0" value="${row.debit || 0}" />
+                </td>
+                <td>
+                  <input type="number" class="styled-input journal-credit-input" placeholder="0" value="${row.credit || 0}" />
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="journal-total-row">
+              <td><strong>סה"כ פקודה:</strong></td>
+              <td class="total-debit-cell">0 ₪</td>
+              <td class="total-credit-cell">0 ₪</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div class="journal-actions-row">
+        <button class="primary-btn journal-check-btn" type="button">
+          <span>בדוק איזון פקודת יומן ⚖️</span>
+        </button>
+        <div class="journal-feedback-msg" style="display: none;"></div>
+      </div>
+    </div>
+  `;
+  container.innerHTML = tableHtml;
 
-  const cpText = document.getElementById('checkpoints-stat-text');
-  if (cpText) cpText.textContent = `${passedCPs} מתוך ${(appState.checkpoints || []).length} מבחנים`;
+  const updateTotals = () => {
+    let dSum = 0;
+    let cSum = 0;
+    container.querySelectorAll('.journal-debit-input').forEach(inp => dSum += Number(inp.value) || 0);
+    container.querySelectorAll('.journal-credit-input').forEach(inp => cSum += Number(inp.value) || 0);
+    const dCell = container.querySelector('.total-debit-cell');
+    const cCell = container.querySelector('.total-credit-cell');
+    if (dCell) dCell.textContent = `${dSum.toLocaleString()} ₪`;
+    if (cCell) cCell.textContent = `${cSum.toLocaleString()} ₪`;
+    return { dSum, cSum };
+  };
 
-  const legacyPill = document.getElementById('total-progress-pill');
-  if (legacyPill) legacyPill.textContent = `${completedCount} מתוך ${units.length} יחידות | ${passedCPs} מבחנים`;
+  container.querySelectorAll('input').forEach(inp => inp.addEventListener('input', updateTotals));
+  updateTotals();
 
-  const bar = document.getElementById('weekly-progress-bar');
-  if (bar) bar.style.width = `${(completedCount / units.length) * 100}%`;
+  const checkBtn = container.querySelector('.journal-check-btn');
+  const fbMsg = container.querySelector('.journal-feedback-msg');
+  if (checkBtn && fbMsg) {
+    checkBtn.onclick = () => {
+      const { dSum, cSum } = updateTotals();
+      fbMsg.style.display = 'block';
+      if (dSum > 0 && dSum === cSum && (totalDebitExpected === 0 || dSum === totalDebitExpected)) {
+        fbMsg.className = 'journal-feedback-msg success';
+        fbMsg.textContent = 'מצוין, דניאל! הפקודה מאוזנת ונכונה לחלוטין! סך חובה שווה לסך זכות ✓';
+        SoundService.playSuccessSound();
+      } else if (dSum > 0 && dSum === cSum) {
+        fbMsg.className = 'journal-feedback-msg warning';
+        fbMsg.textContent = 'הפקודה מאוזנת מתמטית, אך בדוק האם הסכומים תואמים בדיוק את נתוני התרגיל.';
+      } else {
+        fbMsg.className = 'journal-feedback-msg error';
+        fbMsg.textContent = block.validation_error_message || 'הפקודה לא מאוזנת! סך החובה חייב להיות שווה בדיוק לסך הזכות.';
+      }
+    };
+  }
+}
+
+/**
+ * בלוק 7: משימת גיליון נתונים וחישוב (spreadsheet_task)
+ */
+function renderSpreadsheetBlock(container, block) {
+  const td = block.table_data || { headers: [], rows: [] };
+  container.innerHTML = `
+    <div class="spreadsheet-block-card">
+      <div class="spreadsheet-header">
+        <span class="ss-icon">📊</span>
+        <div>
+          <h4 class="ss-title">${block.title || 'משימת נתונים'}</h4>
+          <p class="ss-instructions">${block.instructions || ''}</p>
+        </div>
+      </div>
+      <div class="ss-table-wrapper">
+        <table class="spreadsheet-grid-table">
+          <thead>
+            <tr>
+              ${(td.headers || []).map(h => `<th>${h}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${(td.rows || []).map(row => `
+              <tr>
+                ${row.map(cell => `<td>${cell}</td>`).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="ss-action-box">
+        <label class="ss-prompt-label"><strong>שאלה:</strong> ${block.action_prompt || ''}</label>
+        <div class="ss-input-group">
+          <input type="number" class="styled-input ss-answer-input" placeholder="הקלד כאן מספר..." />
+          <button class="primary-btn ss-check-btn" type="button">בדוק תשובה</button>
+          ${block.hint ? `<button class="secondary-btn ss-hint-btn" type="button">💡 רמז</button>` : ''}
+        </div>
+        ${block.hint ? `<div class="ss-hint-text" style="display: none;">${block.hint}</div>` : ''}
+        <div class="ss-feedback-msg" style="display: none;"></div>
+      </div>
+    </div>
+  `;
+
+  const hintBtn = container.querySelector('.ss-hint-btn');
+  const hintText = container.querySelector('.ss-hint-text');
+  if (hintBtn && hintText) {
+    hintBtn.onclick = () => {
+      hintText.style.display = hintText.style.display === 'none' ? 'block' : 'none';
+    };
+  }
+
+  const checkBtn = container.querySelector('.ss-check-btn');
+  const input = container.querySelector('.ss-answer-input');
+  const fb = container.querySelector('.ss-feedback-msg');
+  if (checkBtn && input && fb) {
+    checkBtn.onclick = () => {
+      const val = Number(input.value);
+      const expected = Number(block.expected_numeric_answer);
+      fb.style.display = 'block';
+      if (val === expected) {
+        fb.className = 'ss-feedback-msg success';
+        fb.textContent = 'כל הכבוד, דניאל! חישוב מדויק ונכון מאוד 🌟';
+        SoundService.playSuccessSound();
+      } else {
+        fb.className = 'ss-feedback-msg error';
+        fb.textContent = `לא בדיוק (קיבלת ${val}). נסה שוב או היעזר ברמז למעלה!`;
+      }
+    };
+  }
+}
+
+/**
+ * בלוק 8: שאלת תרגול רב-ברירתית (exercise)
+ */
+function renderExerciseBlock(container, block) {
+  container.innerHTML = `
+    <div class="exercise-block-card">
+      <div class="exercise-header">
+        <span class="exercise-badge">🎯 שאלת בדיקה עצמית</span>
+        <h4 class="exercise-question">${block.question || ''}</h4>
+      </div>
+      <div class="exercise-options-list">
+        ${(block.options || []).map((opt, oIdx) => `
+          <button class="exercise-option-btn" type="button" data-idx="${oIdx}">
+            <span class="option-marker">${['א', 'ב', 'ג', 'ד'][oIdx] || oIdx + 1}</span>
+            <span class="option-text">${opt}</span>
+          </button>
+        `).join('')}
+      </div>
+      <div class="exercise-feedback-card" style="display: none;"></div>
+    </div>
+  `;
+
+  const buttons = container.querySelectorAll('.exercise-option-btn');
+  const fbCard = container.querySelector('.exercise-feedback-card');
+
+  buttons.forEach(btn => {
+    btn.onclick = () => {
+      const chosen = Number(btn.dataset.idx);
+      buttons.forEach(b => b.classList.remove('selected', 'correct', 'wrong'));
+      btn.classList.add('selected');
+
+      fbCard.style.display = 'block';
+      if (chosen === block.correct_index) {
+        btn.classList.add('correct');
+        fbCard.className = 'exercise-feedback-card success';
+        fbCard.innerHTML = `
+          <strong>נכון מאוד! ✨</strong>
+          <p>${block.explanation || 'תשובה מדויקת!'}</p>
+        `;
+        SoundService.playSuccessSound();
+      } else {
+        btn.classList.add('wrong');
+        fbCard.className = 'exercise-feedback-card wrong';
+        fbCard.innerHTML = `
+          <strong>לא בדיוק.</strong>
+          <p>חשוב שוב על הכיוון: לאן הכסף נכנס ומאיפה הוא יצא, ונסה לבחור שוב! 💪</p>
+        `;
+      }
+    };
+  });
+}
+
+/**
+ * בלוק 9: שאלה פתוחה עם בדיקת AI מעצימה (ai_eval_qa)
+ */
+function renderAiEvalBlock(container, block) {
+  container.innerHTML = `
+    <div class="ai-eval-block-card">
+      <div class="ai-eval-header">
+        <span class="ai-eval-robot-icon">🤖</span>
+        <div>
+          <h4 class="ai-eval-title">${block.question_title || 'שאלה למחשבה'}</h4>
+          <span class="ai-eval-subtitle">כתוב במילים שלך - המאמן יבדוק וייתן משוב מעצים</span>
+        </div>
+      </div>
+      <div class="ai-eval-body">
+        <textarea class="styled-textarea ai-eval-textarea" rows="3" placeholder="${block.placeholder || 'כתוב כאן בנחת...'}"></textarea>
+        <div class="ai-eval-actions">
+          <button class="primary-btn ai-eval-submit-btn" type="button">
+            <span>שלח לבדיקת AI מעצימה ✨</span>
+          </button>
+        </div>
+        <div class="ai-eval-feedback-result" style="display: none;"></div>
+      </div>
+    </div>
+  `;
+
+  const btn = container.querySelector('.ai-eval-submit-btn');
+  const textarea = container.querySelector('.ai-eval-textarea');
+  const fbResult = container.querySelector('.ai-eval-feedback-result');
+
+  if (btn && textarea && fbResult) {
+    btn.onclick = async () => {
+      const text = textarea.value.trim();
+      if (!text) {
+        showToast('אנא כתוב כמה מילים לפני השליחה ✍️');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span>בודק בנחת... ⏳</span>';
+      fbResult.style.display = 'block';
+      fbResult.className = 'ai-eval-feedback-result loading';
+      fbResult.innerHTML = '<p>המאמן של דניאל מעבד את התשובה שלך... 🤖</p>';
+
+      const prompt = `אתה מאמן למידה תומך ומעצים עבור דניאל, לומד בן 28.
+שאלה: "${block.question_title}"
+תשובת דניאל: "${text}"
+מושג ליבה: "${block.rubric_for_ai?.core_concept || ''}"
+כללי הערכה: ${JSON.stringify(block.rubric_for_ai?.evaluation_rules || [])}
+הנחיות:
+1. פתח תמיד במילים חמות ומעצימות לדניאל.
+2. צטט מילים יפות מהתשובה שלו.
+3. חזק את ההבנה בצורה חיובית ומעודדת ב-2-3 משפטים קצרים וברורים בעברית פשוטה.`;
+
+      let feedback = '';
+      try {
+        if (appState.apiConfig && (appState.apiConfig.geminiKey || appState.apiConfig.groqKey)) {
+          feedback = await callGeminiAPI(prompt);
+        }
+      } catch (e) {
+        console.warn('AI call error:', e);
+      }
+
+      if (!feedback) {
+        const words = text.split(/\s+/).slice(0, 3).join(' ');
+        feedback = `כל הכבוד דניאל! נהדר לראות שכתבת "${words}...". ההסבר שלך נוגע בדיוק בעניין: ${block.rubric_for_ai?.core_concept || 'הבנת את העיקרון המרכזי'}. המשך ככה! ⭐`;
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<span>שלח שוב לבדיקה ✨</span>';
+      fbResult.className = 'ai-eval-feedback-result success';
+      fbResult.innerHTML = `
+        <div class="ai-coach-bubble">
+          <div class="ai-bubble-badge">🌟 משוב ממאמן ה-AI:</div>
+          <p class="ai-bubble-content">${feedback}</p>
+        </div>
+      `;
+      SoundService.playSuccessSound();
+    };
+  }
 }
 
 // ============================================================================
@@ -534,6 +1184,107 @@ function renderRoadmap() {
 // ============================================================================
 
 function renderUnitPlayer(unitId) {
+  const activeTrack = getActiveTrack();
+  const legacyWrapper = document.getElementById('unit-steps-wrapper');
+  const blocksWrapper = document.getElementById('unit-blocks-wrapper');
+
+  if (activeTrack.engine === 'blocks') {
+    // ========================================================================
+    // מנוע הבלוקים הדינמי (Dynamic Block Engine - Track 2: Accounting)
+    // ========================================================================
+    if (legacyWrapper) legacyWrapper.style.display = 'none';
+    if (blocksWrapper) {
+      blocksWrapper.style.display = 'flex';
+      blocksWrapper.innerHTML = '';
+    }
+
+    const units = getTrackUnits(activeTrack);
+    const unit = units.find(u => u.id === unitId || u.unit_id === unitId);
+    if (!unit) return;
+
+    const titleEl = document.getElementById('unit-view-title');
+    if (titleEl) titleEl.textContent = unit.title;
+    const mainTitleEl = document.getElementById('unit-main-title');
+    if (mainTitleEl) mainTitleEl.textContent = unit.title;
+    const badgeEl = document.getElementById('unit-topic-badge');
+    if (badgeEl) badgeEl.textContent = activeTrack.shortLabel || 'הנהלת חשבונות';
+    const goalEl = document.getElementById('unit-goal-desc');
+    if (goalEl) goalEl.textContent = `⏱️ זמן מומלץ: ${unit.target_minutes || 5} דקות • למידה מבוססת בלוקים ומשימות מעשיות`;
+
+    const backBtn = document.getElementById('unit-back-btn');
+    if (backBtn) {
+      backBtn.onclick = () => {
+        showView('roadmap');
+        renderRoadmap();
+      };
+    }
+
+    if (blocksWrapper) {
+      (unit.blocks || []).forEach((block, bIdx) => {
+        const blockEl = renderBlock(block, bIdx, unit);
+        if (blockEl) blocksWrapper.appendChild(blockEl);
+      });
+
+      // כרטיס סיום היחידה ומשוב מעצים
+      const finishContainer = document.createElement('div');
+      finishContainer.className = 'unit-finish-block-card';
+      finishContainer.innerHTML = `
+        <div style="text-align: center; margin: 2rem 0 1rem 0;">
+          <button class="primary-btn block-finish-btn" type="button" style="min-height: 52px; font-size: 1.15rem; padding: 0.9rem 2.2rem;">
+            <span>סיימתי בהצלחה את כל הבלוקים ביחידה! ⭐</span>
+          </button>
+          <div class="block-completed-box" style="display: ${unit.isCompleted ? 'block' : 'none'}; margin-top: 1.2rem;">
+            <div class="completed-ribbon" style="display: flex;">
+              <span class="ribbon-icon">⭐</span>
+              <span class="ribbon-text">כל הכבוד דניאל! היחידה הושלמה בהצלחה!</span>
+            </div>
+            <button class="share-whatsapp-btn block-wa-share-btn" style="margin-top: 1rem;">
+              <span>שלח עדכון לאבא ב-WhatsApp 📲</span>
+            </button>
+          </div>
+        </div>
+      `;
+
+      const finishBtn = finishContainer.querySelector('.block-finish-btn');
+      const compBox = finishContainer.querySelector('.block-completed-box');
+      const waBtn = finishContainer.querySelector('.block-wa-share-btn');
+
+      if (finishBtn) {
+        finishBtn.onclick = () => {
+          if (!appState.trackProgress[activeTrack.id]) {
+            appState.trackProgress[activeTrack.id] = [];
+          }
+          if (!appState.trackProgress[activeTrack.id].includes(unit.id)) {
+            appState.trackProgress[activeTrack.id].push(unit.id);
+          }
+          unit.isCompleted = true;
+          saveAppState();
+          SoundService.playSuccessSound();
+          showToast(`כל הכבוד דניאל! יחידה "${unit.title}" הושלמה בהצלחה! 🌟`);
+          if (compBox) compBox.style.display = 'block';
+          compBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        };
+      }
+
+      if (waBtn) {
+        waBtn.onclick = () => {
+          const msg = encodeURIComponent(`שלום אבא! סיימתי עכשיו בהצלחה את יחידת "${unit.title}" במסלול ${activeTrack.label}! ⭐`);
+          window.open(`https://wa.me/?text=${msg}`, '_blank');
+        };
+      }
+
+      blocksWrapper.appendChild(finishContainer);
+    }
+
+    return;
+  }
+
+  // ========================================================================
+  // מנוע הלמידה הוותיק ב-4 שלבים (Legacy Engine - Track 1: General & AI)
+  // ========================================================================
+  if (blocksWrapper) blocksWrapper.style.display = 'none';
+  if (legacyWrapper) legacyWrapper.style.display = 'block';
+
   const unit = appState.curriculumUnits.find(u => u.id === unitId);
   if (!unit) return;
 
@@ -2057,6 +2808,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initAdminPortal();
 
   showView('roadmap');
+  renderTrackTabs();
   renderRoadmap();
 
   showToast('ברוך הבא דניאל! גרסה 3 של המערכת נטענה בהצלחה ✨');

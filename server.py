@@ -65,11 +65,13 @@ class DanielLearningHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
 if __name__ == '__main__':
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
     port = int(sys.argv[1]) if len(sys.argv) > 1 else PORT
     with socketserver.TCPServer(("", port), DanielLearningHandler) as httpd:
-        print(f"🚀 השרת פועל בכתובת: http://localhost:{port}")
-        print("📂 הקבצים מוגשים מתוך התיקייה הנוכחית.")
+        print(f"🚀 Server running at: http://localhost:{port}")
+        print("📂 Serving files from current directory.")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print("\nהשרת נעצר.")
+            print("\nServer stopped.")
