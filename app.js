@@ -858,27 +858,31 @@ function renderCalloutBlock(container, block) {
  * @param {object} block
  */
 function renderScaleBlock(container, block) {
-  const isTiltedCredit = block.tilted_side === 'credit';
-  const isTiltedDebit = block.tilted_side === 'debit';
-  // הטיה פיזית של 12 מעלות: זכות (ימין יורד -> סיבוב 12deg), חובה (שמאל יורד -> סיבוב -12deg)
-  const initialRotation = isTiltedCredit ? 12 : (isTiltedDebit ? -12 : (block.is_balanced === false ? 12 : 0));
-  const hasOptions = Array.isArray(block.options) && block.options.length > 0;
+  // Defensive fallbacks — never crash on missing data
+  const scenario   = block.scenario    || '';
+  const options    = Array.isArray(block.options) ? block.options : [];
+  const tiltedSide = block.tilted_side || (block.is_balanced === false ? 'credit' : '');
+
+  const isTiltedCredit = tiltedSide === 'credit';
+  const isTiltedDebit  = tiltedSide === 'debit';
+  const initialRotation = isTiltedCredit ? 12 : (isTiltedDebit ? -12 : 0);
+  const hasOptions = options.length > 0;
   const initiallyBalanced = initialRotation === 0;
 
-  const leftWeightText = block.left_weight !== undefined ? `${Number(block.left_weight).toLocaleString()} ₪` : '';
+  const leftWeightText  = block.left_weight  !== undefined ? `${Number(block.left_weight).toLocaleString()} ₪`  : '';
   const rightWeightText = block.right_weight !== undefined ? `${Number(block.right_weight).toLocaleString()} ₪` : '';
 
   container.innerHTML = `
     <div class="scale-block-card ${initiallyBalanced ? 'balanced' : 'tilted'}">
       ${block.title ? `<h4 class="block-section-title">${block.title}</h4>` : ''}
       
-      ${block.scenario ? `
+      ${scenario ? `
         <div class="scale-scenario-card">
           <div class="scale-scenario-header">
             <span class="scale-scenario-icon">💼</span>
             <strong class="scale-scenario-badge">סיטואציה עסקית</strong>
           </div>
-          <p class="scale-scenario-text">${block.scenario}</p>
+          <p class="scale-scenario-text">${scenario}</p>
         </div>
       ` : ''}
 
@@ -927,15 +931,15 @@ function renderScaleBlock(container, block) {
             <strong>בחר את המשקולת המאזנת להנחה על המאזניים:</strong>
           </div>
           <div class="scale-options-grid">
-            ${block.options.map((opt, oIdx) => `
+            ${options.map((opt, oIdx) => `
               <button class="scale-weight-btn" type="button" data-idx="${oIdx}">
                 <span class="weight-icon">🪙</span>
-                <span class="weight-label">${opt.text}</span>
+                <span class="weight-label">${opt.text || ''}</span>
               </button>
             `).join('')}
           </div>
         </div>
-      ` : ''}
+      ` : '<div class="scale-options-fallback">מאזניים להמחשה — אין אפשרויות בחירה בשלב זה.</div>'}
 
       <div class="scale-feedback-alert" style="display: none;"></div>
     </div>
@@ -953,7 +957,7 @@ function renderScaleBlock(container, block) {
     weightButtons.forEach(btn => {
       btn.onclick = () => {
         const idx = Number(btn.dataset.idx);
-        const opt = block.options[idx];
+        const opt = options[idx];
         if (!opt) return;
 
         weightButtons.forEach(b => b.classList.remove('selected', 'correct', 'wrong'));
