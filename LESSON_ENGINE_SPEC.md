@@ -185,12 +185,23 @@
 ```json
 {
   "type": "interactive_scale",
-  "title": "מאזני העסק",
-  "left_label": "נכסים (קופה ובנק)",
-  "left_weight": 1000,
-  "right_label": "הכנסות והון",
-  "right_weight": 1000,
-  "is_balanced": true
+  "title": "string (כותרת האתגר בעברית)",
+  "scenario": "string (הסיטואציה העסקית שמציבה את דניאל במרכז ההחלטה)",
+  "tilted_side": "string (debit | credit)",
+  "left_label": "string (תווית צד חובה עם סכום)",
+  "right_label": "string (תווית צד זכות עם סכום)",
+  "options": [
+    {
+      "text": "string (תיאור המשקולת)",
+      "is_correct": true,
+      "feedback": "string (משוב מעצים לדניאל בהצלחה)"
+    },
+    {
+      "text": "string (מסיח שגוי נפוץ)",
+      "is_correct": false,
+      "feedback": "string (רמז עדין ומכוון ללא שיפוטיות)"
+    }
+  ]
 }
 ```
 
