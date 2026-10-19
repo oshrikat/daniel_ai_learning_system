@@ -458,6 +458,412 @@ const AIService = {
         teachBackText: `היום למדתי שכשמבקשים הסבר קצר על ${topic}, קל מאוד להבין וליישם.`
       }
     };
+  },
+
+  /**
+   * מסלול 3: עזרה בלימודים - מענה פדגוגי אישי, סבלני ומובנה לדניאל
+   * @param {object} params
+   * @param {string} [params.subject]
+   * @param {string} params.question
+   * @param {Array} [params.conversationHistory]
+   * @returns {Promise<{reply: string, provider: string, isFallback: boolean}>}
+   */
+  async askStudyHelper({ subject = 'כללי', question = '', conversationHistory = [] } = {}) {
+    const cleanQ = (question || '').trim();
+    const cleanSubj = (subject || 'כללי').trim();
+    if (!cleanQ) {
+      return {
+        reply: 'שלום דניאל! כתוב לי איזו שאלה או מושג תרצה שנלמד יחד, ואסביר לך צעד אחר צעד בשמחה 🌟',
+        provider: 'local',
+        isFallback: true
+      };
+    }
+
+    const systemInstruction = `אתה החונך האישי והמאמן הפדגוגי של דניאל (בן 28) במסלול "עזרה בלימודים".
+ענה תמיד בעברית פשוטה, נעימה, מכבדת ומעצימה.
+פעל תמיד לפי 4 הצעדים הבאים:
+1. פתיחה חמה שמחזקת את דניאל על השאלה הטובה.
+2. הסבר קצר ופשוט של המושג או הפתרון בשפה יומיומית ברורה.
+3. דוגמה מוחשית ומעשית (מספרית או מחיי היומיום) שממחישה את העיקרון.
+4. שאלת בדיקת הבנה קצרה או טיפ מעשי אחד להמשך.`;
+
+    const recentTurns = Array.isArray(conversationHistory)
+      ? conversationHistory.slice(-6).map(m => `${m.role === 'user' ? 'דניאל' : 'מאמן ה-AI'}: ${m.text}`).join('\n')
+      : '';
+
+    const fullPrompt = `${recentTurns ? `הקשר שיחה קודם:\n${recentTurns}\n\n` : ''}נושא לימוד: ${cleanSubj}
+השאלה של דניאל: "${cleanQ}"
+
+אנא השב לדניאל בצורה מסודרת, בהירה ומעצימה לפי 4 הצעדים.`;
+
+    try {
+      const aiReply = await callMultiTierAI(fullPrompt, {
+        systemInstruction,
+        maxTokens: 1200
+      });
+      if (aiReply && aiReply.trim()) {
+        return {
+          reply: aiReply.trim(),
+          provider: 'ai',
+          isFallback: false
+        };
+      }
+    } catch (e) {
+      console.warn('[askStudyHelper] AI call failed, using pedagogical fallback:', e);
+    }
+
+    // Deterministic offline pedagogical fallback tailored to subject/question keywords
+    let conceptExplanation = `כדי לפתור או להבין את "${cleanQ}" בנושא ${cleanSubj}, נפרק את השאלה ל-2 חלקים פשוטים: קודם נזהה מה הנתון המרכזי בשאלה, ואז נבדוק מה הפעולה הנדרשת.`;
+    let exampleText = `למשל, אם מבקשים מאיתנו לבדוק פעולה כספית או מושג מקצועי, נשאל תמיד: מה נכנס (חובה) ומה יצא (זכות), ונרשום את הנתונים בצורה מסודרת בשורות נפרדות.`;
+
+    if (/חובה|זכות|פקודת יומן|כרטסת/i.test(cleanQ + ' ' + cleanSubj)) {
+      conceptExplanation = `בהנהלת חשבונות כפולה, כל אירוע נרשם בשני צדדים מאוזנים: צד **חובה** (מה שנכנס לעסק או שימוש בכסף, כמו קופה/בנק או הוצאה) וצד **זכות** (מקור הכסף או מה שיצא, כמו הכנסות או ספקים).`;
+      exampleText = `דוגמה מוחשית: אם לקוח שילם לנו 500 ₪ במזומן עבור שירות — לחשבון "קופה" נכנס כסף ולכן נחייב אותו ב-500 ₪ (חובה), וחשבון "הכנסות" הוא מקור העסקה ולכן נזכה אותו ב-500 ₪ (זכות).`;
+    } else if (/מע"מ|מעמ|חשבונית/i.test(cleanQ + ' ' + cleanSubj)) {
+      conceptExplanation = `מע"מ (מס ערך מוסף) בשיעור 18% מתווסף למחיר העסקה לפני מע"מ. במכירה ללקוח זהו "מע"מ עסקאות" (זכות), ובקנייה מספק זהו "מע"מ תשומות" (חובה).`;
+      exampleText = `דוגמה מוחשית: עסקה בסך 1,000 ₪ לפני מע"מ — המע"מ הוא 180 ₪ (1,000 כפול 18%), והסכום הכולל לתשלום בחשבונית הוא 1,180 ₪.`;
+    } else if (/מאזן|רווח והפסד|דוח/i.test(cleanQ + ' ' + cleanSubj)) {
+      conceptExplanation = `דוח רווח והפסד מציג את ההכנסות פחות ההוצאות לתקופה (כדי לדעת אם העסק הרוויח), ואילו המאזן מציג תמונת מצב של נכסים מול התחייבויות והון עצמי.`;
+      exampleText = `דוגמה מוחשית: אם לעסק היו הכנסות של 10,000 ₪ והוצאות של 6,000 ₪, הרווח הנקי בדוח רווח והפסד הוא 4,000 ₪.`;
+    }
+
+    const fallbackReply = `🌟 **שאלה מצוינת דניאל!** כל הכבוד על הסקרנות בנושא **${cleanSubj}**.
+
+📘 **הסבר פשוט בגובה העיניים:**
+${conceptExplanation}
+
+💡 **דוגמה מוחשית:**
+${exampleText}
+
+🎯 **צעד קטן לבדיקת הבנה:**
+נסה לכתוב לי במילים שלך: מה החלק המרכזי שהכי עזר לך בהסבר הזה, או שלח לי תרגיל נוסף ונפתור אותו יחד!`;
+
+    return {
+      reply: fallbackReply,
+      provider: 'offline',
+      isFallback: true
+    };
+  },
+
+  /**
+   * מאגר שאלות מובנה למבחן המסכם בהנהלת חשבונות (גיבוי מלא ואמין)
+   * @returns {Array}
+   */
+  getFallbackAccountingExamQuestions() {
+    return [
+      {
+        id: 'acc_exam_q1',
+        type: 'multiple_choice',
+        topic: 'חובה וזכות ופקודות יומן',
+        points: 16,
+        question: 'העסק רכש מחשב משרדי חדש בסך 3,500 ₪ ושילם עליו מיד בהעברה בנקאית מחשבון העו"ש. כיצד תירשם הפעולה?',
+        options: [
+          'חובה: ציוד משרדי (3,500 ₪) | זכות: עו"ש בנק (3,500 ₪)',
+          'חובה: עו"ש בנק (3,500 ₪) | זכות: ציוד משרדי (3,500 ₪)',
+          'חובה: הכנסות (3,500 ₪) | זכות: ספקים (3,500 ₪)',
+          'חובה: קופה (3,500 ₪) | זכות: הון עצמי (3,500 ₪)'
+        ],
+        correctIndex: 0,
+        explanation: 'המחשב (רכוש/ציוד) נכנס לעסק ולכן הוא בחובה, והכסף יצא מחשבון העו"ש בבנק ולכן הבנק בזכות.'
+      },
+      {
+        id: 'acc_exam_q2',
+        type: 'multiple_choice',
+        topic: 'מאזן בוחן ואיזון חשבונאי',
+        points: 16,
+        question: 'מהו הכלל החשבונאי המרכזי שחייב להתקיים בכל פקודת יומן תקנית ובמאזן הבוחן?',
+        options: [
+          'סך כל הסכומים בצד החובה חייב להיות שווה בדיוק לסך כל הסכומים בצד הזכות',
+          'סך החובה חייב להיות תמיד כפול מסך הזכות',
+          'מותר לרשום רק צד אחד בפקודת היומן ללא צד נגדי',
+          'יתרת הבנק חייבת להיות תמיד שווה לאפס בסוף כל יום'
+        ],
+        correctIndex: 0,
+        explanation: 'שיטת הנהלת החשבונות הכפולה מבוססת על עיקרון האיזון: סך חובה = סך זכות תמיד.'
+      },
+      {
+        id: 'acc_exam_q3',
+        type: 'calculation',
+        topic: 'חישוב מע"מ עסקאות וחשבונית מס',
+        points: 17,
+        question: 'עוסק מורשה הפיק חשבונית מס עבור שירותי הנהלת חשבונות בסך 2,000 ₪ לפני מע"מ. אם שיעור המע"מ הוא 18%, מהו סכום המע"מ בשקלים (מספר בלבד)?',
+        expectedAnswer: 360,
+        explanation: 'חישוב המע"מ: 2,000 ₪ כפול 18% (0.18) = 360 ₪ (והסכום הכולל לתשלום הוא 2,360 ₪).'
+      },
+      {
+        id: 'acc_exam_q4',
+        type: 'calculation',
+        topic: 'דוח רווח והפסד',
+        points: 17,
+        question: 'בחודש אוקטובר סך ההכנסות של העסק ממכירות עמד על 15,000 ₪, וסך ההוצאות התפעוליות עמד על 9,200 ₪. מהו הרווח הנקי לפני מס של העסק בחודש זה (בשקלים)?',
+        expectedAnswer: 5800,
+        explanation: 'רווח נקי לפני מס מחושב כהכנסות (15,000 ₪) פחות הוצאות (9,200 ₪) = 5,800 ₪.'
+      },
+      {
+        id: 'acc_exam_q5',
+        type: 'open_journal_or_case',
+        topic: 'רישום פקודת יומן - תקבול מלקוח',
+        points: 17,
+        question: 'אירוע: העסק העניק שירות ללקוח וקיבל ממנו 1,200 ₪ במזומן ישירות לקופה (ללא מע"מ לשם פשטות). כתוב במילים שלך: איזה חשבון נמצא בחובה, איזה חשבון נמצא בזכות, ומדוע?',
+        rubric: {
+          coreConcept: 'חובה קופה (1,200 ₪) כי נכנס מזומן לעסק, וזכות הכנסות ממכירות/שירותים (1,200 ₪) כי ההכנסה היא מקור העסקה.',
+          keywords: ['חובה', 'זכות', 'קופה', 'מזומן', 'הכנסות', '1200', '1,200'],
+          sampleSolution: 'חובה: קופה – 1,200 ₪ (נכנס כסף מזומן לקופה) | זכות: הכנסות משירותים – 1,200 ₪ (רישום ההכנסה).'
+        },
+        explanation: 'הקופה קיבלה את הכסף ולכן היא בחובה, וחשבון ההכנסות משקף את מקור העסקה ולכן הוא בזכות.'
+      },
+      {
+        id: 'acc_exam_q6',
+        type: 'open_journal_or_case',
+        topic: 'התאמת כרטיסים ורכישה מספק בהקפה',
+        points: 17,
+        question: 'אירוע: העסק קנה סחורה מספק בסך 4,000 ₪ באשראי (בהקפה - התשלום יבוצע בחודש הבא). הסבר אילו שני חשבונות משתתפים בפקודת היומן ומי מהם בחובה ומי בזכות.',
+        rubric: {
+          coreConcept: 'חובה קניות סחורה / מלאי (4,000 ₪) כי הסחורה נכנסה לעסק, וזכות ספקים (4,000 ₪) כי נוצרה התחייבות לספק.',
+          keywords: ['חובה', 'זכות', 'קניות', 'סחורה', 'מלאי', 'ספק', 'ספקים', '4000', '4,000'],
+          sampleSolution: 'חובה: קניות סחורה – 4,000 ₪ | זכות: ספקים – 4,000 ₪ (התחייבות לתשלום בעתיד).'
+        },
+        explanation: 'קניית הסחורה מגדילה את ההוצאה/המלאי (חובה), והחוב לספק מגדיל את ההתחייבויות של העסק (זכות).'
+      }
+    ];
+  },
+
+  /**
+   * יצירת מבחן מסכם אוטומטי במסלול הנהלת חשבונות (AI + גיבוי מובנה)
+   * @param {object} [params]
+   * @param {Array<string>} [params.completedUnitTitles]
+   * @param {number} [params.questionCount]
+   * @returns {Promise<{id: string, generatedAt: string, provider: string, questions: Array}>}
+   */
+  async generateAccountingSummaryExam({ completedUnitTitles = [], questionCount = 6 } = {}) {
+    const count = Math.max(3, Math.min(10, Number(questionCount) || 6));
+    const fallbackBank = this.getFallbackAccountingExamQuestions();
+
+    const topicsSummary = Array.isArray(completedUnitTitles) && completedUnitTitles.length > 0
+      ? completedUnitTitles.join(', ')
+      : 'חובה וזכות, פקודות יומן, מאזן בוחן, דוח רווח והפסד ומאזן, חישובי מע"מ (18%), והתאמות בנקים וכרטיסים';
+
+    const prompt = `אתה בוחן פדגוגי מעצים בהנהלת חשבונות עבור דניאל (בן 28).
+צור מבחן מסכם מעשי בעברית הכולל בדיוק ${count} שאלות על הנושאים: ${topicsSummary}.
+שלב בין 3 סוגי שאלות:
+1. "multiple_choice" (4 אפשרויות בעברית, אינדקס תשובה נכונה correctIndex בין 0 ל-3).
+2. "calculation" (שאלת חישוב חשבונאית עם תשובה מספרית מדויקת ב-expectedAnswer).
+3. "open_journal_or_case" (שאלת מקרה/פקודת יומן פתוחה קצרה עם rubric הכולל coreConcept, keywords, sampleSolution).
+
+החזר אך ורק אובייקט JSON תקני (ללא markdown) במבנה הבא:
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "topic": "שם הנושא",
+      "points": 16,
+      "question": "נוסח השאלה",
+      "options": ["אפשרות 1", "אפשרות 2", "אפשרות 3", "אפשרות 4"],
+      "correctIndex": 0,
+      "explanation": "הסבר קצר וברור"
+    },
+    {
+      "id": "q2",
+      "type": "calculation",
+      "topic": "חישוב מע\\"מ",
+      "points": 17,
+      "question": "נוסח שאלת חישוב",
+      "expectedAnswer": 180,
+      "explanation": "הסבר החישוב"
+    },
+    {
+      "id": "q3",
+      "type": "open_journal_or_case",
+      "topic": "פקודת יומן",
+      "points": 17,
+      "question": "נוסח אירוע לרישום והסבר",
+      "rubric": {
+        "coreConcept": "העיקרון המרכזי לבדיקה",
+        "keywords": ["חובה", "זכות", "קופה"],
+        "sampleSolution": "פתרון מלא לדוגמה"
+      },
+      "explanation": "הסבר הפתרון"
+    }
+  ]
+}`;
+
+    try {
+      const raw = await callMultiTierAI(prompt, { maxTokens: 2000 });
+      const parsed = raw ? this.cleanAndParseJSON(raw) : null;
+      if (parsed && Array.isArray(parsed.questions) && parsed.questions.length >= 3) {
+        const defaultPts = Math.round(100 / parsed.questions.length);
+        const normalized = parsed.questions.slice(0, count).map((q, idx) => ({
+          id: q.id || `acc_exam_q_${idx + 1}`,
+          type: ['multiple_choice', 'calculation', 'open_journal_or_case'].includes(q.type) ? q.type : 'multiple_choice',
+          topic: q.topic || 'הנהלת חשבונות',
+          points: Number(q.points) || defaultPts,
+          question: q.question || fallbackBank[idx % fallbackBank.length].question,
+          options: Array.isArray(q.options) ? q.options : fallbackBank[0].options,
+          correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+          expectedAnswer: q.expectedAnswer !== undefined ? q.expectedAnswer : 0,
+          rubric: q.rubric || fallbackBank[4].rubric,
+          explanation: q.explanation || ''
+        }));
+        return {
+          id: `exam_${Date.now()}`,
+          generatedAt: new Date().toISOString(),
+          provider: 'ai',
+          questions: normalized
+        };
+      }
+    } catch (e) {
+      console.warn('[generateAccountingSummaryExam] Falling back to built-in exam bank:', e);
+    }
+
+    return {
+      id: `exam_${Date.now()}`,
+      generatedAt: new Date().toISOString(),
+      provider: 'fallback',
+      questions: fallbackBank.slice(0, count)
+    };
+  },
+
+  /**
+   * בדיקה וציינון אוטומטי של המבחן המסכם בהנהלת חשבונות
+   * @param {object} params
+   * @param {Array} params.questions
+   * @param {object} params.userAnswers
+   * @returns {Promise<{totalScore: number, maxScore: number, percentage: number, passed: boolean, perQuestionResults: Array, overallFeedback: string}>}
+   */
+  async evaluateAccountingExam({ questions = [], userAnswers = {} } = {}) {
+    const perQuestionResults = [];
+    let totalScore = 0;
+    let maxScore = 0;
+
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const qId = q.id || `q_${i + 1}`;
+      const maxPoints = Number(q.points) || Math.round(100 / Math.max(questions.length, 1));
+      maxScore += maxPoints;
+      const rawAns = userAnswers && userAnswers[qId] !== undefined ? userAnswers[qId] : userAnswers[i];
+
+      if (q.type === 'multiple_choice') {
+        const chosenIdx = (rawAns !== undefined && rawAns !== '' && rawAns !== null) ? Number(rawAns) : -1;
+        const isCorrect = chosenIdx === Number(q.correctIndex);
+        const score = isCorrect ? maxPoints : 0;
+        totalScore += score;
+        const correctOptionText = Array.isArray(q.options) ? q.options[q.correctIndex] : '';
+        perQuestionResults.push({
+          questionId: qId,
+          isCorrect,
+          score,
+          maxPoints,
+          feedback: isCorrect
+            ? `מצוין דניאל! בחירה מדויקת. ${q.explanation || ''}`.trim()
+            : `לא בדיוק. ${q.explanation || 'כדאי לחזור על כיוון החובה והזכות בשאלה זו.'}`.trim(),
+          correctSolution: correctOptionText || q.explanation || ''
+        });
+      } else if (q.type === 'calculation') {
+        const cleanedNum = Number(String(rawAns ?? '').replace(/[^\d.-]/g, ''));
+        const expectedNum = Number(String(q.expectedAnswer ?? '0').replace(/[^\d.-]/g, ''));
+        const hasInput = String(rawAns ?? '').trim().length > 0;
+        const isCorrect = hasInput && !Number.isNaN(cleanedNum) && Math.abs(cleanedNum - expectedNum) < 0.01;
+        const score = isCorrect ? maxPoints : 0;
+        totalScore += score;
+        perQuestionResults.push({
+          questionId: qId,
+          isCorrect,
+          score,
+          maxPoints,
+          feedback: isCorrect
+            ? `כל הכבוד! חישוב מדויק (${expectedNum.toLocaleString()} ₪). ${q.explanation || ''}`.trim()
+            : `התשובה המדויקת היא ${expectedNum.toLocaleString()} ₪. ${q.explanation || ''}`.trim(),
+          correctSolution: `${expectedNum.toLocaleString()} ₪`
+        });
+      } else {
+        // open_journal_or_case
+        const textAns = String(rawAns ?? '').trim();
+        const correctSolution = q.rubric?.sampleSolution || q.rubric?.coreConcept || q.explanation || '';
+        if (!textAns) {
+          perQuestionResults.push({
+            questionId: qId,
+            isCorrect: false,
+            score: 0,
+            maxPoints,
+            feedback: 'לא הוזנה תשובה בשאלה פתוחה זו. עיין בפתרון לדוגמה למטה.',
+            correctSolution
+          });
+          continue;
+        }
+
+        let evaluatedByAI = false;
+        try {
+          const evalPrompt = `אתה בודק מבחן בהנהלת חשבונות עבור דניאל.
+שאלה: "${q.question}"
+תשובת דניאל: "${textAns}"
+מחוון ופתרון נדרש: "${q.rubric?.coreConcept || correctSolution}"
+
+החזר אך ורק JSON תקני במבנה:
+{
+  "isCorrect": true,
+  "scoreRatio": 1.0,
+  "feedback": "משוב קצר, חם ומדויק בעברית (1-2 משפטים)"
+}
+(scoreRatio יכול להיות בין 0 ל-1 בהתאם לדיוק התשובה).`;
+          const aiRaw = await callMultiTierAI(evalPrompt, { maxTokens: 400 });
+          const parsedEval = aiRaw ? this.cleanAndParseJSON(aiRaw) : null;
+          if (parsedEval && typeof parsedEval.scoreRatio === 'number') {
+            const ratio = Math.max(0, Math.min(1, parsedEval.scoreRatio));
+            const score = Math.round(maxPoints * ratio);
+            const isCorrect = Boolean(parsedEval.isCorrect || ratio >= 0.7);
+            totalScore += score;
+            perQuestionResults.push({
+              questionId: qId,
+              isCorrect,
+              score,
+              maxPoints,
+              feedback: parsedEval.feedback || (isCorrect ? 'תשובה טובה ומדויקת!' : 'התשובה חלקית, עיין בפתרון המלא לדיוק.'),
+              correctSolution
+            });
+            evaluatedByAI = true;
+          }
+        } catch (e) {
+          console.warn('[evaluateAccountingExam] Open question AI eval fallback:', e);
+        }
+
+        if (!evaluatedByAI) {
+          const keywords = Array.isArray(q.rubric?.keywords) && q.rubric.keywords.length > 0
+            ? q.rubric.keywords
+            : ['חובה', 'זכות'];
+          const matched = keywords.filter(kw => textAns.includes(kw));
+          const ratio = matched.length >= 2 ? 1 : (matched.length === 1 || textAns.length >= 12 ? 0.75 : 0.4);
+          const score = Math.round(maxPoints * ratio);
+          const isCorrect = ratio >= 0.7;
+          totalScore += score;
+          perQuestionResults.push({
+            questionId: qId,
+            isCorrect,
+            score,
+            maxPoints,
+            feedback: isCorrect
+              ? `יפה מאוד דניאל! זיהית נכון את עקרונות הפקודה (${q.explanation || ''}).`
+              : `תודה על הניסיון! כדאי לציין במפורש אילו חשבונות בחובה ואילו בזכות.`,
+            correctSolution
+          });
+        }
+      }
+    }
+
+    const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
+    const passed = percentage >= 75;
+    const overallFeedback = passed
+      ? `כל הכבוד דניאל! עברת בהצלחה את המבחן המסכם בהנהלת חשבונות בציון ${percentage}! הפגנת שליטה מעולה בחובה וזכות, פקודות יומן וחישובים חשבונאיים 🏆`
+      : `קיבלת ציון ${percentage} במבחן המסכם. כל ניסיון מחזק את ההבנה! עבור בנחת על ההסברים של השאלות ונסה שוב כשתרגיש מוכן 💪`;
+
+    return {
+      totalScore,
+      maxScore,
+      percentage,
+      passed,
+      perQuestionResults,
+      overallFeedback
+    };
   }
 };
 

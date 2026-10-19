@@ -3105,3 +3105,522 @@ button {
 .scale-block-card.balanced .scale-beam-wrapper {
   animation: scaleBalanced 1.2s ease forwards;
 }
+
+/* ==========================================================================
+   Track 3: Study Help Workspace (עזרה בלימודים - v4.2)
+   ========================================================================== */
+.study-help-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+  padding: 1.5rem;
+  direction: rtl;
+  text-align: right;
+}
+
+.study-help-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.study-help-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.study-help-section-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.study-help-subheadline {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.study-subject-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.study-subject-chip {
+  background: #f8fafc;
+  color: #1e293b;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.55rem 1.15rem;
+  font-family: inherit;
+  font-size: 0.98rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.study-subject-chip:hover {
+  border-color: var(--primary);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.study-subject-chip.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+
+.study-starter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.65rem;
+}
+
+.study-starter-btn {
+  background: #f0fdf4;
+  color: #065f46;
+  border: 1.5px dashed #10b981;
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 1rem;
+  text-align: right;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.study-starter-btn:hover {
+  background: #dcfce7;
+  transform: translateY(-1px);
+}
+
+.study-sessions-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.65rem 0.9rem;
+  background: #f8fafc;
+  border-radius: var(--radius-sm);
+  border: 1px solid #e2e8f0;
+}
+
+.study-sessions-label {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.study-sessions-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.study-session-pill {
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.study-session-pill.active {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #60a5fa;
+}
+
+.study-chat-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  max-height: 460px;
+  overflow-y: auto;
+  padding: 1.1rem;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: var(--radius-md);
+}
+
+.study-welcome-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text-secondary);
+}
+
+.study-welcome-icon {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+}
+
+.study-welcome-empty h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.2rem;
+  color: var(--text-primary);
+}
+
+.study-welcome-empty p {
+  margin: 0 auto;
+  max-width: 540px;
+  line-height: 1.6;
+}
+
+.study-msg-bubble {
+  padding: 1rem 1.2rem;
+  border-radius: var(--radius-md);
+  line-height: 1.65;
+  font-size: 1.02rem;
+}
+
+.study-msg-bubble.user-msg {
+  background: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+  color: #1e3a8a;
+  align-self: flex-start;
+  width: 92%;
+}
+
+.study-msg-bubble.assistant-msg {
+  background: #ffffff;
+  border: 1.5px solid #a7f3d0;
+  border-right: 5px solid #10b981;
+  color: var(--text-primary);
+  align-self: flex-end;
+  width: 96%;
+  box-shadow: var(--shadow-sm);
+}
+
+.study-msg-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.45rem;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.study-tts-msg-btn {
+  background: #f0fdf4;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.study-input-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  background: #ffffff;
+  padding: 1rem 1.15rem;
+  border: 1.5px solid #cbd5e1;
+  border-radius: var(--radius-md);
+}
+
+.study-input-label {
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.study-input-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.study-input-hint {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+/* ============================================================================
+   Accounting Automated Summary Exam Styles
+   ============================================================================ */
+.accounting-summary-exam-card {
+  margin-top: 1.5rem;
+  border: 2px solid #f59e0b;
+  background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%);
+}
+
+.accounting-summary-exam-card.passed {
+  border-color: #10b981;
+  background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%);
+}
+
+.accounting-exam-loading {
+  text-align: center;
+  padding: 3rem 1.5rem;
+}
+
+.accounting-exam-player {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  margin-top: 1rem;
+}
+
+.accounting-exam-q-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.exam-q-pill {
+  min-width: 44px;
+  height: 40px;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.exam-q-pill.answered {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #065f46;
+}
+
+.exam-q-pill.current {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #ffffff;
+  box-shadow: 0 3px 8px rgba(15, 118, 110, 0.25);
+}
+
+.accounting-exam-q-card {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  padding: 1.35rem;
+}
+
+.accounting-exam-q-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+
+.accounting-exam-q-title {
+  font-size: 1.25rem;
+  line-height: 1.5;
+  margin-bottom: 1.2rem;
+}
+
+.accounting-exam-calc-box,
+.accounting-exam-open-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: #ffffff;
+  padding: 1.1rem;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid #cbd5e1;
+}
+
+.accounting-exam-calc-input {
+  width: 100%;
+  max-width: 340px;
+  padding: 0.75rem 1rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  border: 1.5px solid #94a3b8;
+  border-radius: 10px;
+  font-family: inherit;
+}
+
+.accounting-exam-footer-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.accounting-exam-nav-btns {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.acc-exam-submit-btn {
+  background: #475569;
+}
+
+.acc-exam-submit-btn.ready {
+  background: #059669;
+}
+
+.accounting-exam-score-banner {
+  text-align: center;
+  padding: 1.75rem 1.25rem;
+  border-radius: var(--radius-md);
+  border: 2px solid #cbd5e1;
+  background: #f8fafc;
+}
+
+.accounting-exam-score-banner.passed {
+  border-color: #10b981;
+  background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+}
+
+.accounting-exam-score-banner.needs-work {
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+}
+
+.exam-score-icon {
+  font-size: 2.8rem;
+  margin-bottom: 0.35rem;
+}
+
+.exam-score-badge {
+  display: inline-block;
+  font-size: 2.4rem;
+  font-weight: 900;
+  color: #0f172a;
+  background: #ffffff;
+  padding: 0.3rem 1.3rem;
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 0.65rem;
+}
+
+.exam-score-title {
+  font-size: 1.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.exam-score-feedback {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  max-width: 640px;
+  margin: 0 auto 1rem auto;
+}
+
+.exam-score-stats {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.accounting-exam-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.exam-review-card {
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-right-width: 6px;
+  border-radius: var(--radius-sm);
+  padding: 1.15rem;
+}
+
+.exam-review-card.status-correct {
+  border-right-color: #10b981;
+}
+
+.exam-review-card.status-partial {
+  border-right-color: #f59e0b;
+}
+
+.exam-review-card.status-incorrect {
+  border-right-color: #ef4444;
+}
+
+.exam-review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.exam-status-pill {
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.exam-status-pill.correct {
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.exam-status-pill.partial {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.exam-status-pill.incorrect {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.exam-review-q-text {
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.exam-review-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  background: #f8fafc;
+  padding: 0.85rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+}
+
+.exam-review-ans-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.exam-review-ans-row .ans-label {
+  color: var(--text-secondary);
+  min-width: 110px;
+}
+
+.exam-review-explanation {
+  margin-top: 0.35rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed #cbd5e1;
+  color: #1e293b;
+}
+
+

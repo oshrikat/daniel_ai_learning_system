@@ -649,3 +649,471 @@ function finishCheckpointTest() {
   );
 }
 
+// ============================================================================
+// 9. מנוע מבחן מסכם אוטומטי בהנהלת חשבונות (Accounting Automated Summary Exam)
+// ============================================================================
+
+let currentAccountingExamIdx = 0;
+
+async function openAccountingSummaryExam(forceNew = false) {
+  showView('checkpoint');
+
+  const header = document.getElementById('checkpoint-view-header');
+  if (header) header.textContent = '🏆 מבחן מסכם אוטומטי בהנהלת חשבונות';
+
+  const backBtn = document.getElementById('checkpoint-back-btn');
+  if (backBtn) {
+    backBtn.onclick = () => {
+      showView('roadmap');
+      renderRoadmap();
+    };
+  }
+
+  const area = document.getElementById('checkpoint-content-area');
+  const footer = document.getElementById('checkpoint-nav-footer');
+  const stepText = document.getElementById('checkpoint-step-text');
+  const bar = document.getElementById('checkpoint-progress-bar');
+
+  if (!appState.accountingExam || typeof appState.accountingExam !== 'object') {
+    appState.accountingExam = { activeExam: null, attempts: [], bestScore: 0, lastAttemptAt: null, isPassed: false };
+  }
+
+  const hasValidSavedExam = !forceNew &&
+    appState.accountingExam.activeExam &&
+    Array.isArray(appState.accountingExam.activeExam.questions) &&
+    appState.accountingExam.activeExam.questions.length > 0;
+
+  if (!hasValidSavedExam) {
+    if (stepText) stepText.textContent = 'מייצר מבחן מותאם אישית... ⏳';
+    if (bar) bar.style.width = '15%';
+    if (footer) footer.innerHTML = '';
+    if (area) {
+      area.innerHTML = `
+        <div class="accounting-exam-loading">
+          <div style="font-size: 3rem; margin-bottom: 0.75rem;">🤖 📊</div>
+          <h3 style="margin-bottom: 0.5rem;">מנוע ה-AI בונה עבורך מבחן מסכם בהנהלת חשבונות...</h3>
+          <p style="color: var(--text-secondary);">המבחן כולל שאלות אמריקאיות, שאלות חישוב (מע"מ והנחות) ואיזון פקודות יומן.</p>
+        </div>
+      `;
+    }
+
+    const accountingTrack = TRACKS.find(t => t.id === 'accounting') || getActiveTrack();
+    const allUnits = getTrackUnits(accountingTrack);
+    const completedUnits = allUnits.filter(u => u.isCompleted);
+
+    const generated = await AIService.generateAccountingSummaryExam({
+      completedUnits: completedUnits.length > 0 ? completedUnits : allUnits
+    });
+
+    const activeExamObj = {
+      id: `acc_exam_${Date.now()}`,
+      title: generated.title || 'מבחן מסכם בהנהלת חשבונות',
+      generatedAt: new Date().toISOString(),
+      provider: generated.provider || 'local',
+      questions: generated.questions || [],
+      userAnswers: {}
+    };
+
+    saveAccountingExamState(activeExamObj);
+    currentAccountingExamIdx = 0;
+  } else {
+    const questions = appState.accountingExam.activeExam.questions;
+    const answers = appState.accountingExam.activeExam.userAnswers || {};
+    const firstUnanswered = questions.findIndex((q, idx) => {
+      const val = answers[q.id] !== undefined ? answers[q.id] : answers[idx];
+      return val === undefined || val === null || String(val).trim() === '';
+    });
+    currentAccountingExamIdx = firstUnanswered >= 0 ? firstUnanswered : 0;
+  }
+
+  renderAccountingExamQuestion();
+}
+
+function isAccountingQuestionAnswered(q, idx, userAnswers) {
+  if (!userAnswers) return false;
+  const raw = userAnswers[q.id] !== undefined ? userAnswers[q.id] : userAnswers[idx];
+  return raw !== undefined && raw !== null && String(raw).trim() !== '';
+}
+
+function renderAccountingExamQuestion() {
+  const activeExam = appState.accountingExam?.activeExam;
+  if (!activeExam || !Array.isArray(activeExam.questions) || activeExam.questions.length === 0) return;
+
+  const questions = activeExam.questions;
+  const total = questions.length;
+  if (currentAccountingExamIdx < 0) currentAccountingExamIdx = 0;
+  if (currentAccountingExamIdx >= total) currentAccountingExamIdx = total - 1;
+
+  const q = questions[currentAccountingExamIdx];
+  const userAnswers = activeExam.userAnswers || {};
+  const currentVal = userAnswers[q.id] !== undefined ? userAnswers[q.id] : (userAnswers[currentAccountingExamIdx] ?? '');
+
+  const answeredCount = questions.filter((item, idx) => isAccountingQuestionAnswered(item, idx, userAnswers)).length;
+  const allAnswered = answeredCount === total;
+
+  const stepText = document.getElementById('checkpoint-step-text');
+  if (stepText) {
+    stepText.textContent = `שאלה ${currentAccountingExamIdx + 1} מתוך ${total} (נענו: ${answeredCount}/${total})`;
+  }
+  const bar = document.getElementById('checkpoint-progress-bar');
+  if (bar) {
+    bar.style.width = `${((currentAccountingExamIdx + 1) / total) * 100}%`;
+  }
+
+  const area = document.getElementById('checkpoint-content-area');
+  const footer = document.getElementById('checkpoint-nav-footer');
+  if (!area) return;
+
+  const typeBadgeMap = {
+    multiple_choice: 'שאלה אמריקאית 🔘',
+    calculation: 'חישוב חשבונאי 🧮',
+    open_journal_or_case: 'פקודת יומן / אירוע עסקי 📖'
+  };
+  const typeLabel = typeBadgeMap[q.type] || 'שאלה מקצועית 📊';
+
+  area.innerHTML = `
+    <div class="accounting-exam-player">
+      <!-- סרגל ניווט מהיר בין שאלות -->
+      <div class="accounting-exam-q-nav" role="tablist" aria-label="מעבר בין שאלות המבחן">
+        ${questions.map((item, idx) => {
+          const answered = isAccountingQuestionAnswered(item, idx, userAnswers);
+          const isCurrent = idx === currentAccountingExamIdx;
+          return `
+            <button type="button" class="exam-q-pill ${isCurrent ? 'current' : ''} ${answered ? 'answered' : ''}" data-q-idx="${idx}">
+              <span>${idx + 1}${answered ? ' ✓' : ''}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+
+      <div class="accounting-exam-q-card">
+        <div class="accounting-exam-q-meta">
+          <span class="badge-tag" style="background:#e0f2fe;color:#0369a1;">${typeLabel}</span>
+          <span class="badge-tag" style="background:#f1f5f9;color:#334155;">נושא: ${q.topic || 'הנהלת חשבונות'}</span>
+          <span class="badge-tag" style="background:#fef3c7;color:#b45309;">ניקוד: ${q.points || 15} נק'</span>
+        </div>
+
+        <h3 class="question-title accounting-exam-q-title">${q.question}</h3>
+
+        <div id="accounting-exam-input-zone" class="accounting-exam-input-zone"></div>
+      </div>
+    </div>
+  `;
+
+  // ניווט בין כפתורי השאלות
+  area.querySelectorAll('.exam-q-pill').forEach(pill => {
+    pill.onclick = () => {
+      const targetIdx = Number(pill.getAttribute('data-q-idx'));
+      if (!Number.isNaN(targetIdx)) {
+        currentAccountingExamIdx = targetIdx;
+        renderAccountingExamQuestion();
+      }
+    };
+  });
+
+  const inputZone = area.querySelector('#accounting-exam-input-zone');
+
+  const persistDraftAnswer = (val) => {
+    if (!appState.accountingExam.activeExam.userAnswers) {
+      appState.accountingExam.activeExam.userAnswers = {};
+    }
+    appState.accountingExam.activeExam.userAnswers[q.id] = val;
+    appState.accountingExam.activeExam.userAnswers[currentAccountingExamIdx] = val;
+    saveAccountingExamState(appState.accountingExam.activeExam);
+  };
+
+  if (q.type === 'multiple_choice' && Array.isArray(q.options) && q.options.length > 0) {
+    const optGrid = document.createElement('div');
+    optGrid.className = 'quiz-options-grid';
+
+    q.options.forEach((optText, oIdx) => {
+      const isSelected = String(currentVal) === String(oIdx) || String(currentVal).trim() === String(optText).trim();
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `quiz-option-btn ${isSelected ? 'selected' : ''}`;
+      btn.innerHTML = `
+        <span class="quiz-btn-icon">${isSelected ? '🔘' : '⚪'}</span>
+        <span class="quiz-btn-text">${optText}</span>
+      `;
+      btn.onclick = () => {
+        persistDraftAnswer(oIdx);
+        renderAccountingExamQuestion();
+      };
+      optGrid.appendChild(btn);
+    });
+
+    if (inputZone) inputZone.appendChild(optGrid);
+  } else if (q.type === 'calculation') {
+    if (inputZone) {
+      inputZone.innerHTML = `
+        <div class="accounting-exam-calc-box">
+          <label for="acc-exam-calc-input" class="study-input-label">🔢 הקלד את התוצאה המספרית (או החישוב):</label>
+          <input
+            type="text"
+            inputmode="decimal"
+            id="acc-exam-calc-input"
+            class="styled-input accounting-exam-calc-input"
+            placeholder="לדוגמה: 180 או 1,180 ש״ח"
+            value="${String(currentVal || '').replace(/"/g, '&quot;')}"
+          />
+          <span class="study-input-hint">💾 התשובה נשמרת אוטומטית תוך כדי הקלדה.</span>
+        </div>
+      `;
+      const calcInput = inputZone.querySelector('#acc-exam-calc-input');
+      if (calcInput) {
+        calcInput.addEventListener('input', () => {
+          persistDraftAnswer(calcInput.value);
+          updateAccountingExamFooterState();
+        });
+      }
+    }
+  } else {
+    if (inputZone) {
+      inputZone.innerHTML = `
+        <div class="accounting-exam-open-box">
+          <label for="acc-exam-open-input" class="study-input-label">✍️ רשום את פקודת היומן (חובה / זכות וסכומים) או את הפתרון המלא:</label>
+          <textarea
+            id="acc-exam-open-input"
+            class="styled-textarea accounting-exam-open-textarea"
+            rows="4"
+            placeholder="לדוגמה: חובה הוצאות ציוד 1,000 ש״ח, חובה מע״מ תשומות 180 ש״ח — זכות ספקים/עו״ש 1,180 ש״ח"
+          >${String(currentVal || '')}</textarea>
+          <span class="study-input-hint">💾 הטיוטה נשמרת אוטומטית. הקפד לציין אילו חשבונות בחובה, אילו בזכות ומה הסכום.</span>
+        </div>
+      `;
+      const openInput = inputZone.querySelector('#acc-exam-open-input');
+      if (openInput) {
+        openInput.addEventListener('input', () => {
+          persistDraftAnswer(openInput.value);
+          updateAccountingExamFooterState();
+        });
+      }
+    }
+  }
+
+  const ttsBtn = document.getElementById('tts-checkpoint-q-btn');
+  if (ttsBtn) {
+    ttsBtn.onclick = () => SoundService.speakText(`שאלה ${currentAccountingExamIdx + 1}. ${q.question}`);
+  }
+
+  updateAccountingExamFooterState();
+}
+
+function updateAccountingExamFooterState() {
+  const activeExam = appState.accountingExam?.activeExam;
+  if (!activeExam || !Array.isArray(activeExam.questions)) return;
+  const questions = activeExam.questions;
+  const total = questions.length;
+  const userAnswers = activeExam.userAnswers || {};
+  const answeredCount = questions.filter((item, idx) => isAccountingQuestionAnswered(item, idx, userAnswers)).length;
+  const allAnswered = answeredCount === total;
+
+  const stepText = document.getElementById('checkpoint-step-text');
+  if (stepText) {
+    stepText.textContent = `שאלה ${currentAccountingExamIdx + 1} מתוך ${total} (נענו: ${answeredCount}/${total})`;
+  }
+
+  const footer = document.getElementById('checkpoint-nav-footer');
+  if (!footer) return;
+
+  const hasPrev = currentAccountingExamIdx > 0;
+  const hasNext = currentAccountingExamIdx < total - 1;
+
+  footer.innerHTML = `
+    <div class="accounting-exam-footer-bar">
+      <div class="accounting-exam-nav-btns">
+        <button type="button" id="acc-exam-prev-btn" class="secondary-btn" ${!hasPrev ? 'disabled' : ''}>
+          <span>◀ שאלה קודמת</span>
+        </button>
+        ${hasNext ? `
+          <button type="button" id="acc-exam-next-btn" class="primary-btn">
+            <span>שאלה הבאה ▶</span>
+          </button>
+        ` : ''}
+      </div>
+      <button type="button" id="acc-exam-submit-btn" class="primary-btn acc-exam-submit-btn ${allAnswered ? 'ready' : ''}">
+        <span>הגש מבחן לבדיקה 🏆 (${answeredCount}/${total})</span>
+      </button>
+    </div>
+  `;
+
+  const prevBtn = footer.querySelector('#acc-exam-prev-btn');
+  const nextBtn = footer.querySelector('#acc-exam-next-btn');
+  const submitBtn = footer.querySelector('#acc-exam-submit-btn');
+
+  if (prevBtn) {
+    prevBtn.onclick = () => {
+      if (currentAccountingExamIdx > 0) {
+        currentAccountingExamIdx--;
+        renderAccountingExamQuestion();
+      }
+    };
+  }
+  if (nextBtn) {
+    nextBtn.onclick = () => {
+      if (currentAccountingExamIdx < total - 1) {
+        currentAccountingExamIdx++;
+        renderAccountingExamQuestion();
+      }
+    };
+  }
+  if (submitBtn) {
+    submitBtn.onclick = () => submitAccountingSummaryExam();
+  }
+}
+
+async function submitAccountingSummaryExam() {
+  const activeExam = appState.accountingExam?.activeExam;
+  if (!activeExam || !Array.isArray(activeExam.questions)) return;
+
+  const questions = activeExam.questions;
+  const userAnswers = activeExam.userAnswers || {};
+  const unansweredIdx = questions.findIndex((q, idx) => !isAccountingQuestionAnswered(q, idx, userAnswers));
+
+  if (unansweredIdx !== -1) {
+    showToast(`דניאל, נותרה שאלה ${unansweredIdx + 1} ללא תשובה. השלם אותה לפני הגשת המבחן! ✍️`);
+    currentAccountingExamIdx = unansweredIdx;
+    renderAccountingExamQuestion();
+    return;
+  }
+
+  const submitBtn = document.getElementById('acc-exam-submit-btn');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>בודק את המבחן ומחשב ציון... ⏳</span>';
+  }
+
+  const evaluation = await AIService.evaluateAccountingExam({
+    questions,
+    userAnswers
+  });
+
+  recordAccountingExamAttempt({
+    score: evaluation.score,
+    passed: evaluation.passed,
+    totalQuestions: questions.length,
+    correctCount: evaluation.correctCount,
+    feedback: evaluation.overallFeedback,
+    breakdown: evaluation.breakdown
+  });
+
+  if (evaluation.passed && typeof SoundService !== 'undefined') {
+    SoundService.playSuccessSound();
+  }
+
+  renderAccountingExamResults(evaluation, questions, userAnswers);
+}
+
+function renderAccountingExamResults(evaluation, questions, userAnswers) {
+  const area = document.getElementById('checkpoint-content-area');
+  const footer = document.getElementById('checkpoint-nav-footer');
+  const stepText = document.getElementById('checkpoint-step-text');
+  const bar = document.getElementById('checkpoint-progress-bar');
+
+  if (stepText) stepText.textContent = `סיכום תוצאות המבחן המסכם (${evaluation.score}%)`;
+  if (bar) bar.style.width = '100%';
+
+  if (area) {
+    const passed = !!evaluation.passed;
+    const breakdown = Array.isArray(evaluation.breakdown) ? evaluation.breakdown : [];
+
+    area.innerHTML = `
+      <div class="accounting-exam-results">
+        <div class="accounting-exam-score-banner ${passed ? 'passed' : 'needs-work'}">
+          <div class="exam-score-icon">${passed ? '🏆 ⭐ 🎉' : '💪 📈'}</div>
+          <div class="exam-score-badge">${evaluation.score}%</div>
+          <h2 class="exam-score-title">
+            ${passed ? 'כל הכבוד דניאל! עברת בהצלחה את המבחן המסכם בהנהלת חשבונות!' : 'ניסיון מצוין דניאל! בוא נעבור על הפתרונות וננסה שוב'}
+          </h2>
+          <p class="exam-score-feedback">${evaluation.overallFeedback || ''}</p>
+          <div class="exam-score-stats">
+            <span class="badge-tag" style="background:#ffffff;color:#0f172a;">נקודות שצברת: ${evaluation.earnedPoints || 0} מתוך ${evaluation.totalPoints || 100}</span>
+            <span class="badge-tag" style="background:#ffffff;color:#0f172a;">תשובות מדויקות: ${evaluation.correctCount || 0} מתוך ${questions.length}</span>
+          </div>
+        </div>
+
+        <h3 style="margin: 1.5rem 0 0.85rem 0; font-size: 1.2rem;">📋 פירוט מלא שאלה אחר שאלה:</h3>
+        <div class="accounting-exam-review-list">
+          ${questions.map((q, idx) => {
+            const item = breakdown.find(b => b.questionId === q.id) || breakdown[idx] || {};
+            const status = item.status || (item.isCorrect ? 'correct' : 'incorrect');
+            const statusLabel = status === 'correct'
+              ? '✅ תשובה נכונה'
+              : status === 'partial'
+                ? '🟡 תשובה חלקית'
+                : '❌ דורש חיזוק';
+
+            let formattedUserAns = item.userAnswer;
+            if (q.type === 'multiple_choice' && Array.isArray(q.options)) {
+              const numIdx = Number(formattedUserAns);
+              if (!Number.isNaN(numIdx) && q.options[numIdx] !== undefined) {
+                formattedUserAns = q.options[numIdx];
+              }
+            }
+
+            const correctSolutionText = item.correctAnswer ||
+              (q.type === 'multiple_choice' && Array.isArray(q.options) ? q.options[Number(q.correctOptionIndex) || 0] : q.correctAnswer);
+
+            return `
+              <div class="exam-review-card status-${status}">
+                <div class="exam-review-header">
+                  <div>
+                    <strong>שאלה ${idx + 1}: ${q.topic || 'הנהלת חשבונות'}</strong>
+                  </div>
+                  <div style="display:flex; gap:0.5rem; align-items:center;">
+                    <span class="badge-tag">${item.earnedPoints ?? 0}/${item.maxPoints ?? q.points ?? 15} נק'</span>
+                    <span class="exam-status-pill ${status}">${statusLabel}</span>
+                  </div>
+                </div>
+                <p class="exam-review-q-text">${q.question}</p>
+                <div class="exam-review-answers">
+                  <div class="exam-review-ans-row">
+                    <span class="ans-label">התשובה שלך:</span>
+                    <span class="ans-val">${formattedUserAns || 'לא הוזנה תשובה'}</span>
+                  </div>
+                  <div class="exam-review-ans-row correct-row">
+                    <span class="ans-label">הפתרון המדויק:</span>
+                    <span class="ans-val"><strong>${correctSolutionText || ''}</strong></span>
+                  </div>
+                  <div class="exam-review-explanation">
+                    💡 <strong>הסבר מקצועי:</strong> ${item.explanation || q.explanation || ''}
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  if (footer) {
+    footer.innerHTML = `
+      <div class="accounting-exam-footer-bar">
+        <button type="button" id="acc-exam-back-roadmap-btn" class="secondary-btn">
+          <span>חזור למפת הלמידה 🗺️</span>
+        </button>
+        <button type="button" id="acc-exam-retry-new-btn" class="primary-btn" style="background: #d97706;">
+          <span>נסה מבחן חדש עם שאלות חדשות 🔄</span>
+        </button>
+      </div>
+    `;
+
+    const backRoadmapBtn = footer.querySelector('#acc-exam-back-roadmap-btn');
+    const retryNewBtn = footer.querySelector('#acc-exam-retry-new-btn');
+
+    if (backRoadmapBtn) {
+      backRoadmapBtn.onclick = () => {
+        showView('roadmap');
+        renderRoadmap();
+      };
+    }
+    if (retryNewBtn) {
+      retryNewBtn.onclick = () => {
+        openAccountingSummaryExam(true);
+      };
+    }
+  }
+}
+
+
