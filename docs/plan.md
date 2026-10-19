@@ -1,0 +1,3 @@
+- styles.css: Add table wrapper and table styles (.cg-table-wrapper) to make admin history table visible with borders, padding, zebra striping, and responsive behavior.
+- styles.css: Add custom scrollbar styling for .admin-tabs-nav to ensure visible scrollbar when tabs overflow.
+- styles.css: Ensure table and tabs styles follow existing design tokens (colors, radii) for consistency.
