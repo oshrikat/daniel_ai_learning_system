@@ -446,7 +446,7 @@ function saveAccountingExamState(examObj) {
 
 function recordAccountingExamAttempt(completedExam) {
   if (!appState.accountingExam || typeof appState.accountingExam !== 'object') {
-    appState.accountingExam = { attempts: [], activeExam: null, bestScore: 0, lastAttemptAt: null };
+    appState.accountingExam = { attempts: [], activeExam: null, bestScore: 0, lastAttemptAt: null, isPassed: false };
   }
   const now = (completedExam && completedExam.completedAt) || new Date().toISOString();
   const score = Number(completedExam && completedExam.score) || 0;
@@ -462,9 +462,11 @@ function recordAccountingExamAttempt(completedExam) {
   }
   appState.accountingExam.attempts.unshift(attemptRecord);
   appState.accountingExam.bestScore = Math.max(Number(appState.accountingExam.bestScore) || 0, score);
+  appState.accountingExam.isPassed = appState.accountingExam.bestScore >= 80 || !!(completedExam && completedExam.passed);
   appState.accountingExam.lastAttemptAt = now;
-  appState.accountingExam.activeExam = attemptRecord;
+  appState.accountingExam.activeExam = null;
   saveAppState();
   return attemptRecord;
 }
+
 

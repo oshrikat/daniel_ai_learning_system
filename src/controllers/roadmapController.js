@@ -10,26 +10,42 @@ function renderTrackTabs() {
   if (!container) return;
   container.innerHTML = '';
 
+  if (Array.isArray(TRACKS) && !TRACKS.some(t => t.id === 'study_help')) {
+    TRACKS.push({
+      id: 'study_help',
+      label: 'מסלול 3: עזרה בלימודים 🎓',
+      shortLabel: 'עזרה בלימודים',
+      title: 'עזרה בלימודים',
+      icon: '🎓',
+      description: 'עזרה אישית בשיעורי בית, הסבר מושגים ותרגול מונחה עם מאמן ה-AI',
+      dataVar: null,
+      engine: 'study_help'
+    });
+  }
+
   const activeTrack = getActiveTrack();
 
   TRACKS.forEach(track => {
+    const isSelected = track.id === activeTrack.id;
     const btn = document.createElement('button');
-    btn.className = `track-tab-btn ${track.id === activeTrack.id ? 'active' : ''}`;
+    btn.className = `track-tab-btn ${isSelected ? 'active' : ''}`;
     btn.type = 'button';
     btn.setAttribute('role', 'tab');
-    btn.setAttribute('aria-selected', track.id === activeTrack.id ? 'true' : 'false');
+    btn.setAttribute('data-track', track.id);
+    btn.setAttribute('aria-selected', isSelected ? 'true' : 'false');
     btn.innerHTML = `
       <span class="track-tab-icon">${track.icon}</span>
       <span class="track-tab-title">${track.label}</span>
     `;
     btn.onclick = () => {
-      if (appState.activeTrackId !== track.id) {
-        appState.activeTrackId = track.id;
-        appState.currentTrack = track.id;
-        saveAppState();
-        renderTrackTabs();
-        renderRoadmap();
+      appState.activeTrackId = track.id;
+      appState.currentTrack = track.id;
+      saveAppState();
+      if (typeof showView === 'function' && appState.currentView !== 'roadmap') {
+        showView('roadmap');
       }
+      renderTrackTabs();
+      renderRoadmap();
     };
     container.appendChild(btn);
   });
@@ -512,6 +528,85 @@ function renderRoadmap() {
     const units = getTrackUnits(activeTrack);
     let completedCount = 0;
 
+    // פונקציית עזר ליצירת כרטיס המבחן המסכם האוטומטי בהנהלת חשבונות
+    const buildAccountingSummaryExamCard = () => {
+      const examState = appState.accountingExam || { activeExam: null, attempts: [], bestScore: 0, isPassed: false };
+      const attemptsCount = Array.isArray(examState.attempts) ? examState.attempts.length : 0;
+      const bestScore = Number(examState.bestScore) || 0;
+      const hasOpenExam = !!(examState.activeExam && Array.isArray(examState.activeExam.questions) && examState.activeExam.questions.length > 0);
+      const isPassedExam = !!examState.isPassed || bestScore >= 80;
+
+      const examCard = document.createElement('div');
+      examCard.className = `checkpoint-card accounting-summary-exam-card ${isPassedExam ? 'passed' : ''}`;
+      examCard.innerHTML = `
+        <div class="checkpoint-info">
+          <span style="font-size: 2.4rem; line-height: 1;">🏆</span>
+          <div>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
+              <span class="badge-tag" style="background:#fef3c7;color:#b45309;">
+                ${isPassedExam ? `עברת בהצלחה! שיא ציון: ${bestScore}% ⭐` : 'מבחן מסכם אוטומטי AI (ציון מעבר: 80+)'}
+              </span>
+              <span class="badge-tag" style="background:#e0f2fe;color:#0369a1;">
+                📊 ניסיונות קודמים: ${attemptsCount}
+              </span>
+              ${bestScore > 0 ? `<span class="badge-tag" style="background:#ecfdf5;color:#047857;">🏅 ציון שיא: ${bestScore}%</span>` : ''}
+            </div>
+            <h3 class="checkpoint-title">🏆 מבחן מסכם אוטומטי בהנהלת חשבונות</h3>
+            <span class="checkpoint-desc">
+              סימולציה מקיפה הבוחנת את כל יחידות המסלול: שאלות אמריקאיות, חישובי מע"מ והנחות, ואיזון פקודות יומן עם בדיקה ומשוב אוטומטי.
+            </span>
+          </div>
+        </div>
+        <div class="day-action-box" style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
+          ${hasOpenExam ? `
+            <button type="button" class="primary-btn accounting-resume-exam-btn" style="padding: 0.65rem 1.25rem; font-size: 1rem; min-height: 44px; background: #0f766e;">
+              <span>המשך מבחן פתוח 📝</span>
+            </button>
+            <button type="button" class="secondary-btn accounting-new-exam-btn" style="padding: 0.55rem 1rem; font-size: 0.92rem; min-height: 42px;">
+              <span>התחל מבחן מסכם חדש 🔄</span>
+            </button>
+          ` : `
+            <button type="button" class="primary-btn accounting-start-exam-btn" style="padding: 0.65rem 1.3rem; font-size: 1rem; min-height: 44px; background: #d97706;">
+              <span>התחל מבחן מסכם חדש ▶</span>
+            </button>
+          `}
+        </div>
+      `;
+
+      const resumeBtn = examCard.querySelector('.accounting-resume-exam-btn');
+      const newBtn = examCard.querySelector('.accounting-new-exam-btn');
+      const startBtn = examCard.querySelector('.accounting-start-exam-btn');
+
+      if (resumeBtn) {
+        resumeBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (typeof openAccountingSummaryExam === 'function') {
+            openAccountingSummaryExam(false);
+          }
+        };
+      }
+      if (newBtn) {
+        newBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (typeof openAccountingSummaryExam === 'function') {
+            openAccountingSummaryExam(true);
+          }
+        };
+      }
+      if (startBtn) {
+        startBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (typeof openAccountingSummaryExam === 'function') {
+            openAccountingSummaryExam(true);
+          }
+        };
+      }
+      return examCard;
+    };
+
+    // הצגת כרטיס המבחן המסכם גם בראש המסלול לנראות מיידית
+    container.appendChild(buildAccountingSummaryExamCard());
+
     units.forEach((unit, idx) => {
       if (unit.isCompleted) completedCount++;
 
@@ -574,80 +669,8 @@ function renderRoadmap() {
       container.appendChild(card);
     });
 
-    // כרטיס מבחן מסכם אוטומטי בהנהלת חשבונות
-    const examState = appState.accountingExam || { activeExam: null, attempts: [], bestScore: 0, isPassed: false };
-    const attemptsCount = Array.isArray(examState.attempts) ? examState.attempts.length : 0;
-    const bestScore = Number(examState.bestScore) || 0;
-    const hasOpenExam = !!(examState.activeExam && Array.isArray(examState.activeExam.questions) && examState.activeExam.questions.length > 0);
-    const isPassedExam = !!examState.isPassed || bestScore >= 80;
-
-    const examCard = document.createElement('div');
-    examCard.className = `checkpoint-card accounting-summary-exam-card ${isPassedExam ? 'passed' : ''}`;
-    examCard.innerHTML = `
-      <div class="checkpoint-info">
-        <span style="font-size: 2.4rem; line-height: 1;">🏆</span>
-        <div>
-          <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem;">
-            <span class="badge-tag" style="background:#fef3c7;color:#b45309;">
-              ${isPassedExam ? `עברת בהצלחה! שיא ציון: ${bestScore}% ⭐` : 'מבחן מסכם אוטומטי AI (ציון מעבר: 80+)'}
-            </span>
-            <span class="badge-tag" style="background:#e0f2fe;color:#0369a1;">
-              📊 ניסיונות קודמים: ${attemptsCount}
-            </span>
-            ${bestScore > 0 ? `<span class="badge-tag" style="background:#ecfdf5;color:#047857;">🏅 ציון שיא: ${bestScore}%</span>` : ''}
-          </div>
-          <h3 class="checkpoint-title">🏆 מבחן מסכם אוטומטי בהנהלת חשבונות</h3>
-          <span class="checkpoint-desc">
-            סימולציה מקיפה הבוחנת את כל יחידות המסלול: שאלות אמריקאיות, חישובי מע"מ והנחות, ואיזון פקודות יומן עם בדיקה ומשוב אוטומטי.
-          </span>
-        </div>
-      </div>
-      <div class="day-action-box" style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
-        ${hasOpenExam ? `
-          <button type="button" class="primary-btn accounting-resume-exam-btn" style="padding: 0.65rem 1.25rem; font-size: 1rem; min-height: 44px; background: #0f766e;">
-            <span>המשך מבחן פתוח 📝</span>
-          </button>
-          <button type="button" class="secondary-btn accounting-new-exam-btn" style="padding: 0.55rem 1rem; font-size: 0.92rem; min-height: 42px;">
-            <span>התחל מבחן מסכם חדש 🔄</span>
-          </button>
-        ` : `
-          <button type="button" class="primary-btn accounting-start-exam-btn" style="padding: 0.65rem 1.3rem; font-size: 1rem; min-height: 44px; background: #d97706;">
-            <span>התחל מבחן מסכם חדש ▶</span>
-          </button>
-        `}
-      </div>
-    `;
-
-    const resumeBtn = examCard.querySelector('.accounting-resume-exam-btn');
-    const newBtn = examCard.querySelector('.accounting-new-exam-btn');
-    const startBtn = examCard.querySelector('.accounting-start-exam-btn');
-
-    if (resumeBtn) {
-      resumeBtn.onclick = (e) => {
-        e.stopPropagation();
-        if (typeof openAccountingSummaryExam === 'function') {
-          openAccountingSummaryExam(false);
-        }
-      };
-    }
-    if (newBtn) {
-      newBtn.onclick = (e) => {
-        e.stopPropagation();
-        if (typeof openAccountingSummaryExam === 'function') {
-          openAccountingSummaryExam(true);
-        }
-      };
-    }
-    if (startBtn) {
-      startBtn.onclick = (e) => {
-        e.stopPropagation();
-        if (typeof openAccountingSummaryExam === 'function') {
-          openAccountingSummaryExam(true);
-        }
-      };
-    }
-
-    container.appendChild(examCard);
+    // הצגת כרטיס המבחן המסכם גם בתחתית רשימת היחידות
+    container.appendChild(buildAccountingSummaryExamCard());
 
     const unitsText = document.getElementById('units-stat-text');
     if (unitsText) unitsText.textContent = `${completedCount} מתוך ${units.length} יחידות`;

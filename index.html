@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>מאמן ה-AI של דניאל | למידה מעשית ונגישה</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=3.2">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Rubik:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -62,8 +62,21 @@
     <!-- 1. Flexible Unit/Quest Roadmap Screen (המסלול של דניאל - מסך ראשי) -->
     <section id="view-roadmap" class="view-section active">
 
-      <!-- Dynamic Track Navigation Tabs (Switch between General/AI, Accounting, etc.) -->
-      <div id="track-nav-container" class="track-tabs-nav"></div>
+      <!-- Dynamic Track Navigation Tabs (Switch between General/AI, Accounting, and Study Help) -->
+      <div id="track-nav-container" class="track-tabs-nav" role="tablist">
+        <button type="button" class="track-tab-btn active" role="tab" aria-selected="true" data-track="general">
+          <span class="track-tab-icon">🎯</span>
+          <span class="track-tab-title">מסלול 1: מיומנויות AI וכלים מעשיים 🤖</span>
+        </button>
+        <button type="button" class="track-tab-btn" role="tab" aria-selected="false" data-track="accounting">
+          <span class="track-tab-icon">💼</span>
+          <span class="track-tab-title">מסלול 2: יסודות הנהלת חשבונות 📊</span>
+        </button>
+        <button type="button" class="track-tab-btn" role="tab" aria-selected="false" data-track="study_help">
+          <span class="track-tab-icon">🎓</span>
+          <span class="track-tab-title">מסלול 3: עזרה בלימודים 🎓</span>
+        </button>
+      </div>
 
       <div class="roadmap-header card">
         <div class="roadmap-header-top">
@@ -758,19 +771,19 @@
 
 
   <!-- Core Scripts -->
-  <script src="data/curriculum_general.js"></script>
-  <script src="data/curriculum_accounting.js"></script>
-  <!-- Modular Application Architecture (v4.1) -->
-  <script src="src/state/store.js"></script>
-  <script src="src/services/uiServices.js"></script>
-  <script src="src/services/ai/geminiService.js"></script>
-  <script src="src/services/ai/groqService.js"></script>
-  <script src="src/services/ai/openRouterService.js"></script>
-  <script src="src/services/ai/aiOrchestrator.js"></script>
-  <script src="src/components/blockEngine.js"></script>
-  <script src="src/controllers/roadmapController.js"></script>
-  <script src="src/controllers/unitPlayerController.js"></script>
-  <script src="src/controllers/adminController.js"></script>
-  <script src="src/main.js"></script>
+  <script src="data/curriculum_general.js?v=3.2"></script>
+  <script src="data/curriculum_accounting.js?v=3.2"></script>
+  <!-- Modular Application Architecture (v3.2) -->
+  <script src="src/state/store.js?v=3.2"></script>
+  <script src="src/services/uiServices.js?v=3.2"></script>
+  <script src="src/services/ai/geminiService.js?v=3.2"></script>
+  <script src="src/services/ai/groqService.js?v=3.2"></script>
+  <script src="src/services/ai/openRouterService.js?v=3.2"></script>
+  <script src="src/services/ai/aiOrchestrator.js?v=3.2"></script>
+  <script src="src/components/blockEngine.js?v=3.2"></script>
+  <script src="src/controllers/roadmapController.js?v=3.2"></script>
+  <script src="src/controllers/unitPlayerController.js?v=3.2"></script>
+  <script src="src/controllers/adminController.js?v=3.2"></script>
+  <script src="src/main.js?v=3.2"></script>
 </body>
 </html>
