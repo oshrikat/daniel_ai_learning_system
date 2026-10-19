@@ -1388,6 +1388,10 @@ function renderExerciseBlock(container, block, onAnsweredCorrectly) {
  * בלוק 9: שאלה פתוחה עם בדיקת AI מעצימה (ai_eval_qa)
  */
 function renderAiEvalBlock(container, block) {
+  if (typeof block._isPassed !== 'boolean') {
+    block._isPassed = false;
+  }
+
   container.innerHTML = `
     <div class="ai-eval-block-card">
       <div class="ai-eval-header">
@@ -1425,40 +1429,71 @@ function renderAiEvalBlock(container, block) {
       btn.innerHTML = '<span>בודק בנחת... ⏳</span>';
       fbResult.style.display = 'block';
       fbResult.className = 'ai-eval-feedback-result loading';
+      fbResult.style.cssText = 'display: block;';
       fbResult.innerHTML = '<p>המאמן של דניאל מעבד את התשובה שלך... 🤖</p>';
 
-      const prompt = `אתה מאמן למידה תומך ומעצים עבור דניאל, לומד בן 28.
-שאלה: "${block.question_title}"
+      const evalPrompt = `אתה מאמן למידה פדגוגי, חם ומדויק עבור דניאל (בן 28).
+השאלה שנשאלה: "${block.question_title}"
 תשובת דניאל: "${text}"
-מושג ליבה: "${block.rubric_for_ai?.core_concept || ''}"
+מושג הליבה והתשובה הנדרשת: "${block.rubric_for_ai?.core_concept || ''}"
 כללי הערכה: ${JSON.stringify(block.rubric_for_ai?.evaluation_rules || [])}
-הנחיות:
-1. פתח תמיד במילים חמות ומעצימות לדניאל.
-2. צטט מילים יפות מהתשובה שלו.
-3. חזק את ההבנה בצורה חיובית ומעודדת ב-2-3 משפטים קצרים וברורים בעברית פשוטה.`;
 
-      let feedback = '';
+עליך להעריך באמת האם תשובתו של דניאל נכונה ומדויקת לפי מושג הליבה, או שהיא שגויה / חלקית / לא מדויקת.
+החזר אך ורק אובייקט JSON תקני (ללא markdown וללא טקסט מחוץ ל-JSON) במבנה הבא:
+{
+  "is_accurate": true,
+  "opening_quote": "משפט פתיחה חם ומכבד שמצטט ישירות מילים מתוך מה שדניאל כתב",
+  "explanation": "אם is_accurate הוא false: הסבר ברור ופשוט למה התשובה עדיין לא מדויקת ומה התבלבל. אם is_accurate הוא true: חיזוק ממוקד שמסביר למה ההיגיון של דניאל מדויק.",
+  "next_step_or_recap": "אם is_accurate הוא false: רמז מכוון ושאלה מנחה שמזמינה את דניאל לנסות שוב. אם is_accurate הוא true: סיכום קצר ומזוקק (משפט אחד) של הכלל שלמדנו."
+}`;
+
+      let raw = '';
       try {
-        feedback = await callMultiTierAI(prompt);
+        raw = await callMultiTierAI(evalPrompt);
       } catch (e) {
         console.error('[ai_eval_qa] Multi-tier AI fallback threw unexpectedly:', e);
       }
 
-      if (!feedback) {
-        const words = text.split(/\s+/).slice(0, 3).join(' ');
-        feedback = `כל הכבוד דניאל! נהדר לראות שכתבת "${words}...". ההסבר שלך נוגע בדיוק בעניין: ${block.rubric_for_ai?.core_concept || 'הבנת את העיקרון המרכזי'}. המשך ככה! ⭐`;
-      }
-
+      const parsed = raw ? AIService.cleanAndParseJSON(raw) : null;
       btn.disabled = false;
-      btn.innerHTML = '<span>שלח שוב לבדיקה ✨</span>';
-      fbResult.className = 'ai-eval-feedback-result success';
-      fbResult.innerHTML = `
-        <div class="ai-coach-bubble">
-          <div class="ai-bubble-badge">🌟 משוב ממאמן ה-AI:</div>
-          <p class="ai-bubble-content">${feedback}</p>
-        </div>
-      `;
-      SoundService.playSuccessSound();
+
+      if (parsed && parsed.is_accurate === false) {
+        block._isPassed = false;
+        fbResult.className = 'ai-eval-feedback-result warning';
+        fbResult.style.cssText = 'display: block; border-right: 4px solid #d97706; background: #fffbeb; color: #92400e; padding: 1rem; border-radius: 12px; margin-top: 0.8rem;';
+        fbResult.innerHTML = `
+          <div style="margin-bottom: 0.45rem;">🔍 <strong>בוא נדייק יחד, דניאל:</strong></div>
+          <p style="margin: 0.35rem 0;">${parsed.opening_quote || ''}</p>
+          <p style="margin: 0.35rem 0;"><strong>למה זה עדיין לא מדויק?</strong> ${parsed.explanation || ''}</p>
+          <p style="margin: 0.35rem 0;"><strong>💡 כיוון לניסיון הבא:</strong> ${parsed.next_step_or_recap || ''}</p>
+        `;
+        btn.innerHTML = '<span>נסה לענות שוב לפי ההכוונה ✍️</span>';
+        textarea.focus();
+      } else {
+        block._isPassed = true;
+        const words = text.split(/\s+/).slice(0, 4).join(' ');
+        const fallbackText = raw || `כל הכבוד דניאל! נהדר לראות שכתבת "${words}...". ההסבר שלך נוגע בדיוק בעניין המרכזי.`;
+        const mainParagraph = parsed
+          ? `${parsed.opening_quote || ''} ${parsed.explanation || ''}`.trim()
+          : fallbackText;
+        const recapText = parsed
+          ? (parsed.next_step_or_recap || block.rubric_for_ai?.core_concept || '')
+          : (block.rubric_for_ai?.core_concept || 'הבנת את העיקרון המרכזי של היחידה');
+
+        fbResult.className = 'ai-eval-feedback-result success';
+        fbResult.style.cssText = 'display: block;';
+        fbResult.innerHTML = `
+          <div class="ai-coach-bubble">
+            <div class="ai-bubble-badge">🌟 <strong>תשובה מדויקת ומעולה, דניאל!</strong></div>
+            <p class="ai-bubble-content">${mainParagraph}</p>
+            <div style="margin-top:0.6rem; padding:0.6rem 0.9rem; background:rgba(16,185,129,0.12); border-radius:8px;">
+              <strong>📌 סיכום העיקרון שפיצחת:</strong> ${recapText}
+            </div>
+          </div>
+        `;
+        btn.innerHTML = '<span>התשובה אושרה בהצלחה! ✅</span>';
+        SoundService.playSuccessSound();
+      }
     };
   }
 }
@@ -1474,8 +1509,8 @@ function stripThinkTags(text) {
 }
 
 /**
- * Priority 2: Gemini REST API
- * @param {string} model - e.g. 'gemini-2.0-flash'
+ * Tier 1 (Primary): Gemini REST API
+ * @param {string} model - e.g. 'gemini-3.6-flash'
  * @param {string} apiKey
  * @param {string} prompt
  * @param {object} options
@@ -1484,7 +1519,10 @@ function stripThinkTags(text) {
 async function callGeminiAPI(model, apiKey, prompt, options = {}) {
   const key = cleanApiKey(apiKey);
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-  const parts = [{ text: prompt }];
+  const fullPrompt = (options.systemInstruction && !prompt.includes(options.systemInstruction))
+    ? `${options.systemInstruction}\n\n${prompt}`
+    : prompt;
+  const parts = [{ text: fullPrompt }];
   if (Array.isArray(options.images)) {
     options.images.forEach(img => {
       if (img && img.data) {
@@ -1510,7 +1548,7 @@ async function callGeminiAPI(model, apiKey, prompt, options = {}) {
 }
 
 /**
- * Priority 1: Groq / Grok (xAI) API
+ * Tier 2 (Secondary): Groq / Grok (xAI) API
  * @param {string} apiKey
  * @param {string} prompt
  * @param {string} explicitModel
@@ -1530,7 +1568,7 @@ async function callGrokAPI(apiKey, prompt, explicitModel = '', options = {}) {
       model = appState?.apiConfig?.verifiedGroqVisionModel || 'meta-llama/llama-4-scout-17b-16e-instruct';
     } else {
       model = isGroq
-        ? (appState?.apiConfig?.verifiedGroqModel || 'llama-3.3-70b-versatile')
+        ? (appState?.apiConfig?.verifiedGroqModel || 'qwen/qwen3.8-27b')
         : 'grok-2-latest';
     }
   }
@@ -1546,11 +1584,11 @@ async function callGrokAPI(apiKey, prompt, explicitModel = '', options = {}) {
     });
   }
 
-  const messages = [];
-  if (options.systemInstruction) {
-    messages.push({ role: 'system', content: options.systemInstruction });
-  }
-  messages.push({ role: 'user', content: userContent });
+  const hebrewSystemGuard = options.systemInstruction || 'ענה אך ורק בעברית תקנית, ברורה ושלמה. אל תשתמש בשום מילה בערבית או בשפה זרה, ואל תקטע משפטים באמצע.';
+  const messages = [
+    { role: 'system', content: hebrewSystemGuard },
+    { role: 'user', content: userContent }
+  ];
 
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -1567,7 +1605,7 @@ async function callGrokAPI(apiKey, prompt, explicitModel = '', options = {}) {
 }
 
 /**
- * Priority 3: OpenRouter API
+ * Tier 3 (Backup): OpenRouter API
  * @param {string} apiKey
  * @param {string} prompt
  * @param {string} explicitModel
@@ -1591,52 +1629,92 @@ async function callOpenRouterAPI(apiKey, prompt, explicitModel = '') {
 
 /**
  * Unified sequential multi-tier AI fallback.
- * Priority 1: Groq / Grok -> Priority 2: Gemini -> Priority 3: OpenRouter -> Priority 4: Offline Fallback.
+ * Tier 1 (Primary): Google Gemini -> Tier 2 (Secondary): Groq / Grok -> Tier 3 (Backup): OpenRouter -> Tier 4: Offline Fallback.
  * @param {string} prompt
  * @param {object} options
  * @returns {Promise<string>}
  */
 async function callMultiTierAI(prompt, options = {}) {
+  let savedState = {};
+  try {
+    savedState = JSON.parse(localStorage.getItem('DANIEL_AI_V3_CLEAN') || '{}');
+  } catch (e) {}
+  const cfg = { ...(savedState.apiConfig || {}), ...(appState?.apiConfig || {}) };
+
+  const geminiKey = cleanApiKey(
+    localStorage.getItem('gemini_api_key') ||
+    cfg.geminiKey ||
+    ''
+  );
   const grokKey = cleanApiKey(
     localStorage.getItem('xai_api_key') ||
     localStorage.getItem('groq_api_key') ||
-    appState?.apiConfig?.xaiKey ||
-    appState?.apiConfig?.groqKey ||
-    ''
-  );
-  const geminiKey = cleanApiKey(
-    localStorage.getItem('gemini_api_key') ||
-    appState?.apiConfig?.geminiKey ||
+    cfg.xaiKey ||
+    cfg.groqKey ||
     ''
   );
   const orKey = cleanApiKey(
     localStorage.getItem('openrouter_api_key') ||
-    appState?.apiConfig?.openrouterKey ||
+    cfg.openrouterKey ||
     ''
   );
 
   const errors = [];
   const hasImages = Array.isArray(options.images) && options.images.length > 0;
 
-  // Priority 1: Groq / Grok First
+  // TIER 1 (PRIMARY — Google Gemini First)
+  if (geminiKey) {
+    const baseGemini = (typeof AIService !== 'undefined' && Array.isArray(AIService.geminiModels))
+      ? AIService.geminiModels
+      : ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-flash-lite-latest'];
+    const geminiModelsToTry = [...new Set([
+      localStorage.getItem('verified_gemini_model'),
+      cfg.verifiedGeminiModel,
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-flash-latest',
+      'gemini-3.1-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-3.7-flash',
+      ...baseGemini
+    ].filter(Boolean))];
+
+    for (const model of geminiModelsToTry) {
+      try {
+        const reply = await callGeminiAPI(model, geminiKey, prompt, options);
+        if (appState?.apiConfig) {
+          appState.apiConfig.verifiedGeminiModel = model;
+        }
+        localStorage.setItem('verified_gemini_model', model);
+        return reply;
+      } catch (e) {
+        errors.push(`Gemini (${model}): ${e.message}`);
+        console.warn(`[AI Tier 1] Gemini (${model}) failed, trying next Gemini candidate…`, e);
+      }
+    }
+  }
+
+  // TIER 2 (SECONDARY — Groq / Grok Second)
   if (grokKey) {
     const isGroq = grokKey.startsWith('gsk_');
-    let modelsToTry = [];
+    let groqModelsToTry = [];
     if (hasImages && isGroq) {
-      modelsToTry = [
-        appState?.apiConfig?.verifiedGroqVisionModel,
+      groqModelsToTry = [
+        cfg.verifiedGroqVisionModel,
         'meta-llama/llama-4-scout-17b-16e-instruct'
       ].filter(Boolean);
     } else if (isGroq) {
-      const baseList = (typeof AIService !== 'undefined' && Array.isArray(AIService.groqModels))
-        ? AIService.groqModels
-        : ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'allam-2-7b'];
-      modelsToTry = [...new Set([appState?.apiConfig?.verifiedGroqModel, ...baseList].filter(Boolean))];
+      groqModelsToTry = [...new Set([
+        cfg.verifiedGroqModel,
+        'qwen/qwen3.8-27b',
+        'llama-3.3-70b-versatile',
+        'llama-3.1-8b-instant'
+      ].filter(Boolean))];
     } else {
-      modelsToTry = ['grok-2-latest'];
+      groqModelsToTry = ['grok-2-latest'];
     }
 
-    for (const model of modelsToTry) {
+    for (const model of groqModelsToTry) {
       try {
         const reply = await callGrokAPI(grokKey, prompt, model, options);
         if (isGroq && !hasImages && appState?.apiConfig) {
@@ -1645,36 +1723,15 @@ async function callMultiTierAI(prompt, options = {}) {
         return reply;
       } catch (e) {
         errors.push(`Groq/Grok (${model}): ${e.message}`);
-        console.warn(`[AI Priority 1] Groq/Grok (${model}) failed, trying next…`, e);
+        console.warn(`[AI Tier 2] Groq/Grok (${model}) failed, trying next…`, e);
       }
     }
   }
 
-  // Priority 2: Gemini Second
-  if (geminiKey) {
-    const baseGemini = (typeof AIService !== 'undefined' && Array.isArray(AIService.geminiModels))
-      ? AIService.geminiModels
-      : ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-flash-lite-latest'];
-    const geminiModelsToTry = [...new Set([appState?.apiConfig?.verifiedGeminiModel, ...baseGemini].filter(Boolean))];
-
-    for (const model of geminiModelsToTry) {
-      try {
-        const reply = await callGeminiAPI(model, geminiKey, prompt, options);
-        if (appState?.apiConfig) {
-          appState.apiConfig.verifiedGeminiModel = model;
-        }
-        return reply;
-      } catch (e) {
-        errors.push(`Gemini (${model}): ${e.message}`);
-        console.warn(`[AI Priority 2] Gemini (${model}) failed, trying next…`, e);
-      }
-    }
-  }
-
-  // Priority 3: OpenRouter Third
+  // TIER 3 (FINAL BACKUP — OpenRouter Third)
   if (orKey && !hasImages) {
     const orModels = [...new Set([
-      appState?.apiConfig?.verifiedOpenRouterModel,
+      cfg.verifiedOpenRouterModel,
       'openai/gpt-4o-mini',
       'openai/gpt-3.5-turbo'
     ].filter(Boolean))];
@@ -1688,12 +1745,12 @@ async function callMultiTierAI(prompt, options = {}) {
         return reply;
       } catch (e) {
         errors.push(`OpenRouter (${model}): ${e.message}`);
-        console.warn(`[AI Priority 3] OpenRouter (${model}) failed, trying next…`, e);
+        console.warn(`[AI Tier 3] OpenRouter (${model}) failed, trying next…`, e);
       }
     }
   }
 
-  // Priority 4: All Failed -> Console Error + Toast Error + Offline Fallback
+  // TIER 4: All Failed -> Console Error + Toast Error + Offline Fallback
   console.error('[callMultiTierAI] All AI providers failed:', errors);
   showToast('שגיאת AI: כל ספקי ה-AI נכשלו. מופעל משוב אופליין מקומי (בדוק קונסול).', 'error');
   return '';
@@ -1834,6 +1891,14 @@ function renderUnitPlayer(unitId) {
 
       if (finishBtn) {
         finishBtn.onclick = () => {
+          const evalBlock = allBlocks.find(b => b.type === 'ai_eval_qa');
+          if (evalBlock && !evalBlock._isPassed) {
+            showToast('לפני סיום היחידה, אנא השלם את השאלה הפתוחה למטה עד לקבלת אישור מהמאמן 🤖', 'warning');
+            const evalCard = blocksWrapper.querySelector('.ai-eval-block-card');
+            if (evalCard) evalCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+          }
+
           if (!appState.trackProgress[activeTrack.id]) {
             appState.trackProgress[activeTrack.id] = [];
           }
@@ -2350,20 +2415,19 @@ function finishCheckpointTest() {
 
 const AIService = {
   geminiModels: [
-    'gemini-3.8-flash',
-    'gemini-3.7-flash',
     'gemini-3.6-flash',
     'gemini-3.5-flash',
     'gemini-flash-latest',
     'gemini-3.1-flash-lite',
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
     'gemini-flash-lite-latest'
   ],
 
   groqModels: [
+    'qwen/qwen3.8-27b',
     'llama-3.3-70b-versatile',
     'llama-3.1-8b-instant',
-    'openai/gpt-oss-20b',
-    'qwen/qwen3.8-27b',
     'allam-2-7b'
   ],
 
@@ -2464,7 +2528,15 @@ const AIService = {
           .filter(id => id && /gemini/i.test(id) && !/embedding|vision-pro|aqa|tts|image|robotics|computer-use|transcribe|lyria|banana|argon/i.test(id));
 
         if (availableIds.length > 0) {
-          const preferredOrder = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+          const preferredOrder = [
+            'gemini-3.6-flash',
+            'gemini-3.5-flash',
+            'gemini-flash-latest',
+            'gemini-3.1-flash-lite',
+            'gemini-3.8-flash',
+            'gemini-3.7-flash',
+            'gemini-flash-lite-latest'
+          ];
           const prioritized = preferredOrder.filter(m => availableIds.includes(m));
           const others = availableIds.filter(m => !prioritized.includes(m));
           candidateModels = [...new Set([...prioritized, ...others, ...this.geminiModels])];
@@ -2498,6 +2570,7 @@ const AIService = {
           appState.apiConfig.geminiKey = key;
           appState.apiConfig.verifiedGeminiModel = model;
           localStorage.setItem('gemini_api_key', key);
+          localStorage.setItem('verified_gemini_model', model);
           saveAppState();
           return { success: true, model, latency, reply: rawText };
         } else {

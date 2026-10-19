@@ -516,33 +516,16 @@
           <div class="cg-section">
             <h4>שרשרת חיבורי AI ובדיקות קישוריות עצמאיות בלייב</h4>
             <p class="adm-helper-text">
-              שרשרת העדיפויות המאוחדת: 1. Groq / Grok (ראשי ומהיר) &larr; 2. Google Gemini &larr; 3. OpenRouter &larr; 4. מנוע פנימי חכם (אופליין):
+              שרשרת העדיפויות המאוחדת: 1. Google Gemini (ספק ראשי) &larr; 2. Groq Cloud (גיבוי משני מהיר) &larr; 3. OpenRouter (גיבוי שלישי) &larr; 4. מנוע פנימי חכם (אופליין):
             </p>
 
             <form onsubmit="return false;">
-              <!-- 1. Groq / Grok -->
+              <!-- 1. Gemini -->
               <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 0.6rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                   <div>
-                    <strong>1. Groq / Grok API Key (ספק ראשי מהיר וחינמי):</strong>
-                    <p>Groq Console (Llama 3.3 70B / Llama 4 Vision / GPT-OSS 20B / Qwen 3.8)</p>
-                  </div>
-                  <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <input type="password" id="cfg-groq-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Groq..." autocomplete="off">
-                    <button type="button" id="btn-test-groq" class="secondary-btn" style="white-space: nowrap; padding: 0.5rem 0.9rem; font-size: 0.88rem;">
-                      <span>בדוק Groq 🧪</span>
-                    </button>
-                  </div>
-                </div>
-                <div id="cfg-groq-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
-              </div>
-
-              <!-- 2. Gemini -->
-              <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 0.6rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-                  <div>
-                    <strong>2. Google Gemini API Key (ספק משני מומלץ וחינמי):</strong>
-                    <p>Google AI Studio (Gemini 2.0 Flash / 2.5 Flash / 2.0 Flash-Lite)</p>
+                    <strong>1. Google Gemini API Key (ספק ראשי מומלץ וחינמי):</strong>
+                    <p>Google AI Studio (Gemini 3.6 Flash / 3.5 Flash / 3.8 Flash / 3.1 Flash-Lite)</p>
                   </div>
                   <div style="display: flex; gap: 0.5rem; align-items: center;">
                     <input type="password" id="cfg-gemini-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Gemini..." autocomplete="off">
@@ -552,6 +535,23 @@
                   </div>
                 </div>
                 <div id="cfg-gemini-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
+              </div>
+
+              <!-- 2. Groq -->
+              <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 0.6rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                  <div>
+                    <strong>2. Groq Cloud API Key (ספק גיבוי משני מהיר וחינמי):</strong>
+                    <p>Groq Console (Qwen 3.8 27B / Llama 3.3 70B / Llama 3.1 8B)</p>
+                  </div>
+                  <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <input type="password" id="cfg-groq-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Groq..." autocomplete="off">
+                    <button type="button" id="btn-test-groq" class="secondary-btn" style="white-space: nowrap; padding: 0.5rem 0.9rem; font-size: 0.88rem;">
+                      <span>בדוק Groq 🧪</span>
+                    </button>
+                  </div>
+                </div>
+                <div id="cfg-groq-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
               </div>
 
               <!-- 3. OpenRouter -->
