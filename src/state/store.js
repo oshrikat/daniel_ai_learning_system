@@ -60,7 +60,9 @@ const TRACKS = [
     id: 'general',
     label: 'מסלול 1: מיומנויות AI וכלים מעשיים 🤖',
     shortLabel: 'כללי ו-AI',
+    title: 'מיומנויות AI וכלים מעשיים',
     icon: '🎯',
+    description: 'שימוש חכם, בטוח ומעשי בכלי בינה מלאכותית בחיי היומיום ובעבודה',
     dataVar: 'CURRICULUM_DATA',
     engine: 'legacy'
   },
@@ -68,9 +70,21 @@ const TRACKS = [
     id: 'accounting',
     label: 'מסלול 2: יסודות הנהלת חשבונות 📊',
     shortLabel: 'הנהלת חשבונות',
+    title: 'יסודות הנהלת חשבונות',
     icon: '💼',
+    description: 'לימוד מובנה של חובה וזכות, פקודות יומן, מע"מ, כרטסת ומאזן בוחן',
     dataVar: 'ACCOUNTING_CURRICULUM',
     engine: 'blocks'
+  },
+  {
+    id: 'study_help',
+    label: 'מסלול 3: עזרה בלימודים 🎓',
+    shortLabel: 'עזרה בלימודים',
+    title: 'עזרה בלימודים',
+    icon: '🎓',
+    description: 'עזרה אישית בשיעורי בית, הסבר מושגים ותרגול מונחה עם מאמן ה-AI',
+    dataVar: null,
+    engine: 'study_help'
   }
 ];
 
@@ -92,6 +106,9 @@ function getTrackUnits(track) {
   if (!track) track = getActiveTrack();
   if (track.engine === 'legacy') {
     return appState.curriculumUnits || [];
+  }
+  if (!track.dataVar) {
+    return [];
   }
   let raw = [];
   if (typeof window !== 'undefined' && window[track.dataVar]) {
@@ -124,7 +141,20 @@ let appState = {
   checkpoints: getBaseCheckpoints(),
   trackProgress: {
     general: [],
-    accounting: []
+    accounting: [],
+    study_help: []
+  },
+  studyHelp: {
+    sessions: [],
+    activeSessionId: null,
+    savedNotes: [],
+    totalQuestionsAsked: 0
+  },
+  accountingExam: {
+    attempts: [],
+    activeExam: null,
+    bestScore: 0,
+    lastAttemptAt: null
   },
   caregiverNotes: [
     {
@@ -215,10 +245,27 @@ function performSmartMergeAndMigration() {
         if (parsed.trackProgress && typeof parsed.trackProgress === 'object') {
           appState.trackProgress = {
             general: Array.isArray(parsed.trackProgress.general) ? parsed.trackProgress.general : [],
-            accounting: Array.isArray(parsed.trackProgress.accounting) ? parsed.trackProgress.accounting : []
+            accounting: Array.isArray(parsed.trackProgress.accounting) ? parsed.trackProgress.accounting : [],
+            study_help: Array.isArray(parsed.trackProgress.study_help) ? parsed.trackProgress.study_help : []
           };
         } else {
-          appState.trackProgress = { general: [], accounting: [] };
+          appState.trackProgress = { general: [], accounting: [], study_help: [] };
+        }
+        if (parsed.studyHelp && typeof parsed.studyHelp === 'object') {
+          appState.studyHelp = {
+            sessions: Array.isArray(parsed.studyHelp.sessions) ? parsed.studyHelp.sessions : [],
+            activeSessionId: parsed.studyHelp.activeSessionId || null,
+            savedNotes: Array.isArray(parsed.studyHelp.savedNotes) ? parsed.studyHelp.savedNotes : [],
+            totalQuestionsAsked: Number(parsed.studyHelp.totalQuestionsAsked) || 0
+          };
+        }
+        if (parsed.accountingExam && typeof parsed.accountingExam === 'object') {
+          appState.accountingExam = {
+            attempts: Array.isArray(parsed.accountingExam.attempts) ? parsed.accountingExam.attempts : [],
+            activeExam: parsed.accountingExam.activeExam || null,
+            bestScore: Number(parsed.accountingExam.bestScore) || 0,
+            lastAttemptAt: parsed.accountingExam.lastAttemptAt || null
+          };
         }
         if (parsed.user) appState.user = parsed.user;
         if (parsed.apiConfig) {
@@ -327,5 +374,97 @@ function saveAppState() {
   } catch (e) {
     console.warn('LocalStorage save failed:', e);
   }
+}
+
+// ============================================================================
+// 2b. פונקציות עזר למסלול 3 (עזרה בלימודים) ולמבחן המסכם בהנהלת חשבונות
+// ============================================================================
+
+function getOrCreateStudySession(subject) {
+  if (!appState.studyHelp || typeof appState.studyHelp !== 'object') {
+    appState.studyHelp = { sessions: [], activeSessionId: null, savedNotes: [], totalQuestionsAsked: 0 };
+  }
+  const cleanSubject = (subject || '').trim();
+  if (!cleanSubject && appState.studyHelp.activeSessionId) {
+    const existing = appState.studyHelp.sessions.find(s => s.id === appState.studyHelp.activeSessionId);
+    if (existing) return existing;
+  }
+  if (cleanSubject && appState.studyHelp.activeSessionId) {
+    const active = appState.studyHelp.sessions.find(s => s.id === appState.studyHelp.activeSessionId);
+    if (active && active.subject === cleanSubject) return active;
+  }
+  const now = new Date().toISOString();
+  const newSession = {
+    id: `sh_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    title: cleanSubject ? `עזרה בלימודים: ${cleanSubject}` : 'מפגש עזרה בלימודים',
+    subject: cleanSubject || 'כללי',
+    createdAt: now,
+    updatedAt: now,
+    messages: []
+  };
+  appState.studyHelp.sessions.unshift(newSession);
+  appState.studyHelp.activeSessionId = newSession.id;
+  saveAppState();
+  return newSession;
+}
+
+function saveStudyMessage(sessionId, role, text, meta) {
+  if (!appState.studyHelp || typeof appState.studyHelp !== 'object') {
+    appState.studyHelp = { sessions: [], activeSessionId: null, savedNotes: [], totalQuestionsAsked: 0 };
+  }
+  let session = appState.studyHelp.sessions.find(s => s.id === sessionId);
+  if (!session) {
+    session = getOrCreateStudySession(meta && meta.subject ? meta.subject : 'כללי');
+  }
+  const now = new Date().toISOString();
+  const message = {
+    id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    role: role || 'user',
+    text: text || '',
+    meta: meta || {},
+    timestamp: now
+  };
+  if (!Array.isArray(session.messages)) session.messages = [];
+  session.messages.push(message);
+  session.updatedAt = now;
+  if (role === 'user') {
+    appState.studyHelp.totalQuestionsAsked = (Number(appState.studyHelp.totalQuestionsAsked) || 0) + 1;
+  }
+  appState.studyHelp.activeSessionId = session.id;
+  saveAppState();
+  return message;
+}
+
+function saveAccountingExamState(examObj) {
+  if (!appState.accountingExam || typeof appState.accountingExam !== 'object') {
+    appState.accountingExam = { attempts: [], activeExam: null, bestScore: 0, lastAttemptAt: null };
+  }
+  appState.accountingExam.activeExam = examObj || null;
+  saveAppState();
+  return appState.accountingExam.activeExam;
+}
+
+function recordAccountingExamAttempt(completedExam) {
+  if (!appState.accountingExam || typeof appState.accountingExam !== 'object') {
+    appState.accountingExam = { attempts: [], activeExam: null, bestScore: 0, lastAttemptAt: null };
+  }
+  const now = (completedExam && completedExam.completedAt) || new Date().toISOString();
+  const score = Number(completedExam && completedExam.score) || 0;
+  const attemptRecord = {
+    ...(completedExam || {}),
+    id: (completedExam && completedExam.id) || `exam_${Date.now()}`,
+    score,
+    status: 'submitted',
+    completedAt: now
+  };
+  if (!Array.isArray(appState.accountingExam.attempts)) {
+    appState.accountingExam.attempts = [];
+  }
+  appState.accountingExam.attempts.unshift(attemptRecord);
+  appState.accountingExam.bestScore = Math.max(Number(appState.accountingExam.bestScore) || 0, score);
+  appState.accountingExam.lastAttemptAt = now;
+  appState.accountingExam.activeExam = attemptRecord;
+  saveAppState();
+  return attemptRecord;
 }
 
