@@ -1038,12 +1038,29 @@ function renderChecklistBlock(container, block) {
  */
 function renderJournalGridBlock(container, block) {
   const rows = block.expected_rows || [];
-  let totalDebitExpected = 0;
-  let totalCreditExpected = 0;
-  rows.forEach(r => {
-    totalDebitExpected += Number(r.debit) || 0;
-    totalCreditExpected += Number(r.credit) || 0;
-  });
+  const defaultDistractors = [
+    'קופה',
+    'עו"ש בנק',
+    'עסקה משותפת',
+    'מע"מ תשומות',
+    'מע"מ עסקאות',
+    'הכנסות ממכירות',
+    'ספקים',
+    'חו"ז שותף ב\''
+  ];
+
+  const buildRowOptions = (row, rIdx) => {
+    const correctAcc = row.account || '';
+    const otherRowAccs = rows
+      .map((r, i) => (i !== rIdx ? r.account : null))
+      .filter(a => a && a !== correctAcc);
+    const pool = [...new Set([...otherRowAccs, ...defaultDistractors])].filter(a => a !== correctAcc);
+    const distractors = pool.slice(0, 2);
+    const options = [correctAcc, ...distractors];
+    // Deterministic rotation based on row index so options aren't always first
+    const shift = (rIdx + 1) % options.length;
+    return options.slice(shift).concat(options.slice(0, shift));
+  };
 
   const tableHtml = `
     <div class="journal-block-card">
@@ -1061,19 +1078,25 @@ function renderJournalGridBlock(container, block) {
             </tr>
           </thead>
           <tbody>
-            ${rows.map((row, rIdx) => `
+            ${rows.map((row, rIdx) => {
+              const opts = buildRowOptions(row, rIdx);
+              return `
               <tr class="journal-row" data-row-idx="${rIdx}">
                 <td class="journal-acc-cell">
-                  <span class="acc-name">${row.account}</span>
+                  <select class="styled-select journal-acc-select">
+                    <option value="">-- בחר חשבון (3 אפשרויות) --</option>
+                    ${opts.map(opt => `<option value="${opt.replace(/"/g, '&quot;')}">${opt}</option>`).join('')}
+                  </select>
                 </td>
                 <td>
-                  <input type="number" class="styled-input journal-debit-input" placeholder="0" value="${row.debit || 0}" />
+                  <input type="number" class="styled-input journal-debit-input" placeholder="0" value="" />
                 </td>
                 <td>
-                  <input type="number" class="styled-input journal-credit-input" placeholder="0" value="${row.credit || 0}" />
+                  <input type="number" class="styled-input journal-credit-input" placeholder="0" value="" />
                 </td>
               </tr>
-            `).join('')}
+            `;
+            }).join('')}
           </tbody>
           <tfoot>
             <tr class="journal-total-row">
@@ -1115,13 +1138,52 @@ function renderJournalGridBlock(container, block) {
     checkBtn.onclick = () => {
       const { dSum, cSum } = updateTotals();
       fbMsg.style.display = 'block';
-      if (dSum > 0 && dSum === cSum && (totalDebitExpected === 0 || dSum === totalDebitExpected)) {
+
+      const trElements = Array.from(container.querySelectorAll('.journal-row'));
+      const enteredRows = trElements.map(tr => ({
+        tr,
+        account: (tr.querySelector('.journal-acc-select')?.value || '').trim(),
+        debit: Number(tr.querySelector('.journal-debit-input')?.value) || 0,
+        credit: Number(tr.querySelector('.journal-credit-input')?.value) || 0
+      }));
+
+      if (enteredRows.some(r => !r.account)) {
+        fbMsg.className = 'journal-feedback-msg warning';
+        fbMsg.textContent = 'דניאל, אנא בחר שם חשבון מהרשימה עבור כל שורה בטבלה לפני הבדיקה.';
+        return;
+      }
+
+      const remainingExpected = rows.map(r => ({
+        account: (r.account || '').trim(),
+        debit: Number(r.debit) || 0,
+        credit: Number(r.credit) || 0
+      }));
+
+      let allRowsMatch = true;
+      enteredRows.forEach(entry => {
+        const matchIdx = remainingExpected.findIndex(
+          exp => exp.account === entry.account && exp.debit === entry.debit && exp.credit === entry.credit
+        );
+        if (matchIdx !== -1) {
+          remainingExpected.splice(matchIdx, 1);
+          entry.tr.classList.remove('row-invalid');
+          entry.tr.classList.add('row-valid');
+          entry.tr.style.backgroundColor = 'rgba(16, 185, 129, 0.08)';
+        } else {
+          allRowsMatch = false;
+          entry.tr.classList.remove('row-valid');
+          entry.tr.classList.add('row-invalid');
+          entry.tr.style.backgroundColor = 'rgba(239, 68, 68, 0.08)';
+        }
+      });
+
+      if (dSum > 0 && dSum === cSum && allRowsMatch) {
         fbMsg.className = 'journal-feedback-msg success';
-        fbMsg.textContent = 'מצוין, דניאל! הפקודה מאוזנת ונכונה לחלוטין! סך חובה שווה לסך זכות ✓';
+        fbMsg.textContent = 'מצוין, דניאל! הפקודה מאוזנת ונכונה לחלוטין! כל החשבונות והסכומים בחובה ובזכות מדויקים ✓';
         SoundService.playSuccessSound();
       } else if (dSum > 0 && dSum === cSum) {
         fbMsg.className = 'journal-feedback-msg warning';
-        fbMsg.textContent = 'הפקודה מאוזנת מתמטית, אך בדוק האם הסכומים תואמים בדיוק את נתוני התרגיל.';
+        fbMsg.textContent = 'הפקודה מאוזנת מתמטית (חובה = זכות), אך חלק מהחשבונות או הסכומים בשורות המסומנות אינם תואמים את נתוני האירוע.';
       } else {
         fbMsg.className = 'journal-feedback-msg error';
         fbMsg.textContent = block.validation_error_message || 'הפקודה לא מאוזנת! סך החובה חייב להיות שווה בדיוק לסך הזכות.';
@@ -1204,12 +1266,16 @@ function renderSpreadsheetBlock(container, block) {
 /**
  * בלוק 8: שאלת תרגול רב-ברירתית (exercise)
  */
-function renderExerciseBlock(container, block) {
+function renderExerciseBlock(container, block, onAnsweredCorrectly) {
   container.innerHTML = `
     <div class="exercise-block-card">
       <div class="exercise-header">
         <span class="exercise-badge">🎯 שאלת בדיקה עצמית</span>
         <h4 class="exercise-question">${block.question || ''}</h4>
+        ${block.hint ? `
+          <button type="button" class="secondary-btn exercise-hint-btn" style="margin-top:0.6rem;">💡 רמז לדניאל</button>
+          <div class="exercise-hint-box" style="display:none; margin-top:0.5rem;">${block.hint}</div>
+        ` : ''}
       </div>
       <div class="exercise-options-list">
         ${(block.options || []).map((opt, oIdx) => `
@@ -1222,6 +1288,14 @@ function renderExerciseBlock(container, block) {
       <div class="exercise-feedback-card" style="display: none;"></div>
     </div>
   `;
+
+  const hintBtn = container.querySelector('.exercise-hint-btn');
+  const hintBox = container.querySelector('.exercise-hint-box');
+  if (hintBtn && hintBox) {
+    hintBtn.onclick = () => {
+      hintBox.style.display = hintBox.style.display === 'none' ? 'block' : 'none';
+    };
+  }
 
   const buttons = container.querySelectorAll('.exercise-option-btn');
   const fbCard = container.querySelector('.exercise-feedback-card');
@@ -1241,6 +1315,7 @@ function renderExerciseBlock(container, block) {
           <p>${block.explanation || 'תשובה מדויקת!'}</p>
         `;
         SoundService.playSuccessSound();
+        if (typeof onAnsweredCorrectly === 'function') onAnsweredCorrectly();
       } else {
         btn.classList.add('wrong');
         fbCard.className = 'exercise-feedback-card wrong';
@@ -1338,7 +1413,7 @@ function renderAiEvalBlock(container, block) {
 // ============================================================================
 
 /**
- * Tier 1 & 2: Gemini REST API
+ * Tier 2: Gemini REST API
  * @param {string} model - e.g. 'gemini-2.5-flash'
  * @param {string} apiKey
  * @param {string} prompt
@@ -1359,16 +1434,21 @@ async function callGeminiAPI(model, apiKey, prompt) {
 }
 
 /**
- * Tier 3: Grok (xAI) API
+ * Tier 1: Grok (xAI) / Groq API
  * @param {string} apiKey
  * @param {string} prompt
  * @returns {Promise<string>}
  */
 async function callGrokAPI(apiKey, prompt) {
-  const res = await fetch('https://api.x.ai/v1/chat/completions', {
+  const isGroq = apiKey.startsWith('gsk_');
+  const endpoint = isGroq
+    ? 'https://api.groq.com/openai/v1/chat/completions'
+    : 'https://api.x.ai/v1/chat/completions';
+  const model = isGroq ? 'llama-3.3-70b-versatile' : 'grok-2-latest';
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: 'grok-beta', messages: [{ role: 'user', content: prompt }] })
+    body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }] })
   });
   if (!res.ok) throw new Error(`Grok HTTP ${res.status}`);
   const data = await res.json();
@@ -1378,7 +1458,7 @@ async function callGrokAPI(apiKey, prompt) {
 }
 
 /**
- * Tier 4: OpenRouter API
+ * Tier 3: OpenRouter API
  * @param {string} apiKey
  * @param {string} prompt
  * @returns {Promise<string>}
@@ -1398,62 +1478,57 @@ async function callOpenRouterAPI(apiKey, prompt) {
 
 /**
  * Sequential multi-tier AI fallback.
- * Keys are read from localStorage: gemini_api_key, xai_api_key, openrouter_api_key.
- * Falls back through: Gemini 2.5-flash → Gemini 1.5-flash → Grok → OpenRouter.
+ * Falls back through: Grok / Groq → Gemini 2.5-flash → Gemini 1.5-flash → OpenRouter.
  * If all fail, shows red toast + console.error and returns empty string.
  * @param {string} prompt
  * @returns {Promise<string>}
  */
 async function callMultiTierAI(prompt) {
+  const grokKey = localStorage.getItem('xai_api_key') || localStorage.getItem('groq_api_key') || appState?.apiConfig?.xaiKey || appState?.apiConfig?.groqKey || '';
   const geminiKey = localStorage.getItem('gemini_api_key') || appState?.apiConfig?.geminiKey || '';
-  const xaiKey    = localStorage.getItem('xai_api_key') || '';
-  const orKey     = localStorage.getItem('openrouter_api_key') || '';
+  const orKey = localStorage.getItem('openrouter_api_key') || appState?.apiConfig?.openrouterKey || '';
 
   const errors = [];
 
-  // Tier 1: Gemini 2.5-flash
+  // Tier 1: Grok / Groq First
+  if (grokKey) {
+    try {
+      return await callGrokAPI(grokKey, prompt);
+    } catch (e) {
+      errors.push(`Grok/Groq: ${e.message}`);
+      console.warn('[AI Tier 1] Grok/Groq failed, trying next…', e);
+    }
+  }
+
+  // Tier 2: Gemini Second (gemini-2.5-flash -> gemini-1.5-flash)
   if (geminiKey) {
     try {
       return await callGeminiAPI('gemini-2.5-flash', geminiKey, prompt);
     } catch (e) {
       errors.push(`Gemini 2.5-flash: ${e.message}`);
-      console.warn('[AI Tier 1] Gemini 2.5-flash failed, trying next…', e);
+      console.warn('[AI Tier 2a] Gemini 2.5-flash failed, trying gemini-1.5-flash…', e);
     }
-  }
-
-  // Tier 2: Gemini 1.5-flash
-  if (geminiKey) {
     try {
       return await callGeminiAPI('gemini-1.5-flash', geminiKey, prompt);
     } catch (e) {
       errors.push(`Gemini 1.5-flash: ${e.message}`);
-      console.warn('[AI Tier 2] Gemini 1.5-flash failed, trying next…', e);
+      console.warn('[AI Tier 2b] Gemini 1.5-flash failed, trying next…', e);
     }
   }
 
-  // Tier 3: Grok (xAI)
-  if (xaiKey) {
-    try {
-      return await callGrokAPI(xaiKey, prompt);
-    } catch (e) {
-      errors.push(`Grok: ${e.message}`);
-      console.warn('[AI Tier 3] Grok failed, trying next…', e);
-    }
-  }
-
-  // Tier 4: OpenRouter
+  // Tier 3: OpenRouter Third
   if (orKey) {
     try {
       return await callOpenRouterAPI(orKey, prompt);
     } catch (e) {
       errors.push(`OpenRouter: ${e.message}`);
-      console.warn('[AI Tier 4] OpenRouter failed, no more fallbacks.', e);
+      console.warn('[AI Tier 3] OpenRouter failed, no more fallbacks.', e);
     }
   }
 
-  // All providers failed
-  console.error('[callMultiTierAI] All AI providers failed.', errors);
-  showToast('שגיאת AI: לא ניתן לקבל משוב כרגע. נסה שוב לאחר מכן.', 'error');
+  // Tier 4: All Failed -> Console Error + Toast Error + Offline Fallback
+  console.error('[callMultiTierAI] All AI providers failed:', errors);
+  showToast('שגיאת AI: כל ספקי ה-AI נכשלו. מופעל משוב אופליין מקומי (בדוק קונסול).', 'error');
   return '';
 }
 
@@ -1496,7 +1571,72 @@ function renderUnitPlayer(unitId) {
     }
 
     if (blocksWrapper) {
-      (unit.blocks || []).forEach((block, bIdx) => {
+      const allBlocks = unit.blocks || [];
+      const exerciseBlocks = allBlocks.filter(b => b.type === 'exercise');
+      let stepperInserted = false;
+
+      allBlocks.forEach((block, bIdx) => {
+        if (block.type === 'exercise') {
+          if (!stepperInserted && exerciseBlocks.length > 0) {
+            stepperInserted = true;
+            const stepperContainer = document.createElement('div');
+            stepperContainer.className = 'lesson-block exercise-stepper-container';
+            let currentStep = 0;
+
+            const renderStep = () => {
+              const total = exerciseBlocks.length;
+              const pct = ((currentStep + 1) / total) * 100;
+              const isLast = currentStep === total - 1;
+
+              stepperContainer.innerHTML = `
+                <div class="exercise-stepper-header" style="margin-bottom: 1rem;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.45rem; font-weight:700;">
+                    <span>שאלה ${currentStep + 1} מתוך ${total}</span>
+                    <span>${Math.round(pct)}%</span>
+                  </div>
+                  <div class="stepper-progress-track" style="width:100%; height:8px; background:rgba(15,118,110,0.12); border-radius:999px; overflow:hidden;">
+                    <div class="stepper-progress-fill" style="width: ${pct}%; height:100%; background:#0f766e; transition:width 0.3s ease;"></div>
+                  </div>
+                </div>
+                <div class="exercise-stepper-body"></div>
+                <div class="exercise-stepper-footer" style="margin-top: 1rem; display:flex; justify-content:flex-end; align-items:center;">
+                  <button type="button" class="primary-btn exercise-next-step-btn" disabled>
+                    <span>${isLast ? 'סיום סדרת השאלות בהצלחה! 🏆' : 'המשך לשאלה הבאה ▶'}</span>
+                  </button>
+                </div>
+                <div class="exercise-stepper-complete" style="display:none; margin-top:1rem; padding:1rem; border-radius:12px; background:rgba(16,185,129,0.12); color:#065f46; font-weight:700; text-align:center;">
+                  🎉 כל הכבוד דניאל! השלמת בהצלחה את כל ${total} שאלות התרגול ביחידה זו! ⭐
+                </div>
+              `;
+
+              const bodyEl = stepperContainer.querySelector('.exercise-stepper-body');
+              const nextBtn = stepperContainer.querySelector('.exercise-next-step-btn');
+              const completeBanner = stepperContainer.querySelector('.exercise-stepper-complete');
+
+              renderExerciseBlock(bodyEl, exerciseBlocks[currentStep], () => {
+                if (nextBtn) nextBtn.disabled = false;
+              });
+
+              if (nextBtn) {
+                nextBtn.onclick = () => {
+                  if (currentStep < total - 1) {
+                    currentStep++;
+                    renderStep();
+                  } else {
+                    nextBtn.style.display = 'none';
+                    if (completeBanner) completeBanner.style.display = 'block';
+                    SoundService.playSuccessSound();
+                  }
+                };
+              }
+            };
+
+            renderStep();
+            blocksWrapper.appendChild(stepperContainer);
+          }
+          return;
+        }
+
         const blockEl = renderBlock(block, bIdx, unit);
         if (blockEl) blocksWrapper.appendChild(blockEl);
       });
@@ -2044,8 +2184,7 @@ function finishCheckpointTest() {
 const AIService = {
   geminiModels: [
     'gemini-2.5-flash',
-    'gemini-3.6-flash',
-    'gemini-2.5-pro'
+    'gemini-1.5-flash'
   ],
 
   groqModels: [
