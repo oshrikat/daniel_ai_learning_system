@@ -516,33 +516,16 @@
           <div class="cg-section">
             <h4>שרשרת חיבורי AI ובדיקות קישוריות עצמאיות בלייב</h4>
             <p class="adm-helper-text">
-              אם מוגדר מפתח Gemini, הוא נבחר אוטומטית כספק הראשי. אם מוגדר Groq, הוא משמש כספק מהיר או גיבוי:
+              שרשרת העדיפויות המאוחדת: 1. Groq / Grok (ראשי ומהיר) &larr; 2. Google Gemini &larr; 3. OpenRouter &larr; 4. מנוע פנימי חכם (אופליין):
             </p>
 
             <form onsubmit="return false;">
-              <!-- 1. Gemini -->
+              <!-- 1. Groq / Grok -->
               <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 0.6rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                   <div>
-                    <strong>1. Google Gemini API Key (מומלץ וחינמי):</strong>
-                    <p>Google AI Studio (Gemini 2.5 Flash / 3.6 / 3.1 Flash-Lite)</p>
-                  </div>
-                  <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <input type="password" id="cfg-gemini-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Gemini..." autocomplete="off">
-                    <button type="button" id="btn-test-gemini" class="secondary-btn" style="white-space: nowrap; padding: 0.5rem 0.9rem; font-size: 0.88rem;">
-                      <span>בדוק Gemini 🧪</span>
-                    </button>
-                  </div>
-                </div>
-                <div id="cfg-gemini-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
-              </div>
-
-              <!-- 2. Groq -->
-              <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 0.6rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-                  <div>
-                    <strong>2. Groq Cloud API Key (ספק מהיר וחינמי):</strong>
-                    <p>Groq Console (GPT-OSS 20B / Qwen 3.8 / ALLaM)</p>
+                    <strong>1. Groq / Grok API Key (ספק ראשי מהיר וחינמי):</strong>
+                    <p>Groq Console (Llama 3.3 70B / Llama 4 Vision / GPT-OSS 20B / Qwen 3.8)</p>
                   </div>
                   <div style="display: flex; gap: 0.5rem; align-items: center;">
                     <input type="password" id="cfg-groq-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Groq..." autocomplete="off">
@@ -554,21 +537,36 @@
                 <div id="cfg-groq-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
               </div>
 
-              <!-- 3. Ollama -->
+              <!-- 2. Gemini -->
               <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 0.6rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                   <div>
-                    <strong>3. מודל מקומי / Local Ollama URL:</strong>
-                    <p>ברירת מחדל: http://localhost:11434</p>
+                    <strong>2. Google Gemini API Key (ספק משני מומלץ וחינמי):</strong>
+                    <p>Google AI Studio (Gemini 2.0 Flash / 2.5 Flash / 2.0 Flash-Lite)</p>
                   </div>
                   <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <input type="text" id="cfg-ollama-url" class="styled-input" style="max-width: 270px;" value="http://localhost:11434">
-                    <button type="button" id="btn-test-ollama" class="secondary-btn" style="white-space: nowrap; padding: 0.5rem 0.9rem; font-size: 0.88rem;">
-                      <span>בדוק Ollama 🧪</span>
+                    <input type="password" id="cfg-gemini-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח Gemini..." autocomplete="off">
+                    <button type="button" id="btn-test-gemini" class="secondary-btn" style="white-space: nowrap; padding: 0.5rem 0.9rem; font-size: 0.88rem;">
+                      <span>בדוק Gemini 🧪</span>
                     </button>
                   </div>
                 </div>
-                <div id="cfg-ollama-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
+                <div id="cfg-gemini-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
+              </div>
+
+              <!-- 3. OpenRouter -->
+              <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 0.6rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                  <div>
+                    <strong>3. OpenRouter API Key (ספק גיבוי שלישי):</strong>
+                    <p>OpenRouter (GPT-4o-mini / GPT-3.5-Turbo / Claude / Llama)</p>
+                  </div>
+                  <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <input type="password" id="cfg-openrouter-key" class="styled-input" style="max-width: 270px;" placeholder="הדבק כאן מפתח OpenRouter..." autocomplete="off">
+                    <button type="button" id="btn-test-openrouter" class="secondary-btn" style="white-space: nowrap; padding: 0.5rem 0.9rem; font-size: 0.88rem;"><span>בדוק OpenRouter 🧪</span></button>
+                  </div>
+                </div>
+                <div id="cfg-openrouter-status" style="display: none; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
               </div>
 
               <!-- 4. Offline Synthesizer -->
@@ -580,10 +578,11 @@
                 <span class="badge-tag" style="background-color:#ecfdf5;color:#059669; font-weight: bold;">תמיד פעיל ✅</span>
               </div>
 
-              <div style="margin-top: 1.2rem; display: flex; gap: 0.75rem;">
+              <div style="margin-top: 1.2rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
                 <button type="button" id="cfg-save-keys-btn" class="primary-btn">
                   <span>שמור הגדרות מפתחות 💾</span>
                 </button>
+                <button type="button" id="cfg-test-all-btn" class="primary-btn" style="background-color: var(--success);"><span>בדוק ושמור את כל שרשרת ה-AI (OK) ✅</span></button>
               </div>
             </form>
           </div>

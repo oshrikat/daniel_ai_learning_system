@@ -15,12 +15,43 @@ PORT = 8080
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daniel_state.json")
 STATIC_DIR = os.path.dirname(os.path.abspath(__file__))
 
+def load_env_keys():
+    env_path = os.path.join(STATIC_DIR, ".env")
+    raw = {}
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    k = k.strip()
+                    v = v.strip().strip('"').strip("'").strip()
+                    raw[k] = v
+        except Exception:
+            pass
+    groq_key = raw.get("GROQ_API") or raw.get("GROQ_API_KEY") or raw.get("XAI_API") or ""
+    gemini_key = raw.get("GEMINI_API") or raw.get("GEMINI_API_KEY") or ""
+    openrouter_key = raw.get("OPENROUTER") or raw.get("OPENROUTER_API_KEY") or ""
+    return {
+        "groqKey": groq_key,
+        "geminiKey": gemini_key,
+        "openrouterKey": openrouter_key
+    }
+
 class DanielLearningHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=STATIC_DIR, **kwargs)
 
     def do_GET(self):
-        if self.path == '/api/state':
+        if self.path == '/api/env':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps(load_env_keys(), ensure_ascii=False).encode('utf-8'))
+            return
+        elif self.path == '/api/state':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.end_headers()
