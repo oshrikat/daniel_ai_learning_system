@@ -864,6 +864,281 @@ ${exampleText}
       perQuestionResults,
       overallFeedback
     };
+  },
+
+  /**
+   * פירוק מקומי (Offline Fallback) של טקסט שיעורי בית או קובץ ליחידה יומית מובנית
+   */
+  parseHomeworkFallback({ rawText = '', fileName = '' } = {}) {
+    const cleanText = String(rawText || '').trim();
+    const dateStr = new Date().toLocaleDateString('he-IL');
+    const baseTitle = fileName
+      ? `תרגול יומי: ${fileName.replace(/\.[^.]+$/, '')}`
+      : `יחידת תרגול יומית (${dateStr})`;
+
+    const introAndRules = [
+      'כלל אצבע 1: קרא כל שאלה בנחת וזהה קודם כל את הסכומים ואת סוג העסקה (קנייה, מכירה, קבלה או תשלום).',
+      'כלל אצבע 2: בחובה נרשום מה שנכנס לעסק או הוצאה שנוצרה; בזכות נרשום מה שיצא מהעסק או מקור ההכנסה/התחייבות.',
+      'כלל אצבע 3: אם יש מע"מ (18%), מפרידים בין סכום העסקה נטו לבין סכום המע"מ ובודקים שסך החובה שווה לסך הזכות.'
+    ];
+
+    let chunks = [];
+    if (cleanText) {
+      // ניסיון פיצול לפי מספור שאלות (1. / שאלה 1 / א.) או פסקאות
+      const numberedSplit = cleanText
+        .split(/(?=(?:^|\n)\s*(?:שאלה\s*\d+|\d+[\.\)\-]|תרגיל\s*\d+))/g)
+        .map(s => s.trim())
+        .filter(s => s.length >= 6);
+
+      if (numberedSplit.length >= 2) {
+        chunks = numberedSplit;
+      } else {
+        chunks = cleanText
+          .split(/\n{2,}|\r?\n/)
+          .map(s => s.trim())
+          .filter(s => s.length >= 8);
+      }
+    }
+
+    if (chunks.length === 0) {
+      chunks = [
+        fileName
+          ? `פתרון דף העבודה שהועלה (${fileName}): רשום מהו הנושא או השאלה הראשונה מתוך הדף ונפתור אותה יחד צעד אחר צעד.`
+          : 'שאלה 1: עסק רכש סחורה מספק בסך 1,000 ₪ בתוספת מע"מ (18%) באשראי. מהי פקודת היומן הנדרשת?'
+      ];
+    }
+
+    const questions = chunks.slice(0, 12).map((qText, idx) => ({
+      id: `hw_q_${Date.now()}_${idx + 1}`,
+      index: idx + 1,
+      questionText: qText,
+      topic: 'תרגול מהחומר היומי',
+      hint: 'זהה תחילה אילו חשבונות משתתפים בעסקה ומה הסכום הנתון בשאלה.',
+      coreConcept: 'יישום שלבי הפתרון צעד אחר צעד ובדיקת איזון חובה = זכות',
+      isCompleted: false,
+      chatHistory: []
+    }));
+
+    return {
+      title: baseTitle,
+      introAndRules,
+      questions,
+      provider: 'fallback',
+      isFallback: true
+    };
+  },
+
+  /**
+   * יצירת כרטיס לימוד יומי מתוך חומר מועלה (PDF סרוק, תמונות, או טקסט מודבק)
+   * @param {object} params
+   * @param {string} [params.rawText]
+   * @param {Array<{mimeType: string, data: string}>} [params.fileImagesBase64]
+   * @param {string} [params.fileName]
+   */
+  async createDailyStudyCardFromMaterial({ rawText = '', fileImagesBase64 = [], fileName = '' } = {}) {
+    const cleanText = String(rawText || '').trim();
+    const images = Array.isArray(fileImagesBase64) ? fileImagesBase64.filter(img => img && img.data) : [];
+
+    const prompt = `אתה מורה פרטי ומאמן למידה אישי ומעצים עבור דניאל (בן 28, לומד הנהלת חשבונות ומיומנויות מעשיות).
+דניאל העלה כעת את החומר של היום (${fileName ? `קובץ: ${fileName}` : 'טקסט מודבק'}).
+${cleanText ? `\nהטקסט שהוזן / חולץ מהחומר:\n"""\n${cleanText.slice(0, 9000)}\n"""\n` : '\nנתח את התמונות / דפי ה-PDF המצורפים וחלץ מהם את החומר והשאלות.\n'}
+
+תפקידך לסדר לדניאל את החומר של היום ליחידת לימוד יומית רגועה, מסודרת וברורה בעברית פשוטה ובגובה העיניים:
+1. "title": כותרת עברית ברורה ומזמינה ליחידה של היום (לפי הנושא שבחומר).
+2. "introAndRules": מערך של 3 עד 4 כללי אצבע והקדמה קצרים ופשוטים (משפט או שניים לכל כלל) שמסבירים לדניאל איך לגשת לשאלות בדף הזה.
+3. "questions": מערך של כל השאלות / התרגילים המופיעים בחומר (חלץ כל שאלה בנפרד). לכל שאלה תן:
+   - "questionText": נוסח השאלה המלא והברור בעברית.
+   - "topic": תת-נושא קצר (למשל: "פקודת יומן", "חישוב מע\\"מ", "התאמת בנק").
+   - "hint": רמז פדגוגי מעודד שעוזר לדניאל להתחיל לפתור בלי לגלות מיד את התשובה הסופית.
+   - "coreConcept": העיקרון המקצועי או החשבונאי שהשאלה בודקת.
+
+החזר אך ורק JSON תקני (ללא markdown) במבנה הבא:
+{
+  "title": "כותרת היחידה היומית",
+  "introAndRules": [
+    "כלל אצבע 1...",
+    "כלל אצבע 2...",
+    "כלל אצבע 3..."
+  ],
+  "questions": [
+    {
+      "questionText": "נוסח השאלה...",
+      "topic": "נושא השאלה",
+      "hint": "רמז מנחה להתחלה...",
+      "coreConcept": "העיקרון המרכזי..."
+    }
+  ]
+}`;
+
+    try {
+      const geminiKey = cleanApiKey(appState?.apiConfig?.geminiKey || localStorage.getItem('gemini_api_key') || '');
+      let rawResponse = null;
+
+      // אם הועלו תמונות או דפי PDF סרוקים ויש מפתח Gemini, נריץ תחילה מול Gemini Multimodal
+      if (images.length > 0 && geminiKey) {
+        const modelsToTry = this.geminiModels || ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+        for (const model of modelsToTry) {
+          try {
+            rawResponse = await callGeminiAPI(model, geminiKey, prompt, { images });
+            if (rawResponse) break;
+          } catch (imgErr) {
+            console.warn(`[createDailyStudyCardFromMaterial] Gemini multimodal ${model} failed:`, imgErr.message);
+          }
+        }
+      }
+
+      if (!rawResponse) {
+        rawResponse = await callMultiTierAI(prompt, { images, maxTokens: 2200 });
+      }
+
+      const parsed = rawResponse ? this.cleanAndParseJSON(rawResponse) : null;
+      if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+        const normalizedQuestions = parsed.questions.map((q, idx) => ({
+          id: `hw_q_${Date.now()}_${idx + 1}`,
+          index: idx + 1,
+          questionText: String(q.questionText || q.question || `שאלה ${idx + 1}`).trim(),
+          topic: String(q.topic || 'תרגול יומי').trim(),
+          hint: String(q.hint || 'זהה את הנתונים בשאלה ובדוק מה בחובה ומה בזכות.').trim(),
+          coreConcept: String(q.coreConcept || 'יישום החומר הנלמד שלב אחר שלב').trim(),
+          isCompleted: false,
+          chatHistory: []
+        }));
+
+        const rules = Array.isArray(parsed.introAndRules) && parsed.introAndRules.length > 0
+          ? parsed.introAndRules.map(r => String(r).trim()).filter(Boolean)
+          : this.parseHomeworkFallback({ rawText, fileName }).introAndRules;
+
+        return {
+          title: String(parsed.title || `יחידת תרגול יומית (${new Date().toLocaleDateString('he-IL')})`).trim(),
+          introAndRules: rules,
+          questions: normalizedQuestions,
+          provider: 'ai',
+          isFallback: false
+        };
+      }
+    } catch (err) {
+      console.warn('[createDailyStudyCardFromMaterial] Falling back to local parser:', err);
+    }
+
+    return this.parseHomeworkFallback({ rawText, fileName });
+  },
+
+  /**
+   * הערכת שלב וליווי סוקרטי עבור שאלה מתוך כרטיס לימוד יומי (Step 3 of Milestone 3)
+   * @param {object} params
+   * @param {string} [params.cardTitle]
+   * @param {Array<string>} [params.rulesOfThumb]
+   * @param {object} params.questionObj
+   * @param {string} [params.userMessage]
+   * @param {Array} [params.chatHistory]
+   * @param {'hint'|'simplify'|'how_to_start'|'answer'} [params.actionType]
+   * @returns {Promise<{reply: string, isQuestionSolved: boolean, provider: string, isFallback: boolean}>}
+   */
+  async evaluateSocraticHomeworkStep({
+    cardTitle = '',
+    rulesOfThumb = [],
+    questionObj = {},
+    userMessage = '',
+    chatHistory = [],
+    actionType = 'answer'
+  } = {}) {
+    const qText = String(questionObj?.questionText || questionObj?.question || '').trim();
+    const qHint = String(questionObj?.hint || 'זהה קודם את הנתונים בשאלה ובדוק אילו חשבונות בחובה ואילו בזכות.').trim();
+    const qConcept = String(questionObj?.coreConcept || 'יישום שלבי החישוב ואיזון חובה = זכות').trim();
+    const cleanUserMsg = String(userMessage || '').trim();
+
+    const buildFallbackResult = () => {
+      if (actionType === 'hint') {
+        return {
+          reply: `💡 **רמז מכוון לדניאל:** ${qHint}\nנסה לכתוב מה החלק הראשון שאתה מזהה בשאלה!`,
+          isQuestionSolved: false,
+          provider: 'fallback',
+          isFallback: true
+        };
+      }
+      if (actionType === 'simplify') {
+        return {
+          reply: `📖 **הסבר פשוט בגובה העיניים:** בשאלה הזו אנחנו בודקים את הנושא **"${questionObj?.topic || 'תרגול יומי'}"** (${qConcept}).\nקודם מסתכלים על המספרים הנתונים בשאלה, ואז שואלים איזו פעולה עסקית קרתה כאן.`,
+          isQuestionSolved: false,
+          provider: 'fallback',
+          isFallback: true
+        };
+      }
+      if (actionType === 'how_to_start') {
+        return {
+          reply: `🧮 **איך מתחילים לפתור ב-2 צעדים:**\n1. רשום את הסכום או החשבונות שמופיעים בשאלה.\n2. בדוק לפי כללי האצבע שלנו מי נמצא בצד **חובה** ומי בצד **זכות**. כתוב לי את הניסיון שלך!`,
+          isQuestionSolved: false,
+          provider: 'fallback',
+          isFallback: true
+        };
+      }
+
+      // actionType === 'answer'
+      const hasMeaningfulAnswer = cleanUserMsg.length >= 4 && !/^\?+$/.test(cleanUserMsg);
+      if (hasMeaningfulAnswer) {
+        return {
+          reply: `כל הכבוד דניאל! 🌟 כתבת: "${cleanUserMsg}". הפתרון שלך מתייחס בדיוק לעיקרון המרכזי (${qConcept}). עבודה מצוינת — אפשר להמשיך לשאלה הבאה בדף!`,
+          isQuestionSolved: true,
+          provider: 'fallback',
+          isFallback: true
+        };
+      }
+      return {
+        reply: `תודה על הניסיון דניאל! כתבת "${cleanUserMsg}". כדי להשלים את הפתרון, נסה לפרט עוד קצת (למשל את הסכום או אילו חשבונות בחובה ובזכות). ${qHint}`,
+        isQuestionSolved: false,
+        provider: 'fallback',
+        isFallback: true
+      };
+    };
+
+    const historyLines = Array.isArray(chatHistory)
+      ? chatHistory.slice(-6).map(m => `${m.role === 'user' ? 'דניאל' : 'מאמן'}: ${m.text}`).join('\n')
+      : '';
+
+    const rulesText = Array.isArray(rulesOfThumb) && rulesOfThumb.length > 0
+      ? rulesOfThumb.join(' | ')
+      : '';
+
+    const prompt = `אתה מאמן למידה אישי ומנטור סוקרטי חם, סבלני ומעצים עבור דניאל (בן 28, לומד הנהלת חשבונות ומיומנויות מעשיות).
+יחידה יומית: "${cardTitle}"
+כללי אצבע ליחידה: ${rulesText}
+השאלה הנוכחית בדף העבודה: "${qText}"
+רמז פדגוגי: "${qHint}" | עיקרון מרכזי: "${qConcept}"
+${historyLines ? `היסטוריית שיחה בשאלה זו:\n${historyLines}\n` : ''}
+סוג הפעולה שדניאל ביקש כעת: "${actionType}"
+הודעת/תשובת דניאל: "${cleanUserMsg}"
+
+הנחיות מחייבות:
+- אם actionType הוא "hint" / "simplify" / "how_to_start": תן הסבר קצר, בהיר ומעודד בעברית (2-3 משפטים) שעוזר לדניאל להתקדם בלי לגלות את התשובה הסופית המלאה, וקבע "isQuestionSolved": false.
+- אם actionType הוא "answer": בדוק האם דניאל פתר נכון את השאלה:
+  * אם התשובה חלקית או שגויה ("isQuestionSolved": false): שבח את הניסיון, צטט מילים מתשובתו, הסבר בעדינות מה חסר או דורש תיקון, ושאל שאלה מנחה קצרה.
+  * אם התשובה נכונה ("isQuestionSolved": true): ברך אותו בחום, סכם ב-1-2 משפטים למה התשובה שלו נכונה ומדויקת, ואשר לו לעבור לשאלה הבאה בדף!
+
+החזר אך ורק JSON תקני (ללא markdown) במבנה:
+{
+  "reply": "התגובה החמה והמנחה לדניאל בעברית",
+  "isQuestionSolved": false
+}`;
+
+    try {
+      const raw = await callMultiTierAI(prompt, { maxTokens: 650 });
+      const parsed = raw ? this.cleanAndParseJSON(raw) : null;
+      if (parsed && typeof parsed.reply === 'string' && parsed.reply.trim()) {
+        const solved = actionType === 'answer' ? Boolean(parsed.isQuestionSolved) : false;
+        return {
+          reply: parsed.reply.trim(),
+          isQuestionSolved: solved,
+          provider: 'ai',
+          isFallback: false
+        };
+      }
+    } catch (err) {
+      console.warn('[evaluateSocraticHomeworkStep] Falling back to deterministic mentor:', err);
+    }
+
+    return buildFallbackResult();
   }
 };
+
+
 

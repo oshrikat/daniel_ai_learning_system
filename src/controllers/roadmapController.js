@@ -28,6 +28,7 @@ function renderTrackTabs() {
   TRACKS.forEach(track => {
     const isSelected = track.id === activeTrack.id;
     const btn = document.createElement('button');
+    btn.id = `tab-${track.id}`;
     btn.className = `track-tab-btn ${isSelected ? 'active' : ''}`;
     btn.type = 'button';
     btn.setAttribute('role', 'tab');
@@ -51,21 +52,6 @@ function renderTrackTabs() {
   });
 }
 
-const STUDY_HELP_SUBJECTS = [
-  'הנהלת חשבונות 📊',
-  'שימוש ב-AI ומחשבים 🤖',
-  'מתמטיקה וחישובים 🧮',
-  'אנגלית וניסוח 📝',
-  'שאלה כללית 💡'
-];
-
-const STUDY_HELP_STARTERS = [
-  'תסביר לי מושג בהנהלת חשבונות בצורה פשוטה',
-  'עזור לי לפתור תרגיל שלב אחר שלב',
-  'תעשה לי תרגול קצר של 3 שאלות על נושא שלמדתי',
-  'תן לי דוגמה פשוטה לחישוב מע"מ ופקודת יומן'
-];
-
 function formatStudyMessageHtml(text) {
   const safe = String(text || '')
     .replace(/&/g, '&amp;')
@@ -76,260 +62,298 @@ function formatStudyMessageHtml(text) {
     .replace(/\n/g, '<br>');
 }
 
-function renderStudyHelpWorkspace(container) {
-  if (!appState.studyHelp || typeof appState.studyHelp !== 'object') {
-    appState.studyHelp = { sessions: [], activeSessionId: null, savedNotes: [], totalQuestionsAsked: 0 };
+function readFileAsBase64Obj(file) {
+  return new Promise((resolve, reject) => {
+    if (typeof FileReader === 'undefined') {
+      resolve({ mimeType: 'application/octet-stream', data: '' });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const resultStr = String(reader.result || '');
+      const base64Data = resultStr.replace(/^data:[^;]+;base64,/, '');
+      const inferredMime = file.type || (String(file.name || '').toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+      resolve({ mimeType: inferredMime, data: base64Data });
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function createDailyCardFromInput({ rawText = '', fileImagesBase64 = [], fileName = '', sourceType = 'pasted_text', container = null } = {}) {
+  const targetContainer = container || document.getElementById('units-grid');
+  const overlay = targetContainer ? targetContainer.querySelector('#study-calming-overlay') : document.getElementById('study-calming-overlay');
+  if (overlay) {
+    overlay.style.display = 'flex';
+    overlay.classList.add('active');
   }
 
-  let activeSession = getOrCreateStudySession();
-  const currentSubject = activeSession.subject && STUDY_HELP_SUBJECTS.includes(activeSession.subject)
-    ? activeSession.subject
-    : STUDY_HELP_SUBJECTS[0];
-  activeSession.subject = currentSubject;
+  let parsedCardData = null;
+  try {
+    parsedCardData = await AIService.createDailyStudyCardFromMaterial({
+      rawText,
+      fileImagesBase64,
+      fileName
+    });
+  } catch (err) {
+    console.warn('[StudyHelp] Fallback card creation:', err);
+    parsedCardData = AIService.parseHomeworkFallback({ rawText, fileName });
+  }
 
-  const sessions = Array.isArray(appState.studyHelp.sessions) ? appState.studyHelp.sessions : [];
-  const messages = Array.isArray(activeSession.messages) ? activeSession.messages : [];
+  const createdCard = saveDailyStudyCard({
+    title: parsedCardData.title,
+    sourceType,
+    introAndRules: parsedCardData.introAndRules,
+    questions: parsedCardData.questions,
+    isNew: true,
+    isCompleted: false
+  });
+
+  if (overlay) {
+    overlay.classList.remove('active');
+    overlay.style.display = 'none';
+  }
+
+  if (typeof SoundService !== 'undefined') {
+    SoundService.playSuccessSound();
+  }
+
+  if (targetContainer) {
+    renderStudyHelpWorkspace(targetContainer);
+    const newCardEl = targetContainer.querySelector(`[data-daily-card-id="${createdCard.id}"]`);
+    if (newCardEl && typeof newCardEl.scrollIntoView === 'function') {
+      newCardEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }
+
+  showToast(`נוצרה יחידת תרגול יומית חדשה: "${createdCard.title}" ✨`, 'success');
+  return createdCard;
+}
+
+function renderStudyHelpWorkspace(container) {
+  if (!appState.studyHelp || typeof appState.studyHelp !== 'object') {
+    appState.studyHelp = { dailyCards: [], activeCardId: null, sessions: [], activeSessionId: null, savedNotes: [], totalQuestionsAsked: 0 };
+  }
+  if (!Array.isArray(appState.studyHelp.dailyCards)) {
+    appState.studyHelp.dailyCards = [];
+  }
+
+  const todayFormatted = new Date().toLocaleDateString('he-IL');
+  const dailyCards = appState.studyHelp.dailyCards;
 
   container.innerHTML = `
-    <div class="study-help-workspace card">
-      <!-- Top Subject Selector -->
-      <div class="study-help-section">
-        <div class="study-help-section-header">
-          <h3 class="study-help-section-title">1. בחר תחום לימוד או מקצוע 🎯</h3>
-          <button type="button" id="study-new-session-btn" class="secondary-btn study-new-session-btn">
-            <span>➕ שיחה חדשה</span>
+    <div class="study-help-workspace">
+      <!-- STEP 1: Top Box - העלאת החומר של היום -->
+      <div class="card study-upload-top-box">
+        <div class="study-upload-header">
+          <div>
+            <span class="badge-tag study-date-badge">📅 החומר של היום: ${todayFormatted}</span>
+            <h3 class="study-upload-title">העלאת החומר של היום והכנת יחידת תרגול מותאמת אישית 📚</h3>
+            <p class="study-upload-subtitle">
+              בחר איך להעלות את דף העבודה או השאלות מהשיעור היום, ומאמן ה-AI יסדר לך הקדמה ברורה, כללי אצבע ושאלות לתרגול מונחה צעד אחר צעד:
+            </p>
+          </div>
+        </div>
+
+        <!-- 2 Prominent Action Buttons Side-by-Side -->
+        <div class="study-upload-actions-grid">
+          <button type="button" id="study-upload-pdf-btn" class="primary-btn study-upload-action-btn pdf-upload-btn">
+            <span class="upload-btn-icon">📄</span>
+            <span class="upload-btn-text">📄 העלאת PDF סרוק (CamScanner) או תמונות מהספר</span>
+          </button>
+
+          <button type="button" id="study-toggle-paste-btn" class="secondary-btn study-upload-action-btn paste-toggle-btn">
+            <span class="upload-btn-icon">📋</span>
+            <span class="upload-btn-text">📋 הדבקת טקסט ישירה של השאלות והחומר</span>
           </button>
         </div>
-        <div class="study-subject-chips" role="tablist" aria-label="תחומי לימוד">
-          ${STUDY_HELP_SUBJECTS.map(subj => `
-            <button type="button" class="study-subject-chip ${subj === currentSubject ? 'active' : ''}" data-subject="${subj}">
-              <span>${subj}</span>
+
+        <input
+          type="file"
+          id="study-file-upload-input"
+          accept=".pdf,image/*"
+          multiple
+          style="display: none;"
+        />
+
+        <!-- Inline Textarea for Pasted Homework Text (Button 2) -->
+        <div id="study-paste-panel" class="study-paste-panel" style="display: none;">
+          <label for="study-paste-textarea" class="study-input-label">
+            ✍️ הדבק או הקלד כאן את השאלות והחומר של היום:
+          </label>
+          <textarea
+            id="study-paste-textarea"
+            class="styled-textarea study-help-textarea"
+            rows="4"
+            placeholder="לדוגמה:
+1. עסק רכש סחורה מספק בסך 2,000 ש״ח + מע״מ (18%) באשראי. רשום פקודת יומן.
+2. העסק מכר סחורה ללקוח בסך 3,500 ש״ח + מע״מ במזומן. רשום פקודת יומן."
+          ></textarea>
+          <div class="study-input-actions">
+            <span class="study-input-hint">💡 מנוע ה-AI יחלק אוטומטית כל שאלה לשלב נפרד ויוסיף רמזים וכללי אצבע.</span>
+            <button type="button" id="study-create-from-text-btn" class="primary-btn study-create-unit-btn">
+              <span>✨ סדר את החומר וצור יחידה יומית</span>
             </button>
-          `).join('')}
+          </div>
         </div>
       </div>
 
-      <!-- Quick Prompt Starters -->
-      <div class="study-help-section">
-        <h4 class="study-help-subheadline">💡 פתיחה מהירה — לחץ על בקשה מוכנה או כתוב שאלה משלך למטה:</h4>
-        <div class="study-starter-grid">
-          ${STUDY_HELP_STARTERS.map(starter => `
-            <button type="button" class="study-starter-btn" data-starter="${starter.replace(/"/g, '&quot;')}">
-              <span>✨ ${starter}</span>
-            </button>
-          `).join('')}
+      <!-- STEP 2: Calming Async Transition Screen (Loading Overlay) -->
+      <div id="study-calming-overlay" class="study-calming-overlay" style="display: none;" role="status" aria-live="polite">
+        <div class="study-calming-card">
+          <div class="study-calming-breathing-circle">🌱</div>
+          <h3 class="study-calming-title">
+            נושמים עמוק... מאמן ה-AI מסדר עבורך את החומר של היום ליחידה פשוטה וברורה 🌱
+          </h3>
+          <p class="study-calming-subtitle">
+            אנחנו מחלצים את השאלות, מכינים כללי אצבע בגובה העיניים ומארגנים הכל צעד אחר צעד בקצב שלך...
+          </p>
         </div>
       </div>
 
-      <!-- Recent Sessions Bar (if more than 1 session) -->
-      ${sessions.length > 1 ? `
-        <div class="study-sessions-bar">
-          <span class="study-sessions-label">📂 שיחות אחרונות:</span>
-          <div class="study-sessions-list">
-            ${sessions.slice(0, 5).map(s => `
-              <button type="button" class="study-session-pill ${s.id === activeSession.id ? 'active' : ''}" data-session-id="${s.id}">
-                <span>${s.title || s.subject || 'שיחה'} (${(s.messages || []).length})</span>
-              </button>
-            `).join('')}
-          </div>
+      <!-- Daily Cards List (Below the Upload Box) -->
+      <div class="study-daily-cards-section">
+        <div class="study-daily-cards-header">
+          <h3 class="study-daily-cards-title">🗂️ יחידות התרגול היומיות של דניאל (${dailyCards.length})</h3>
         </div>
-      ` : ''}
 
-      <!-- Interactive Conversation Area -->
-      <div class="study-chat-feed" id="study-chat-feed">
-        ${messages.length === 0 ? `
-          <div class="study-welcome-empty">
-            <div class="study-welcome-icon">🎓</div>
-            <h4>שלום דניאל! אני כאן כדי לעזור לך בכל שאלה או שיעורי בית</h4>
-            <p>אפשר להעתיק לכאן שאלה מתרגיל, לבקש הסבר פשוט למושג שלא היה ברור, או לבקש תרגול מונחה צעד אחר צעד בנושא <strong>${currentSubject}</strong>.</p>
-          </div>
-        ` : messages.map((msg, mIdx) => `
-          <div class="study-msg-bubble ${msg.role === 'user' ? 'user-msg' : 'assistant-msg'}" data-msg-idx="${mIdx}">
-            <div class="study-msg-header">
-              <span class="study-msg-author">
-                ${msg.role === 'user' ? '👤 דניאל' : '🤖 מאמן הלמידה האישי'}
-              </span>
-              ${msg.role !== 'user' ? `
-                <button type="button" class="study-tts-msg-btn" data-tts-idx="${mIdx}" title="הקרא תשובה זו">
-                  🔊 הקרא לי
-                </button>
-              ` : ''}
+        <div id="study-daily-cards-list" class="study-daily-cards-list">
+          ${dailyCards.length === 0 ? `
+            <div class="card study-empty-cards-placeholder">
+              <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📥 ✨</div>
+              <h4>עדיין לא הועלה חומר לימוד היום</h4>
+              <p>לחץ למעלה על <strong>"העלאת PDF סרוק או תמונות"</strong> או על <strong>"הדבקת טקסט ישירה"</strong> כדי ליצור את כרטיס הלימוד הראשון שלך!</p>
             </div>
-            <div class="study-msg-content">${formatStudyMessageHtml(msg.text)}</div>
-          </div>
-        `).join('')}
-      </div>
+          ` : dailyCards.map((card, cIdx) => {
+            const questions = Array.isArray(card.questions) ? card.questions : [];
+            const completedQ = questions.filter(q => q.isCompleted).length;
+            const totalQ = questions.length;
+            const isCardDone = totalQ > 0 && completedQ === totalQ;
 
-      <!-- Question Input & Submit -->
-      <div class="study-input-panel">
-        <label for="study-help-textarea" class="study-input-label">
-          ✍️ כתוב כאן את השאלה או התרגיל שלך (תחום פעיל: <strong>${currentSubject}</strong>):
-        </label>
-        <textarea
-          id="study-help-textarea"
-          class="styled-textarea study-help-textarea"
-          rows="3"
-          placeholder="לדוגמה: איך רושמים פקודת יומן כשקונים סחורה מספק עם מע״מ?"
-        ></textarea>
-        <div class="study-input-actions">
-          <span class="study-input-hint">טיפ: אפשר לבקש "תסביר לי ב-3 צעדים פשוטים" או "תן לי דוגמה עם מספרים" 🌟</span>
-          <button type="button" id="study-help-submit-btn" class="primary-btn study-submit-btn">
-            <span>שלח שאלה למאמן ה-AI 🚀</span>
-          </button>
+            return `
+              <div class="unit-card study-daily-card ${card.isNew ? 'is-new-card' : ''} ${isCardDone ? 'completed-unit' : 'active-unit'}" data-daily-card-id="${card.id}">
+                <div class="unit-card-info">
+                  <span class="unit-status-icon">${isCardDone ? '🟢' : '📘'}</span>
+                  <div>
+                    <div class="study-card-badges-row">
+                      ${card.isNew ? `<span class="badge-new-card">חדש ✨</span>` : ''}
+                      <span class="badge-tag">📅 ${card.dateLabel || todayFormatted}</span>
+                      <span class="badge-tag" style="background:#e0f2fe;color:#0369a1;">
+                        ${card.sourceType === 'pdf_or_image' ? '📄 מתוך קובץ / סריקה' : '📋 מתוך טקסט שהודבק'}
+                      </span>
+                      <span class="badge-tag" style="background:#f0fdf4;color:#047857;">
+                        הושלמו ${completedQ} מתוך ${totalQ} שאלות
+                      </span>
+                    </div>
+                    <h3 class="unit-name-title">${card.title || `יחידת תרגול #${cIdx + 1}`}</h3>
+                    <span class="unit-skills-preview">
+                      ${(card.introAndRules && card.introAndRules[0]) ? `💡 ${card.introAndRules[0]}` : 'כולל כללי אצבע והקדמה + תרגול מונחה שאלה אחר שאלה'}
+                    </span>
+                  </div>
+                </div>
+                <div class="day-action-box">
+                  <button type="button" class="primary-btn enter-daily-card-btn" data-card-id="${card.id}">
+                    <span>היכנס ליחידת התרגול ▶</span>
+                  </button>
+                </div>
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>
     </div>
   `;
 
-  // Wire Subject Selector Chips
-  container.querySelectorAll('.study-subject-chip').forEach(chip => {
-    chip.onclick = () => {
-      const chosenSubj = chip.getAttribute('data-subject') || STUDY_HELP_SUBJECTS[0];
-      activeSession.subject = chosenSubj;
-      activeSession.title = `עזרה בלימודים: ${chosenSubj}`;
-      saveAppState();
-      renderStudyHelpWorkspace(container);
+  // Wire Button 1: File Picker for PDF / Images
+  const uploadPdfBtn = container.querySelector('#study-upload-pdf-btn');
+  const fileInput = container.querySelector('#study-file-upload-input');
+  if (uploadPdfBtn && fileInput) {
+    uploadPdfBtn.onclick = () => {
+      fileInput.value = '';
+      fileInput.click();
     };
-  });
 
-  // Wire New Session Button
-  const newSessionBtn = container.querySelector('#study-new-session-btn');
-  if (newSessionBtn) {
-    newSessionBtn.onclick = () => {
-      const now = new Date().toISOString();
-      const freshSession = {
-        id: `sh_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        title: `עזרה בלימודים: ${currentSubject}`,
-        subject: currentSubject,
-        createdAt: now,
-        updatedAt: now,
-        messages: []
-      };
-      appState.studyHelp.sessions.unshift(freshSession);
-      appState.studyHelp.activeSessionId = freshSession.id;
-      saveAppState();
-      showToast('נפתחה שיחת למידה חדשה ונקייה! ✨');
-      renderStudyHelpWorkspace(container);
-    };
-  }
+    fileInput.onchange = async () => {
+      const files = Array.from(fileInput.files || []);
+      if (files.length === 0) return;
 
-  // Wire Recent Session Pills
-  container.querySelectorAll('.study-session-pill').forEach(pill => {
-    pill.onclick = () => {
-      const sid = pill.getAttribute('data-session-id');
-      if (sid && sid !== activeSession.id) {
-        appState.studyHelp.activeSessionId = sid;
-        saveAppState();
-        renderStudyHelpWorkspace(container);
+      const fileImagesBase64 = [];
+      for (const f of files.slice(0, 5)) {
+        try {
+          const b64Obj = await readFileAsBase64Obj(f);
+          if (b64Obj && b64Obj.data) {
+            fileImagesBase64.push(b64Obj);
+          }
+        } catch (readErr) {
+          console.warn('[StudyHelp] Could not read file as base64:', readErr);
+        }
       }
-    };
-  });
 
-  // Wire Quick Prompt Starters
-  const textarea = container.querySelector('#study-help-textarea');
-  container.querySelectorAll('.study-starter-btn').forEach(btn => {
-    btn.onclick = () => {
-      const starterText = btn.getAttribute('data-starter') || '';
-      if (textarea) {
-        textarea.value = starterText;
-        textarea.focus();
-      }
-    };
-  });
-
-  // Wire TTS buttons on assistant messages
-  container.querySelectorAll('.study-tts-msg-btn').forEach(btn => {
-    btn.onclick = () => {
-      const idx = Number(btn.getAttribute('data-tts-idx'));
-      const msg = messages[idx];
-      if (msg && msg.text && typeof SoundService !== 'undefined') {
-        SoundService.speakText(msg.text.replace(/[*#]/g, ''));
-      }
-    };
-  });
-
-  // Wire Submit Button
-  const submitBtn = container.querySelector('#study-help-submit-btn');
-  const chatFeed = container.querySelector('#study-chat-feed');
-
-  const handleSendQuestion = async () => {
-    if (!textarea || !submitBtn) return;
-    const qText = textarea.value.trim();
-    if (!qText) {
-      showToast('דניאל, כתוב שאלה או בחר אחת מהבקשות המוכנות למעלה ✍️');
-      textarea.focus();
-      return;
-    }
-
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span>המאמן מכין הסבר... ⏳</span>';
-    textarea.disabled = true;
-
-    saveStudyMessage(activeSession.id, 'user', qText, { subject: currentSubject });
-
-    if (chatFeed) {
-      const loadingDiv = document.createElement('div');
-      loadingDiv.className = 'study-msg-bubble assistant-msg loading';
-      loadingDiv.innerHTML = `
-        <div class="study-msg-header">
-          <span class="study-msg-author">🤖 מאמן הלמידה האישי</span>
-        </div>
-        <div class="study-msg-content">מעבד את השאלה שלך ומכין הסבר פשוט וברור צעד אחר צעד... ⏳</div>
-      `;
-      chatFeed.appendChild(loadingDiv);
-      chatFeed.scrollTop = chatFeed.scrollHeight;
-    }
-
-    try {
-      const historyPrior = activeSession.messages.slice(0, -1);
-      const res = await AIService.askStudyHelper({
-        subject: currentSubject,
-        question: qText,
-        conversationHistory: historyPrior
+      const primaryName = files.map(f => f.name).join(', ');
+      await createDailyCardFromInput({
+        rawText: '',
+        fileImagesBase64,
+        fileName: primaryName,
+        sourceType: 'pdf_or_image',
+        container
       });
+    };
+  }
 
-      saveStudyMessage(activeSession.id, 'assistant', res.reply, {
-        subject: currentSubject,
-        provider: res.provider,
-        isFallback: res.isFallback
+  // Wire Button 2: Toggle Paste Panel & Create Daily Card from Pasted Text
+  const togglePasteBtn = container.querySelector('#study-toggle-paste-btn');
+  const pastePanel = container.querySelector('#study-paste-panel');
+  const pasteTextarea = container.querySelector('#study-paste-textarea');
+  const createFromTextBtn = container.querySelector('#study-create-from-text-btn');
+
+  if (togglePasteBtn && pastePanel) {
+    togglePasteBtn.onclick = () => {
+      const isHidden = pastePanel.style.display === 'none';
+      pastePanel.style.display = isHidden ? 'flex' : 'none';
+      if (isHidden && pasteTextarea) {
+        pasteTextarea.focus();
+      }
+    };
+  }
+
+  if (createFromTextBtn && pasteTextarea) {
+    createFromTextBtn.onclick = async () => {
+      const pasted = pasteTextarea.value.trim();
+      if (!pasted) {
+        showToast('דניאל, הדבק או כתוב תחילה את השאלות והחומר בתיבת הטקסט ✍️', 'warning');
+        pasteTextarea.focus();
+        return;
+      }
+      createFromTextBtn.disabled = true;
+      await createDailyCardFromInput({
+        rawText: pasted,
+        fileImagesBase64: [],
+        fileName: '',
+        sourceType: 'pasted_text',
+        container
       });
-
-      if (typeof SoundService !== 'undefined') {
-        SoundService.playSuccessSound();
-      }
-    } catch (err) {
-      console.error('[StudyHelp] Unexpected error:', err);
-      saveStudyMessage(
-        activeSession.id,
-        'assistant',
-        'שלום דניאל! בוא נפרק את השאלה יחד לצעדים פשוטים: קודם נזהה את הנתונים בשאלה, ולאחר מכן נבדוק מה הפעולה הנדרשת.',
-        { subject: currentSubject, provider: 'offline', isFallback: true }
-      );
-    }
-
-    const unitsText = document.getElementById('units-stat-text');
-    if (unitsText) {
-      unitsText.textContent = `${appState.studyHelp.totalQuestionsAsked || 0} שאלות שנשאלו`;
-    }
-
-    renderStudyHelpWorkspace(container);
-    const updatedFeed = container.querySelector('#study-chat-feed');
-    if (updatedFeed) {
-      updatedFeed.scrollTop = updatedFeed.scrollHeight;
-    }
-  };
-
-  if (submitBtn) {
-    submitBtn.onclick = handleSendQuestion;
+    };
   }
-  if (textarea) {
-    textarea.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        handleSendQuestion();
+
+  // Wire clicking the Daily Study Card or its "היכנס ליחידת התרגול ▶" button
+  container.querySelectorAll('.study-daily-card').forEach(cardEl => {
+    cardEl.onclick = () => {
+      const cardId = cardEl.getAttribute('data-daily-card-id');
+      if (cardId && typeof openDailyStudyCard === 'function') {
+        openDailyStudyCard(cardId);
       }
-    });
-  }
+    };
+  });
+
+  container.querySelectorAll('.enter-daily-card-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const cardId = btn.getAttribute('data-card-id');
+      if (cardId && typeof openDailyStudyCard === 'function') {
+        openDailyStudyCard(cardId);
+      }
+    };
+  });
 }
 
 function renderRoadmap() {
@@ -346,11 +370,11 @@ function renderRoadmap() {
     const titleEl = document.querySelector('.roadmap-title');
     if (titleEl) titleEl.textContent = 'עזרה בלימודים ושיעורי בית עם מאמן ה-AI 🎓';
     const subEl = document.querySelector('.roadmap-subtitle');
-    if (subEl) subEl.textContent = 'הסבר מושגים בגובה העיניים, פתרון תרגילים צעד אחר צעד ותרגול מונחה בקצב שלך';
+    if (subEl) subEl.textContent = 'העלאת החומר של היום, כללי אצבע בגובה העיניים ותרגול מונחה צעד אחר צעד';
 
-    const totalAsked = appState.studyHelp?.totalQuestionsAsked || 0;
+    const cardsCount = Array.isArray(appState.studyHelp?.dailyCards) ? appState.studyHelp.dailyCards.length : 0;
     const unitsText = document.getElementById('units-stat-text');
-    if (unitsText) unitsText.textContent = `${totalAsked} שאלות שנשאלו`;
+    if (unitsText) unitsText.textContent = `${cardsCount} יחידות יומיות`;
 
     const bar = document.getElementById('weekly-progress-bar');
     if (bar) bar.style.width = '100%';

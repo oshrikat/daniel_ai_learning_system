@@ -3623,4 +3623,340 @@ button {
   color: #1e293b;
 }
 
+/* ============================================================================
+   Milestone 3 ("עזרה בלימודים") — Daily Homework Upload, Calming Overlay & Cards
+   ============================================================================ */
+.study-upload-top-box {
+  border: 2px solid #3b82f6;
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+  padding: 1.5rem;
+}
+
+.study-date-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 800;
+  font-size: 0.95rem;
+  padding: 0.3rem 0.85rem;
+  display: inline-block;
+  margin-bottom: 0.6rem;
+}
+
+.study-upload-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0 0 0.45rem 0;
+}
+
+.study-upload-subtitle {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin: 0 0 1.2rem 0;
+  line-height: 1.5;
+}
+
+.study-upload-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.study-upload-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  min-height: 58px;
+  padding: 0.95rem 1.25rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  border-radius: var(--radius-md);
+  text-align: right;
+}
+
+.study-paste-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.2rem;
+  padding: 1.15rem;
+  background: #ffffff;
+  border: 1.5px solid #93c5fd;
+  border-radius: var(--radius-md);
+}
+
+.study-calming-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.study-calming-card {
+  max-width: 540px;
+  width: 100%;
+  background: linear-gradient(135deg, #f0fdf4 0%, #eff6ff 100%);
+  border: 2px solid #86efac;
+  border-radius: var(--radius-lg, 18px);
+  padding: 2.25rem 1.75rem;
+  text-align: center;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25);
+}
+
+.study-calming-breathing-circle {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 1.2rem auto;
+  border-radius: 50%;
+  background: #dcfce7;
+  border: 3px solid #22c55e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  animation: studyBreathingPulse 2.8s ease-in-out infinite;
+}
+
+@keyframes studyBreathingPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.35); }
+  50% { transform: scale(1.12); box-shadow: 0 0 0 16px rgba(34, 197, 94, 0); }
+}
+
+.study-calming-title {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #065f46;
+  margin: 0 0 0.65rem 0;
+  line-height: 1.5;
+}
+
+.study-calming-subtitle {
+  font-size: 1rem;
+  color: #334155;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.study-daily-cards-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.study-daily-cards-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.study-daily-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.study-empty-cards-placeholder {
+  text-align: center;
+  padding: 2rem 1.25rem;
+  color: var(--text-secondary);
+  border: 1.5px dashed #cbd5e1;
+}
+
+.study-card-badges-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.badge-new-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  padding: 0.22rem 0.7rem;
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(217, 119, 6, 0.35);
+}
+
+.study-daily-card.is-new-card {
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%);
+}
+
+/* ============================================================================
+   Milestone 3 Step 3 — Daily Study Card Player & Socratic Mentor Chat
+   ============================================================================ */
+.daily-card-player-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+  width: 100%;
+}
+
+.daily-card-rules-box {
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+  border: 2px solid #93c5fd;
+  border-radius: var(--radius-md);
+  padding: 1.35rem;
+}
+
+.daily-rules-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.daily-rules-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #1e3a8a;
+}
+
+.daily-rules-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.daily-rule-item {
+  background: #ffffff;
+  border-right: 4px solid #3b82f6;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.daily-question-stepper-box {
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: var(--radius-md);
+  padding: 1.15rem 1.35rem;
+}
+
+.daily-stepper-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.daily-stepper-counter {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.daily-q-pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.daily-socratic-mentor-box {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: var(--radius-md);
+  padding: 1.35rem;
+}
+
+.daily-current-q-banner {
+  background: #f8fafc;
+  border: 1.5px solid #bfdbfe;
+  border-right: 5px solid #2563eb;
+  border-radius: var(--radius-sm);
+  padding: 1.1rem 1.25rem;
+}
+
+.daily-current-q-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.6rem;
+}
+
+.daily-current-q-text-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.daily-current-q-text {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1.5;
+  color: #0f172a;
+}
+
+.daily-quick-helpers-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.65rem;
+}
+
+.daily-q-solved-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background: linear-gradient(135deg, #ecfdf5 0%, #dcfce7 100%);
+  border: 2px solid #10b981;
+  border-radius: var(--radius-md);
+  padding: 1.15rem 1.35rem;
+}
+
+.daily-solved-text {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #065f46;
+}
+
+.daily-next-q-btn,
+.daily-finish-card-btn {
+  background: #059669;
+  font-size: 1.05rem;
+  padding: 0.7rem 1.4rem;
+}
+
+.daily-card-all-completed-box {
+  text-align: center;
+  padding: 1.35rem;
+  background: #f0fdf4;
+  border: 2px solid #22c55e;
+  border-radius: var(--radius-md);
+  color: #065f46;
+}
+
+
+
 

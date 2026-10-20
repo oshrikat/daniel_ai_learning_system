@@ -1116,4 +1116,412 @@ function renderAccountingExamResults(evaluation, questions, userAnswers) {
   }
 }
 
+// ============================================================================
+// 10. נגן כרטיס לימוד יומי ומנטור סוקרטי (Milestone 3 Step 3 — Daily Study Card Player)
+// ============================================================================
+
+let currentDailyCardId = null;
+let currentDailyQuestionIdx = 0;
+
+function openDailyStudyCard(cardId) {
+  const cards = appState.studyHelp?.dailyCards || [];
+  const card = cards.find(c => c.id === cardId) || cards[cards.length - 1];
+  if (!card) {
+    showToast('לא נמצאה יחידת התרגול המבוקשת.', 'warning');
+    return null;
+  }
+
+  card.isNew = false;
+  appState.studyHelp.activeCardId = card.id;
+  currentDailyCardId = card.id;
+
+  const questions = Array.isArray(card.questions) ? card.questions : [];
+  const firstPending = questions.findIndex(q => !q.isCompleted);
+  currentDailyQuestionIdx = firstPending >= 0 ? firstPending : 0;
+
+  saveAppState();
+  showView('unit');
+
+  const legacyWrapper = document.getElementById('unit-steps-wrapper');
+  const blocksWrapper = document.getElementById('unit-blocks-wrapper');
+  if (legacyWrapper) legacyWrapper.style.display = 'none';
+  if (blocksWrapper) {
+    blocksWrapper.style.display = 'flex';
+    blocksWrapper.innerHTML = '';
+  }
+
+  const titleEl = document.getElementById('unit-view-title');
+  if (titleEl) titleEl.textContent = card.title || 'יחידת תרגול יומית';
+  const mainTitleEl = document.getElementById('unit-main-title');
+  if (mainTitleEl) mainTitleEl.textContent = card.title || 'יחידת תרגול יומית';
+  const badgeEl = document.getElementById('unit-topic-badge');
+  if (badgeEl) badgeEl.textContent = `📅 יחידה יומית • ${card.dateLabel || new Date().toLocaleDateString('he-IL')}`;
+  const goalEl = document.getElementById('unit-goal-desc');
+  if (goalEl) goalEl.textContent = 'כללי אצבע בגובה העיניים + ליווי אישי שאלה אחר שאלה עם מאמן ה-AI';
+
+  const backBtn = document.getElementById('unit-back-btn');
+  if (backBtn) {
+    backBtn.onclick = () => {
+      showView('roadmap');
+      renderRoadmap();
+    };
+  }
+
+  renderDailyStudyCardView(card);
+  return card;
+}
+
+const openDailyStudyCardPlayer = openDailyStudyCard;
+
+function renderDailyStudyCardView(card) {
+  const blocksWrapper = document.getElementById('unit-blocks-wrapper');
+  if (!blocksWrapper || !card) return;
+
+  const rules = Array.isArray(card.introAndRules) && card.introAndRules.length > 0
+    ? card.introAndRules
+    : ['קרא כל שאלה בנחת, זהה את הנתונים ובדוק מה בחובה ומה בזכות.'];
+
+  const questions = Array.isArray(card.questions) ? card.questions : [];
+  const totalQ = questions.length;
+  if (currentDailyQuestionIdx < 0) currentDailyQuestionIdx = 0;
+  if (currentDailyQuestionIdx >= totalQ && totalQ > 0) currentDailyQuestionIdx = totalQ - 1;
+
+  const currentQ = questions[currentDailyQuestionIdx] || {
+    id: 'default_q_1',
+    index: 1,
+    questionText: 'רשום את השאלה הראשונה מתוך דף העבודה ונפתור אותה יחד.',
+    topic: 'תרגול יומי',
+    hint: 'זהה תחילה את הנתונים בשאלה.',
+    coreConcept: 'פתרון מונחה צעד אחר צעד',
+    isCompleted: false,
+    chatHistory: []
+  };
+
+  if (!Array.isArray(currentQ.chatHistory)) {
+    currentQ.chatHistory = [];
+  }
+
+  const completedCount = questions.filter(q => q.isCompleted).length;
+  const allCompleted = totalQ > 0 && completedCount === totalQ;
+  const isLastQuestion = currentDailyQuestionIdx === totalQ - 1;
+
+  blocksWrapper.innerHTML = `
+    <div class="daily-card-player-container">
+      <!-- b) Top Section: הקדמה וכללי אצבע לחומר של היום -->
+      <div class="lesson-block daily-card-rules-box">
+        <div class="daily-rules-header">
+          <div style="display:flex; align-items:center; gap:0.55rem;">
+            <span style="font-size:1.5rem;">🧭</span>
+            <h3 class="daily-rules-title">הקדמה וכללי אצבע לחומר של היום</h3>
+          </div>
+          <button type="button" id="daily-rules-tts-btn" class="study-tts-msg-btn" title="הקרא כללי אצבע">
+            🔊 הקרא כללים
+          </button>
+        </div>
+        <ul class="daily-rules-list">
+          ${rules.map(rule => `<li class="daily-rule-item">✨ ${rule}</li>`).join('')}
+        </ul>
+      </div>
+
+      <!-- c) Question Stepper Header -->
+      <div class="lesson-block daily-question-stepper-box">
+        <div class="daily-stepper-top-row">
+          <span class="daily-stepper-counter" id="daily-stepper-counter">
+            שאלה ${currentDailyQuestionIdx + 1} מתוך ${totalQ} בדף העבודה
+          </span>
+          <span class="badge-tag" style="background:#f0fdf4;color:#047857;">
+            הושלמו ${completedCount} מתוך ${totalQ} שאלות ✓
+          </span>
+        </div>
+
+        <div class="daily-q-pills-row" role="tablist" aria-label="שאלות בדף העבודה">
+          ${questions.map((qItem, idx) => {
+            const isCurr = idx === currentDailyQuestionIdx;
+            const isDone = Boolean(qItem.isCompleted);
+            return `
+              <button
+                type="button"
+                class="exam-q-pill daily-q-pill ${isCurr ? 'current' : ''} ${isDone ? 'answered' : ''}"
+                data-daily-q-idx="${idx}"
+              >
+                <span>שאלה ${idx + 1}${isDone ? ' ✓' : ''}</span>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- d) Socratic Mentor Chat Area (Question-by-Question) -->
+      <div class="lesson-block daily-socratic-mentor-box">
+        <!-- Current Homework Question Banner -->
+        <div class="daily-current-q-banner">
+          <div class="daily-current-q-meta">
+            <span class="badge-tag" style="background:#dbeafe;color:#1d4ed8;">📌 שאלה ${currentDailyQuestionIdx + 1} מתוך ${totalQ}</span>
+            <span class="badge-tag" style="background:#f1f5f9;color:#334155;">נושא: ${currentQ.topic || 'חומר יומי'}</span>
+            ${currentQ.isCompleted ? `<span class="badge-tag" style="background:#dcfce7;color:#15803d;">✅ נפתרה בהצלחה!</span>` : ''}
+          </div>
+          <div class="daily-current-q-text-row">
+            <h4 class="daily-current-q-text" id="daily-current-q-text">${currentQ.questionText}</h4>
+            <button type="button" id="daily-current-q-tts-btn" class="study-tts-msg-btn" title="הקרא שאלה">
+              🔊 הקרא שאלה
+            </button>
+          </div>
+        </div>
+
+        <!-- Conversation Feed for Current Question -->
+        <div class="study-chat-feed daily-question-chat-feed" id="daily-question-chat-feed">
+          ${currentQ.chatHistory.length === 0 ? `
+            <div class="study-msg-bubble assistant-msg">
+              <div class="study-msg-header">
+                <span class="study-msg-author">🤖 המאמן הסוקרטי של דניאל</span>
+              </div>
+              <div class="study-msg-content">
+                שלום דניאל! קרא בנחת את <strong>שאלה ${currentDailyQuestionIdx + 1}</strong> למעלה. 
+                אפשר לכתוב לי איך אתה חושב שפותרים אותה, או ללחוץ על אחד מכפתורי העזרה המהירה למטה ונתקדם יחד צעד אחר צעד! 🌱
+              </div>
+            </div>
+          ` : currentQ.chatHistory.map((msg, mIdx) => `
+            <div class="study-msg-bubble ${msg.role === 'user' ? 'user-msg' : 'assistant-msg'}" data-chat-idx="${mIdx}">
+              <div class="study-msg-header">
+                <span class="study-msg-author">${msg.role === 'user' ? '👤 דניאל' : '🤖 המאמן הסוקרטי'}</span>
+                ${msg.role !== 'user' ? `
+                  <button type="button" class="study-tts-msg-btn daily-chat-tts-btn" data-chat-tts-idx="${mIdx}">
+                    🔊 הקרא
+                  </button>
+                ` : ''}
+              </div>
+              <div class="study-msg-content">${typeof formatStudyMessageHtml === 'function' ? formatStudyMessageHtml(msg.text) : msg.text}</div>
+            </div>
+          `).join('')}
+        </div>
+
+        <!-- 3 Quick Helper Buttons -->
+        <div class="daily-quick-helpers-bar">
+          <button type="button" class="study-starter-btn daily-helper-btn" data-helper-action="hint">
+            <span>💡 תן לי רמז מכוון</span>
+          </button>
+          <button type="button" class="study-starter-btn daily-helper-btn" data-helper-action="simplify">
+            <span>📖 תסביר לי את השאלה בפשטות</span>
+          </button>
+          <button type="button" class="study-starter-btn daily-helper-btn" data-helper-action="how_to_start">
+            <span>🧮 איך מתחילים לפתור?</span>
+          </button>
+        </div>
+
+        <!-- Answer Input Box & Submit -->
+        <div class="study-input-panel daily-answer-input-panel">
+          <label for="daily-q-answer-input" class="study-input-label">
+            ✍️ כתוב כאן את הפתרון שלך או שאלה למאמן על שאלה ${currentDailyQuestionIdx + 1}:
+          </label>
+          <textarea
+            id="daily-q-answer-input"
+            class="styled-textarea study-help-textarea"
+            rows="3"
+            placeholder="כתוב כאן את החישוב, פקודת היומן או התשובה שלך..."
+          ></textarea>
+          <div class="study-input-actions">
+            <span class="study-input-hint">💡 המאמן יבדוק את התשובה וידריך אותך בעדינות עד לפתרון המלא.</span>
+            <button type="button" id="daily-q-submit-btn" class="primary-btn">
+              <span>שלח תשובה למאמן ▶</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Next Question / Sheet Completion Banner when Solved -->
+        ${currentQ.isCompleted ? `
+          <div class="daily-q-solved-banner" id="daily-q-solved-banner">
+            <div class="daily-solved-text">
+              🎉 כל הכבוד דניאל! פתרת בהצלחה את שאלה ${currentDailyQuestionIdx + 1}!
+            </div>
+            ${!isLastQuestion ? `
+              <button type="button" id="daily-q-next-btn" class="primary-btn daily-next-q-btn">
+                <span>מעולה! עבור לשאלה הבאה בדף ⬅</span>
+              </button>
+            ` : `
+              <button type="button" id="daily-card-finish-btn" class="primary-btn daily-finish-card-btn">
+                <span>סיימתי את כל שאלות דף העבודה בהצלחה! 🏆</span>
+              </button>
+            `}
+          </div>
+        ` : ''}
+
+        ${allCompleted ? `
+          <div class="daily-card-all-completed-box" id="daily-card-all-completed-box">
+            <h4>🏆 אלוף דניאל! השלמת את כל ${totalQ} השאלות ביחידה היומית הזו! ⭐</h4>
+            <p>כל התשובות והשיחות נשמרו בהצלחה בכרטיס היומי שלך.</p>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+
+  // Wire TTS for Rules of Thumb
+  const rulesTtsBtn = blocksWrapper.querySelector('#daily-rules-tts-btn');
+  if (rulesTtsBtn && typeof SoundService !== 'undefined') {
+    rulesTtsBtn.onclick = () => SoundService.speakText(`הקדמה וכללי אצבע לחומר של היום. ${rules.join('. ')}`);
+  }
+
+  // Wire TTS for Current Question
+  const qTtsBtn = blocksWrapper.querySelector('#daily-current-q-tts-btn');
+  if (qTtsBtn && typeof SoundService !== 'undefined') {
+    qTtsBtn.onclick = () => SoundService.speakText(`שאלה ${currentDailyQuestionIdx + 1}. ${currentQ.questionText}`);
+  }
+
+  // Wire TTS on chat messages
+  blocksWrapper.querySelectorAll('.daily-chat-tts-btn').forEach(btn => {
+    btn.onclick = () => {
+      const idx = Number(btn.getAttribute('data-chat-tts-idx'));
+      const msg = currentQ.chatHistory[idx];
+      if (msg && msg.text && typeof SoundService !== 'undefined') {
+        SoundService.speakText(msg.text.replace(/[*#]/g, ''));
+      }
+    };
+  });
+
+  // Wire Question Stepper Pills
+  blocksWrapper.querySelectorAll('.daily-q-pill').forEach(pill => {
+    pill.onclick = () => {
+      const targetIdx = Number(pill.getAttribute('data-daily-q-idx'));
+      if (!Number.isNaN(targetIdx)) {
+        currentDailyQuestionIdx = targetIdx;
+        renderDailyStudyCardView(card);
+      }
+    };
+  });
+
+  // Wire 3 Quick Helper Buttons
+  blocksWrapper.querySelectorAll('.daily-helper-btn').forEach(btn => {
+    btn.onclick = () => {
+      const actionType = btn.getAttribute('data-helper-action') || 'hint';
+      handleDailyCardInteraction(card.id, actionType, '');
+    };
+  });
+
+  // Wire Answer Submit Button
+  const answerInput = blocksWrapper.querySelector('#daily-q-answer-input');
+  const submitBtn = blocksWrapper.querySelector('#daily-q-submit-btn');
+  if (submitBtn && answerInput) {
+    submitBtn.onclick = () => {
+      const val = answerInput.value.trim();
+      if (!val) {
+        showToast('דניאל, כתוב את התשובה שלך או לחץ על אחד מכפתורי העזרה למעלה ✍️', 'warning');
+        answerInput.focus();
+        return;
+      }
+      handleDailyCardInteraction(card.id, 'answer', val);
+    };
+  }
+
+  // Wire Next Question Button
+  const nextQBtn = blocksWrapper.querySelector('#daily-q-next-btn');
+  if (nextQBtn) {
+    nextQBtn.onclick = () => advanceDailyCardQuestion(card.id);
+  }
+
+  // Wire Finish Card Button
+  const finishCardBtn = blocksWrapper.querySelector('#daily-card-finish-btn');
+  if (finishCardBtn) {
+    finishCardBtn.onclick = () => {
+      card.isCompleted = true;
+      saveAppState();
+      if (typeof SoundService !== 'undefined') {
+        SoundService.playSuccessSound();
+      }
+      showToast('כל הכבוד דניאל! סיימת את כל שאלות דף העבודה של היום! 🏆', 'success');
+      renderDailyStudyCardView(card);
+    };
+  }
+}
+
+function advanceDailyCardQuestion(cardId) {
+  const cards = appState.studyHelp?.dailyCards || [];
+  const card = cards.find(c => c.id === (cardId || currentDailyCardId));
+  if (!card || !Array.isArray(card.questions)) return false;
+
+  if (currentDailyQuestionIdx < card.questions.length - 1) {
+    currentDailyQuestionIdx++;
+    renderDailyStudyCardView(card);
+    return true;
+  }
+  card.isCompleted = true;
+  saveAppState();
+  renderDailyStudyCardView(card);
+  return false;
+}
+
+async function handleDailyCardInteraction(cardId, actionType = 'answer', userText = '') {
+  const cards = appState.studyHelp?.dailyCards || [];
+  const card = cards.find(c => c.id === (cardId || currentDailyCardId));
+  if (!card || !Array.isArray(card.questions)) return null;
+
+  const qObj = card.questions[currentDailyQuestionIdx];
+  if (!qObj) return null;
+  if (!Array.isArray(qObj.chatHistory)) qObj.chatHistory = [];
+
+  const helperLabels = {
+    hint: '💡 אשמח לקבל רמז מכוון לשאלה הזו',
+    simplify: '📖 תסביר לי בבקשה את השאלה בפשטות',
+    how_to_start: '🧮 איך מתחילים לפתור את השאלה?'
+  };
+
+  const displayUserMsg = actionType === 'answer' ? userText : (helperLabels[actionType] || userText);
+  if (displayUserMsg) {
+    qObj.chatHistory.push({
+      role: 'user',
+      text: displayUserMsg,
+      actionType,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  const submitBtn = document.getElementById('daily-q-submit-btn');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>המאמן בודק ומכין תגובה... ⏳</span>';
+  }
+
+  const result = await AIService.evaluateSocraticHomeworkStep({
+    cardTitle: card.title,
+    rulesOfThumb: card.introAndRules,
+    questionObj: qObj,
+    userMessage: displayUserMsg,
+    chatHistory: qObj.chatHistory.slice(0, -1),
+    actionType
+  });
+
+  qObj.chatHistory.push({
+    role: 'assistant',
+    text: result.reply,
+    isQuestionSolved: Boolean(result.isQuestionSolved),
+    timestamp: new Date().toISOString()
+  });
+
+  if (result.isQuestionSolved) {
+    qObj.isCompleted = true;
+    const allDone = card.questions.every(q => q.isCompleted);
+    if (allDone) {
+      card.isCompleted = true;
+    }
+    if (typeof SoundService !== 'undefined') {
+      if (typeof SoundService.playSuccess === 'function') {
+        SoundService.playSuccess();
+      } else if (typeof SoundService.playSuccessSound === 'function') {
+        SoundService.playSuccessSound();
+      }
+    }
+  }
+
+  appState.studyHelp.totalQuestionsAsked = (Number(appState.studyHelp.totalQuestionsAsked) || 0) + 1;
+  saveAppState();
+  renderDailyStudyCardView(card);
+
+  const feed = document.getElementById('daily-question-chat-feed');
+  if (feed) {
+    feed.scrollTop = feed.scrollHeight;
+  }
+
+  return result;
+}
+
+
 

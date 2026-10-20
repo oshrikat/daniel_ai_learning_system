@@ -145,6 +145,8 @@ let appState = {
     study_help: []
   },
   studyHelp: {
+    dailyCards: [],
+    activeCardId: null,
     sessions: [],
     activeSessionId: null,
     savedNotes: [],
@@ -253,6 +255,8 @@ function performSmartMergeAndMigration() {
         }
         if (parsed.studyHelp && typeof parsed.studyHelp === 'object') {
           appState.studyHelp = {
+            dailyCards: Array.isArray(parsed.studyHelp.dailyCards) ? parsed.studyHelp.dailyCards : [],
+            activeCardId: parsed.studyHelp.activeCardId || null,
             sessions: Array.isArray(parsed.studyHelp.sessions) ? parsed.studyHelp.sessions : [],
             activeSessionId: parsed.studyHelp.activeSessionId || null,
             savedNotes: Array.isArray(parsed.studyHelp.savedNotes) ? parsed.studyHelp.savedNotes : [],
@@ -379,6 +383,52 @@ function saveAppState() {
 // ============================================================================
 // 2b. פונקציות עזר למסלול 3 (עזרה בלימודים) ולמבחן המסכם בהנהלת חשבונות
 // ============================================================================
+
+function saveDailyStudyCard(cardData) {
+  if (!appState.studyHelp || typeof appState.studyHelp !== 'object') {
+    appState.studyHelp = { dailyCards: [], activeCardId: null, sessions: [], activeSessionId: null, savedNotes: [], totalQuestionsAsked: 0 };
+  }
+  if (!Array.isArray(appState.studyHelp.dailyCards)) {
+    appState.studyHelp.dailyCards = [];
+  }
+  const now = new Date();
+  const cardId = (cardData && cardData.id) || `daily_card_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const rawQuestions = Array.isArray(cardData && cardData.questions) ? cardData.questions : [];
+  const normalizedQuestions = rawQuestions.map((q, idx) => ({
+    id: q.id || `${cardId}_q_${idx + 1}`,
+    index: idx + 1,
+    questionText: String(q.questionText || q.question || '').trim(),
+    topic: String(q.topic || 'חומר לימוד יומי').trim(),
+    hint: String(q.hint || 'פרק את השאלה לנתונים ולפעולה החשבונאית הנדרשת.').trim(),
+    coreConcept: String(q.coreConcept || 'זיהוי חובה וזכות או שלבי החישוב').trim(),
+    isCompleted: Boolean(q.isCompleted),
+    chatHistory: Array.isArray(q.chatHistory) ? q.chatHistory : []
+  }));
+
+  const newCard = {
+    id: cardId,
+    createdAt: (cardData && cardData.createdAt) || now.toISOString(),
+    dateLabel: (cardData && cardData.dateLabel) || now.toLocaleDateString('he-IL'),
+    title: String((cardData && cardData.title) || `יחידת תרגול יומית (${now.toLocaleDateString('he-IL')})`).trim(),
+    sourceType: (cardData && cardData.sourceType === 'pdf_or_image') ? 'pdf_or_image' : 'pasted_text',
+    introAndRules: Array.isArray(cardData && cardData.introAndRules) && cardData.introAndRules.length > 0
+      ? cardData.introAndRules
+      : [
+          'קוראים כל שאלה בנחת ומסמנים קודם כל את הסכומים והנתונים.',
+          'שואלים: מה נכנס לעסק (חובה) ומה יצא או נוצר כמקור (זכות)?',
+          'פותרים שלב אחר שלב ובודקים שסך החובה שווה לסך הזכות.'
+        ],
+    questions: normalizedQuestions,
+    isNew: cardData && typeof cardData.isNew === 'boolean' ? cardData.isNew : true,
+    isCompleted: Boolean(cardData && cardData.isCompleted),
+    linkedExamId: (cardData && cardData.linkedExamId) || null
+  };
+
+  appState.studyHelp.dailyCards.push(newCard);
+  appState.studyHelp.activeCardId = newCard.id;
+  saveAppState();
+  return newCard;
+}
 
 function getOrCreateStudySession(subject) {
   if (!appState.studyHelp || typeof appState.studyHelp !== 'object') {
