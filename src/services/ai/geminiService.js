@@ -22,13 +22,16 @@ async function callGeminiAPI(model, apiKey, prompt, options = {}) {
     ? `${options.systemInstruction}\n\n${prompt}`
     : prompt;
   const parts = [{ text: fullPrompt }];
-  if (Array.isArray(options.images)) {
-    options.images.forEach(img => {
+  const imageList = Array.isArray(options.inlineImages) && options.inlineImages.length > 0
+    ? options.inlineImages
+    : (Array.isArray(options.images) ? options.images : []);
+  if (imageList.length > 0) {
+    imageList.forEach(img => {
       if (img && img.data) {
         parts.push({
-          inlineData: {
-            mimeType: img.mimeType || 'image/jpeg',
-            data: img.data.replace(/^data:[^;]+;base64,/, '')
+          inline_data: {
+            mime_type: img.mimeType || img.mime_type || 'image/jpeg',
+            data: String(img.data).replace(/^data:[^;]+;base64,/, '')
           }
         });
       }
@@ -45,4 +48,3 @@ async function callGeminiAPI(model, apiKey, prompt, options = {}) {
   if (!text) throw new Error(`Gemini ${model} returned empty content`);
   return text;
 }
-

@@ -1,4 +1,5 @@
 .env
+data/daniel_state.json
 daniel_state.json
 __pycache__/
 archive/

@@ -3,9 +3,12 @@ function renderUnitPlayer(unitId) {
   const legacyWrapper = document.getElementById('unit-steps-wrapper');
   const blocksWrapper = document.getElementById('unit-blocks-wrapper');
 
-  if (activeTrack.engine === 'blocks') {
+  const summaryExams = Array.isArray(appState.accountingSummaryExams) ? appState.accountingSummaryExams : [];
+  const matchedSummaryExam = summaryExams.find(u => u && (u.unit_id === unitId || u.id === unitId));
+
+  if (activeTrack.engine === 'blocks' || matchedSummaryExam) {
     // ========================================================================
-    // מנוע הבלוקים הדינמי (Dynamic Block Engine - Track 2: Accounting)
+    // מנוע הבלוקים הדינמי (Dynamic Block Engine - Track 2: Accounting & Summary Exams)
     // ========================================================================
     if (legacyWrapper) legacyWrapper.style.display = 'none';
     if (blocksWrapper) {
@@ -14,8 +17,19 @@ function renderUnitPlayer(unitId) {
     }
 
     const units = getTrackUnits(activeTrack);
-    const unit = units.find(u => u.id === unitId || u.unit_id === unitId);
+    let unit = units.find(u => u.id === unitId || u.unit_id === unitId) || matchedSummaryExam;
+    if (!unit && typeof ACCOUNTING_CURRICULUM !== 'undefined') {
+      const rawAccList = Array.isArray(ACCOUNTING_CURRICULUM)
+        ? ACCOUNTING_CURRICULUM
+        : (Array.isArray(ACCOUNTING_CURRICULUM.units) ? ACCOUNTING_CURRICULUM.units : []);
+      unit = rawAccList.find(u => u && (u.unit_id === unitId || u.id === unitId));
+    }
     if (!unit) return;
+    if (!unit.id) unit.id = unit.unit_id;
+    if (unit.isSummaryExam) {
+      unit.isNewExam = false;
+      saveAppState();
+    }
 
     const titleEl = document.getElementById('unit-view-title');
     if (titleEl) titleEl.textContent = unit.title;
@@ -139,13 +153,17 @@ function renderUnitPlayer(unitId) {
             return;
           }
 
-          if (!appState.trackProgress[activeTrack.id]) {
-            appState.trackProgress[activeTrack.id] = [];
+          const targetTrackId = unit.isSummaryExam ? 'accounting' : activeTrack.id;
+          if (!appState.trackProgress[targetTrackId]) {
+            appState.trackProgress[targetTrackId] = [];
           }
-          if (!appState.trackProgress[activeTrack.id].includes(unit.id)) {
-            appState.trackProgress[activeTrack.id].push(unit.id);
+          const uid = unit.unit_id || unit.id;
+          if (!appState.trackProgress[targetTrackId].includes(uid)) {
+            appState.trackProgress[targetTrackId].push(uid);
           }
           unit.isCompleted = true;
+          unit.completed = true;
+          unit.isNewExam = false;
           saveAppState();
           SoundService.playSuccessSound();
           showToast(`כל הכבוד דניאל! יחידה "${unit.title}" הושלמה בהצלחה! 🌟`);
@@ -988,6 +1006,23 @@ async function submitAccountingSummaryExam() {
     userAnswers
   });
 
+  if (activeExam.homeworkExamId && Array.isArray(appState.accountingExam?.homeworkExams)) {
+    const hwExam = appState.accountingExam.homeworkExams.find(e => e.id === activeExam.homeworkExamId);
+    if (hwExam) {
+      hwExam.isNew = false;
+      hwExam.status = 'completed';
+      if (!Array.isArray(hwExam.attempts)) hwExam.attempts = [];
+      hwExam.attempts.unshift({
+        id: `hw_attempt_${Date.now()}`,
+        score: evaluation.score,
+        passed: evaluation.passed,
+        completedAt: new Date().toISOString()
+      });
+      hwExam.bestScore = Math.max(Number(hwExam.bestScore) || 0, Number(evaluation.score) || 0);
+      saveAppState();
+    }
+  }
+
   recordAccountingExamAttempt({
     score: evaluation.score,
     passed: evaluation.passed,
@@ -1001,10 +1036,10 @@ async function submitAccountingSummaryExam() {
     SoundService.playSuccessSound();
   }
 
-  renderAccountingExamResults(evaluation, questions, userAnswers);
+  renderAccountingExamResults(evaluation, questions, userAnswers, activeExam.title);
 }
 
-function renderAccountingExamResults(evaluation, questions, userAnswers) {
+function renderAccountingExamResults(evaluation, questions, userAnswers, examTitle = '') {
   const area = document.getElementById('checkpoint-content-area');
   const footer = document.getElementById('checkpoint-nav-footer');
   const stepText = document.getElementById('checkpoint-step-text');
@@ -1016,6 +1051,7 @@ function renderAccountingExamResults(evaluation, questions, userAnswers) {
   if (area) {
     const passed = !!evaluation.passed;
     const breakdown = Array.isArray(evaluation.breakdown) ? evaluation.breakdown : [];
+    const safeExamLabel = String(examTitle || 'מבחן מסכם בהנהלת חשבונות').replace(/['"]/g, '');
 
     area.innerHTML = `
       <div class="accounting-exam-results">
@@ -1030,6 +1066,13 @@ function renderAccountingExamResults(evaluation, questions, userAnswers) {
             <span class="badge-tag" style="background:#ffffff;color:#0f172a;">נקודות שצברת: ${evaluation.earnedPoints || 0} מתוך ${evaluation.totalPoints || 100}</span>
             <span class="badge-tag" style="background:#ffffff;color:#0f172a;">תשובות מדויקות: ${evaluation.correctCount || 0} מתוך ${questions.length}</span>
           </div>
+          ${passed ? `
+            <div style="margin-top: 1.15rem;">
+              <button type="button" class="share-whatsapp-btn" onclick="shareProgressToWhatsApp('היי אבא ואושרי! סיימתי בהצלחה את ${safeExamLabel} בציון ${evaluation.score}%! 🏆📊')">
+                <span>שלח עדכון משמח לאבא ואושרי ב-WhatsApp 📲</span>
+              </button>
+            </div>
+          ` : ''}
         </div>
 
         <h3 style="margin: 1.5rem 0 0.85rem 0; font-size: 1.2rem;">📋 פירוט מלא שאלה אחר שאלה:</h3>
@@ -1345,15 +1388,63 @@ function renderDailyStudyCardView(card) {
           </div>
         ` : ''}
 
-        ${allCompleted ? `
+        ${allCompleted || card.isCompleted ? `
           <div class="daily-card-all-completed-box" id="daily-card-all-completed-box">
             <h4>🏆 אלוף דניאל! השלמת את כל ${totalQ} השאלות ביחידה היומית הזו! ⭐</h4>
             <p>כל התשובות והשיחות נשמרו בהצלחה בכרטיס היומי שלך.</p>
+          </div>
+          <div class="homework-completion-modal" id="homework-completion-modal" role="dialog" aria-modal="true" aria-labelledby="hw-completion-modal-title">
+            <div class="homework-completion-modal-card">
+              <div class="homework-completion-confetti">🎉 🏆 🌟</div>
+              <h3 class="homework-completion-title" id="hw-completion-modal-title">
+                🎉 כל הכבוד דניאל! סיימת את כל שאלות דף העבודה!
+              </h3>
+              <p class="homework-completion-desc">
+                השלמת בהצלחה את כל השאלות ביחידה <strong>"${card.title}"</strong>!<br>
+                מאמן ה-AI יצר עבורך אוטומטית <strong>מבחן מסכם מעשי חדש</strong> על החומר של היום, והוא מחכה לך עכשיו בטאב <strong>"הנהלת חשבונות"</strong> באזור <strong>"🏆 מבחנים מסכמים מתרגול שיעורי הבית"</strong>!
+              </p>
+              <div class="homework-completion-actions">
+                <button type="button" id="hw-modal-go-accounting-btn" class="primary-btn hw-modal-go-btn">
+                  <span>🏆 עבור עכשיו למבחן המסכם בהנהלת חשבונות</span>
+                </button>
+                <button type="button" id="hw-modal-back-study-btn" class="secondary-btn hw-modal-back-btn">
+                  <span>חזור לטאב עזרה בלימודים</span>
+                </button>
+              </div>
+            </div>
           </div>
         ` : ''}
       </div>
     </div>
   `;
+
+  // Wire Festive Completion Modal Buttons if present
+  const goAccountingBtn = blocksWrapper.querySelector('#hw-modal-go-accounting-btn');
+  const backStudyBtn = blocksWrapper.querySelector('#hw-modal-back-study-btn');
+  if (goAccountingBtn) {
+    goAccountingBtn.onclick = () => {
+      appState.activeTrackId = 'accounting';
+      appState.currentTrack = 'accounting';
+      saveAppState();
+      showView('roadmap');
+      renderTrackTabs();
+      renderRoadmap();
+      const hwZone = document.getElementById('homework-exams-zone');
+      if (hwZone && typeof hwZone.scrollIntoView === 'function') {
+        hwZone.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+  }
+  if (backStudyBtn) {
+    backStudyBtn.onclick = () => {
+      appState.activeTrackId = 'study_help';
+      appState.currentTrack = 'study_help';
+      saveAppState();
+      showView('roadmap');
+      renderTrackTabs();
+      renderRoadmap();
+    };
+  }
 
   // Wire TTS for Rules of Thumb
   const rulesTtsBtn = blocksWrapper.querySelector('#daily-rules-tts-btn');
@@ -1421,19 +1512,20 @@ function renderDailyStudyCardView(card) {
   // Wire Finish Card Button
   const finishCardBtn = blocksWrapper.querySelector('#daily-card-finish-btn');
   if (finishCardBtn) {
-    finishCardBtn.onclick = () => {
+    finishCardBtn.onclick = async () => {
       card.isCompleted = true;
+      await AIService.generateHomeworkSummaryExamFromCard(card);
       saveAppState();
       if (typeof SoundService !== 'undefined') {
         SoundService.playSuccessSound();
       }
-      showToast('כל הכבוד דניאל! סיימת את כל שאלות דף העבודה של היום! 🏆', 'success');
+      showToast('כל הכבוד דניאל! סיימת את כל שאלות דף העבודה של היום ונוצר עבורך מבחן מסכם! 🏆', 'success');
       renderDailyStudyCardView(card);
     };
   }
 }
 
-function advanceDailyCardQuestion(cardId) {
+async function advanceDailyCardQuestion(cardId) {
   const cards = appState.studyHelp?.dailyCards || [];
   const card = cards.find(c => c.id === (cardId || currentDailyCardId));
   if (!card || !Array.isArray(card.questions)) return false;
@@ -1444,6 +1536,7 @@ function advanceDailyCardQuestion(cardId) {
     return true;
   }
   card.isCompleted = true;
+  await AIService.generateHomeworkSummaryExamFromCard(card);
   saveAppState();
   renderDailyStudyCardView(card);
   return false;
@@ -1501,6 +1594,7 @@ async function handleDailyCardInteraction(cardId, actionType = 'answer', userTex
     const allDone = card.questions.every(q => q.isCompleted);
     if (allDone) {
       card.isCompleted = true;
+      await AIService.generateHomeworkSummaryExamFromCard(card);
     }
     if (typeof SoundService !== 'undefined') {
       if (typeof SoundService.playSuccess === 'function') {
@@ -1521,6 +1615,47 @@ async function handleDailyCardInteraction(cardId, actionType = 'answer', userTex
   }
 
   return result;
+}
+
+function openHomeworkSummaryExam(examId) {
+  const hwExams = Array.isArray(appState.accountingExam?.homeworkExams)
+    ? appState.accountingExam.homeworkExams
+    : [];
+  const hwExam = hwExams.find(e => e.id === examId) || hwExams[hwExams.length - 1];
+  if (!hwExam) {
+    showToast('לא נמצא המבחן המסכם המבוקש.', 'warning');
+    return null;
+  }
+
+  hwExam.isNew = false;
+  const activeExamObj = {
+    id: hwExam.id,
+    homeworkExamId: hwExam.id,
+    isHomeworkExam: true,
+    title: hwExam.title || 'מבחן מסכם מתרגול שיעורי הבית',
+    generatedAt: hwExam.createdAt || new Date().toISOString(),
+    provider: 'homework_card',
+    questions: Array.isArray(hwExam.questions) ? hwExam.questions : [],
+    userAnswers: hwExam.userAnswers || {}
+  };
+
+  saveAccountingExamState(activeExamObj);
+  currentAccountingExamIdx = 0;
+
+  showView('checkpoint');
+  const header = document.getElementById('checkpoint-view-header');
+  if (header) header.textContent = `🏆 ${activeExamObj.title}`;
+
+  const backBtn = document.getElementById('checkpoint-back-btn');
+  if (backBtn) {
+    backBtn.onclick = () => {
+      showView('roadmap');
+      renderRoadmap();
+    };
+  }
+
+  renderAccountingExamQuestion();
+  return activeExamObj;
 }
 
 

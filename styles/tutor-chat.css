@@ -1,0 +1,1799 @@
+/* ==========================================================================
+   Track 3: Study Help Workspace (עזרה בלימודים - v4.2)
+   ========================================================================== */
+.study-help-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+  padding: 1.5rem;
+  direction: rtl;
+  text-align: right;
+}
+
+.study-help-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.study-help-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.study-help-section-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.study-help-subheadline {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.study-subject-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.study-subject-chip {
+  background: #f8fafc;
+  color: #1e293b;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.55rem 1.15rem;
+  font-family: inherit;
+  font-size: 0.98rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.study-subject-chip:hover {
+  border-color: var(--primary);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.study-subject-chip.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+
+.study-starter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.65rem;
+}
+
+.study-starter-btn {
+  background: #f0fdf4;
+  color: #065f46;
+  border: 1.5px dashed #10b981;
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 1rem;
+  text-align: right;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.study-starter-btn:hover {
+  background: #dcfce7;
+  transform: translateY(-1px);
+}
+
+.study-sessions-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.65rem 0.9rem;
+  background: #f8fafc;
+  border-radius: var(--radius-sm);
+  border: 1px solid #e2e8f0;
+}
+
+.study-sessions-label {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.study-sessions-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.study-session-pill {
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.study-session-pill.active {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #60a5fa;
+}
+
+.study-chat-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  max-height: 460px;
+  overflow-y: auto;
+  padding: 1.1rem;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: var(--radius-md);
+}
+
+.study-welcome-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text-secondary);
+}
+
+.study-welcome-icon {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+}
+
+.study-welcome-empty h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.2rem;
+  color: var(--text-primary);
+}
+
+.study-welcome-empty p {
+  margin: 0 auto;
+  max-width: 540px;
+  line-height: 1.6;
+}
+
+.study-msg-bubble {
+  padding: 1rem 1.2rem;
+  border-radius: var(--radius-md);
+  line-height: 1.65;
+  font-size: 1.02rem;
+}
+
+.study-msg-bubble.user-msg {
+  background: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+  color: #1e3a8a;
+  align-self: flex-start;
+  width: 92%;
+}
+
+.study-msg-bubble.assistant-msg {
+  background: #ffffff;
+  border: 1.5px solid #a7f3d0;
+  border-right: 5px solid #10b981;
+  color: var(--text-primary);
+  align-self: flex-end;
+  width: 96%;
+  box-shadow: var(--shadow-sm);
+}
+
+.study-msg-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.45rem;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.study-tts-msg-btn {
+  background: #f0fdf4;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.study-input-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  background: #ffffff;
+  padding: 1rem 1.15rem;
+  border: 1.5px solid #cbd5e1;
+  border-radius: var(--radius-md);
+}
+
+.study-input-label {
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.study-input-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.study-input-hint {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+/* ============================================================================
+   Accounting Automated Summary Exam Styles
+   ============================================================================ */
+.accounting-summary-exam-card {
+  margin-top: 1.5rem;
+  border: 2px solid #f59e0b;
+  background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%);
+}
+
+.accounting-summary-exam-card.passed {
+  border-color: #10b981;
+  background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%);
+}
+
+.accounting-exam-loading {
+  text-align: center;
+  padding: 3rem 1.5rem;
+}
+
+.accounting-exam-player {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  margin-top: 1rem;
+}
+
+.accounting-exam-q-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.exam-q-pill {
+  min-width: 44px;
+  height: 40px;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.exam-q-pill.answered {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #065f46;
+}
+
+.exam-q-pill.current {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #ffffff;
+  box-shadow: 0 3px 8px rgba(15, 118, 110, 0.25);
+}
+
+.accounting-exam-q-card {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  padding: 1.35rem;
+}
+
+.accounting-exam-q-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+
+.accounting-exam-q-title {
+  font-size: 1.25rem;
+  line-height: 1.5;
+  margin-bottom: 1.2rem;
+}
+
+.accounting-exam-calc-box,
+.accounting-exam-open-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: #ffffff;
+  padding: 1.1rem;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid #cbd5e1;
+}
+
+.accounting-exam-calc-input {
+  width: 100%;
+  max-width: 340px;
+  padding: 0.75rem 1rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  border: 1.5px solid #94a3b8;
+  border-radius: 10px;
+  font-family: inherit;
+}
+
+.accounting-exam-footer-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.accounting-exam-nav-btns {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.acc-exam-submit-btn {
+  background: #475569;
+}
+
+.acc-exam-submit-btn.ready {
+  background: #059669;
+}
+
+.accounting-exam-score-banner {
+  text-align: center;
+  padding: 1.75rem 1.25rem;
+  border-radius: var(--radius-md);
+  border: 2px solid #cbd5e1;
+  background: #f8fafc;
+}
+
+.accounting-exam-score-banner.passed {
+  border-color: #10b981;
+  background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+}
+
+.accounting-exam-score-banner.needs-work {
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+}
+
+.exam-score-icon {
+  font-size: 2.8rem;
+  margin-bottom: 0.35rem;
+}
+
+.exam-score-badge {
+  display: inline-block;
+  font-size: 2.4rem;
+  font-weight: 900;
+  color: #0f172a;
+  background: #ffffff;
+  padding: 0.3rem 1.3rem;
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 0.65rem;
+}
+
+.exam-score-title {
+  font-size: 1.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.exam-score-feedback {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  max-width: 640px;
+  margin: 0 auto 1rem auto;
+}
+
+.exam-score-stats {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.accounting-exam-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.exam-review-card {
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-right-width: 6px;
+  border-radius: var(--radius-sm);
+  padding: 1.15rem;
+}
+
+.exam-review-card.status-correct {
+  border-right-color: #10b981;
+}
+
+.exam-review-card.status-partial {
+  border-right-color: #f59e0b;
+}
+
+.exam-review-card.status-incorrect {
+  border-right-color: #ef4444;
+}
+
+.exam-review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.exam-status-pill {
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.exam-status-pill.correct {
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.exam-status-pill.partial {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.exam-status-pill.incorrect {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.exam-review-q-text {
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.exam-review-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  background: #f8fafc;
+  padding: 0.85rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+}
+
+.exam-review-ans-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.exam-review-ans-row .ans-label {
+  color: var(--text-secondary);
+  min-width: 110px;
+}
+
+.exam-review-explanation {
+  margin-top: 0.35rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed #cbd5e1;
+  color: #1e293b;
+}
+
+/* ============================================================================
+   Milestone 3 ("עזרה בלימודים") — Daily Homework Upload, Calming Overlay & Cards
+   ============================================================================ */
+.study-upload-top-box {
+  border: 2px solid #3b82f6;
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+  padding: 1.5rem;
+}
+
+.study-date-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 800;
+  font-size: 0.95rem;
+  padding: 0.3rem 0.85rem;
+  display: inline-block;
+  margin-bottom: 0.6rem;
+}
+
+.study-upload-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0 0 0.45rem 0;
+}
+
+.study-upload-subtitle {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin: 0 0 1.2rem 0;
+  line-height: 1.5;
+}
+
+.study-upload-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.study-upload-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  min-height: 58px;
+  padding: 0.95rem 1.25rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  border-radius: var(--radius-md);
+  text-align: right;
+}
+
+.study-paste-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.2rem;
+  padding: 1.15rem;
+  background: #ffffff;
+  border: 1.5px solid #93c5fd;
+  border-radius: var(--radius-md);
+}
+
+.study-calming-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.study-calming-card {
+  max-width: 540px;
+  width: 100%;
+  background: linear-gradient(135deg, #f0fdf4 0%, #eff6ff 100%);
+  border: 2px solid #86efac;
+  border-radius: var(--radius-lg, 18px);
+  padding: 2.25rem 1.75rem;
+  text-align: center;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25);
+}
+
+.study-calming-breathing-circle {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 1.2rem auto;
+  border-radius: 50%;
+  background: #dcfce7;
+  border: 3px solid #22c55e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  animation: studyBreathingPulse 2.8s ease-in-out infinite;
+}
+
+@keyframes studyBreathingPulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.35);
+  }
+
+  50% {
+    transform: scale(1.12);
+    box-shadow: 0 0 0 16px rgba(34, 197, 94, 0);
+  }
+}
+
+.study-calming-title {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #065f46;
+  margin: 0 0 0.65rem 0;
+  line-height: 1.5;
+}
+
+.study-calming-subtitle {
+  font-size: 1rem;
+  color: #334155;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.study-daily-cards-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.study-daily-cards-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.study-daily-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.study-empty-cards-placeholder {
+  text-align: center;
+  padding: 2rem 1.25rem;
+  color: var(--text-secondary);
+  border: 1.5px dashed #cbd5e1;
+}
+
+.study-card-badges-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.badge-new-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  padding: 0.22rem 0.7rem;
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(217, 119, 6, 0.35);
+}
+
+.study-daily-card.is-new-card {
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%);
+}
+
+/* ============================================================================
+   Milestone 3 Step 3 — Daily Study Card Player & Socratic Mentor Chat
+   ============================================================================ */
+.daily-card-player-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+  width: 100%;
+}
+
+.daily-card-rules-box {
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+  border: 2px solid #93c5fd;
+  border-radius: var(--radius-md);
+  padding: 1.35rem;
+}
+
+.daily-rules-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.daily-rules-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #1e3a8a;
+}
+
+.daily-rules-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.daily-rule-item {
+  background: #ffffff;
+  border-right: 4px solid #3b82f6;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.daily-question-stepper-box {
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: var(--radius-md);
+  padding: 1.15rem 1.35rem;
+}
+
+.daily-stepper-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.daily-stepper-counter {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.daily-q-pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.daily-socratic-mentor-box {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: var(--radius-md);
+  padding: 1.35rem;
+}
+
+.daily-current-q-banner {
+  background: #f8fafc;
+  border: 1.5px solid #bfdbfe;
+  border-right: 5px solid #2563eb;
+  border-radius: var(--radius-sm);
+  padding: 1.1rem 1.25rem;
+}
+
+.daily-current-q-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.6rem;
+}
+
+.daily-current-q-text-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.daily-current-q-text {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1.5;
+  color: #0f172a;
+}
+
+.daily-quick-helpers-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.65rem;
+}
+
+.daily-q-solved-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background: linear-gradient(135deg, #ecfdf5 0%, #dcfce7 100%);
+  border: 2px solid #10b981;
+  border-radius: var(--radius-md);
+  padding: 1.15rem 1.35rem;
+}
+
+.daily-solved-text {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #065f46;
+}
+
+.daily-next-q-btn,
+.daily-finish-card-btn {
+  background: #059669;
+  font-size: 1.05rem;
+  padding: 0.7rem 1.4rem;
+}
+
+.daily-card-all-completed-box {
+  text-align: center;
+  padding: 1.35rem;
+  background: #f0fdf4;
+  border: 2px solid #22c55e;
+  border-radius: var(--radius-md);
+  color: #065f46;
+}
+
+/* ============================================================================
+   Milestone 3 Step 4 — Festive Completion Dialog & Homework Summary Exams Zone
+   ============================================================================ */
+.homework-completion-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.homework-completion-modal-card {
+  max-width: 580px;
+  width: 100%;
+  background: linear-gradient(135deg, #fffbeb 0%, #ffffff 55%, #ecfdf5 100%);
+  border: 3px solid #f59e0b;
+  border-radius: 20px;
+  padding: 2.25rem 1.85rem;
+  text-align: center;
+  box-shadow: 0 24px 54px rgba(15, 23, 42, 0.35);
+}
+
+.homework-completion-confetti {
+  font-size: 3.2rem;
+  margin-bottom: 0.75rem;
+}
+
+.homework-completion-title {
+  font-size: 1.45rem;
+  font-weight: 900;
+  color: #065f46;
+  margin: 0 0 0.85rem 0;
+  line-height: 1.4;
+}
+
+.homework-completion-desc {
+  font-size: 1.05rem;
+  color: #1e293b;
+  line-height: 1.65;
+  margin: 0 0 1.5rem 0;
+}
+
+.homework-completion-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.hw-modal-go-btn {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+  font-size: 1.08rem;
+  font-weight: 800;
+  min-height: 52px;
+  justify-content: center;
+}
+
+.hw-modal-back-btn {
+  justify-content: center;
+  min-height: 46px;
+}
+
+.homework-exams-zone {
+  margin: 1.25rem 0;
+  border: 2px solid #d97706;
+  background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%);
+  padding: 1.4rem;
+}
+
+.homework-exams-zone-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.1rem;
+}
+
+.homework-exams-zone-title {
+  margin: 0 0 0.3rem 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #92400e;
+}
+
+.homework-exams-zone-subtitle {
+  margin: 0;
+  font-size: 0.96rem;
+  color: #475569;
+}
+
+.homework-exams-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.homework-exams-empty {
+  background: #ffffff;
+  border: 1.5px dashed #fcd34d;
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.2rem;
+  color: #78350f;
+  font-size: 0.96rem;
+}
+
+.homework-summary-exam-item.is-new-card {
+  border: 2px solid #f59e0b;
+  background: #ffffff;
+}
+
+
+/* ==========================================================================
+   Track 3: Dual Upload Hub, Calming Loading Steps & Guiding Stone Cards
+   ========================================================================== */
+
+.study-help-roadmap-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  direction: rtl;
+}
+
+.study-upload-hub-card {
+  background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%);
+  border: 2px solid #93c5fd;
+  border-radius: var(--radius-md);
+  padding: 1.6rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.study-upload-hub-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.study-today-date-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #dbeafe;
+  color: #1e40af;
+  font-weight: 800;
+  font-size: 0.96rem;
+  padding: 0.4rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid #93c5fd;
+}
+
+.study-upload-hub-title {
+  margin: 0 0 0.45rem 0;
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.study-upload-hub-desc {
+  margin: 0 0 1.25rem 0;
+  font-size: 1.05rem;
+  color: #334155;
+  line-height: 1.6;
+}
+
+.study-upload-dual-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.study-hub-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.95rem;
+  padding: 1.15rem 1.3rem;
+  border-radius: var(--radius-md);
+  border: 2px solid #bfdbfe;
+  background: #ffffff;
+  color: #0f172a;
+  text-align: right;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+}
+
+.study-hub-action-btn:hover {
+  transform: translateY(-2px);
+  border-color: #2563eb;
+  background: #f8fafc;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.12);
+}
+
+.study-hub-action-btn.upload-pdf-btn {
+  border-color: #3b82f6;
+  background: linear-gradient(135deg, #ffffff 0%, #eff6ff 100%);
+}
+
+.study-hub-action-btn.paste-text-btn {
+  border-color: #10b981;
+  background: linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%);
+}
+
+.study-hub-btn-icon {
+  font-size: 2.1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.study-hub-btn-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.study-hub-btn-text strong {
+  font-size: 1.06rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.study-hub-btn-text small {
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.study-direct-text-drawer {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1.5px dashed #cbd5e1;
+}
+
+.study-drawer-label {
+  display: block;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 0.6rem;
+  font-size: 1rem;
+}
+
+.study-direct-textarea {
+  width: 100%;
+  border: 2px solid #cbd5e1;
+  border-radius: var(--radius-sm);
+  padding: 0.95rem 1.1rem;
+  font-family: var(--font-family);
+  font-size: 1.02rem;
+  line-height: 1.6;
+  color: #0f172a;
+  background: #ffffff;
+  resize: vertical;
+  margin-bottom: 0.9rem;
+}
+
+.study-direct-textarea:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.study-drawer-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.study-create-unit-btn {
+  font-size: 1.05rem;
+  padding: 0.8rem 1.5rem;
+  min-height: 48px;
+}
+
+.study-units-chronological-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.study-units-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.study-units-section-title {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+.study-units-section-subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #64748b;
+}
+
+.study-help-units-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.study-units-empty-card {
+  text-align: center;
+  padding: 2.2rem 1.5rem;
+  border: 2px dashed #cbd5e1;
+  background: #f8fafc;
+}
+
+.study-guiding-stone-card {
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.study-guiding-stone-card:hover {
+  transform: translateY(-2px);
+}
+
+.study-guiding-stone-card.is-new-study-card {
+  border: 2px solid #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.14);
+}
+
+.study-stone-index-circle {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #1d4ed8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.05rem;
+  flex-shrink: 0;
+}
+
+.study-card-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.study-card-progress-track {
+  flex: 1;
+  min-width: 140px;
+  max-width: 280px;
+  height: 9px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.study-card-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #10b981);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.study-card-progress-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.study-calming-step-label {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #1d4ed8;
+  margin: 0.4rem 0 0.85rem 0;
+}
+
+.study-calming-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem 0;
+  text-align: right;
+}
+
+.study-calming-step-pill {
+  padding: 0.55rem 0.95rem;
+  border-radius: var(--radius-sm);
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.94rem;
+  font-weight: 600;
+  border: 1px solid #e2e8f0;
+  transition: all 0.25s ease;
+}
+
+.study-calming-step-pill.active {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #60a5fa;
+  font-weight: 800;
+}
+
+
+/* ==========================================================================
+   Track 3: Interactive Daily Study Unit View (Intro + Active Q + Socratic Coach)
+   ========================================================================== */
+
+.study-unit-player-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  direction: rtl;
+  padding-top: 0.4rem;
+}
+
+/* Part 1: Warm Topic Introduction & 3 Golden Rules */
+.study-intro-golden-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
+  border: 2px solid #86efac;
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+}
+
+.study-intro-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.study-intro-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.study-tts-intro-btn {
+  padding: 0.45rem 0.95rem;
+  font-size: 0.94rem;
+  min-height: 40px;
+}
+
+.study-intro-unit-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.38rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.study-intro-summary-text {
+  margin: 0 0 1.2rem 0;
+  font-size: 1.06rem;
+  line-height: 1.65;
+  color: #1e293b;
+}
+
+.study-golden-rules-box {
+  background: #ffffff;
+  border: 1.5px solid #bbf7d0;
+  border-radius: var(--radius-sm);
+  padding: 1.15rem 1.25rem;
+}
+
+.study-golden-rules-heading {
+  margin: 0 0 0.85rem 0;
+  font-size: 1.08rem;
+  font-weight: 800;
+  color: #166534;
+}
+
+.study-golden-rules-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+
+.study-golden-rule-stone {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  background: #f0fdf4;
+  border: 1px solid #dcfce7;
+  border-radius: var(--radius-sm);
+  padding: 0.8rem 0.95rem;
+}
+
+.study-golden-rule-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #16a34a;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.92rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.study-golden-rule-text {
+  margin: 0;
+  font-size: 0.96rem;
+  line-height: 1.5;
+  color: #14532d;
+  font-weight: 600;
+}
+
+/* Part 2: Question Progress Bar & Active Question Banner */
+.study-question-progress-card {
+  background: #ffffff;
+  border: 2px solid #cbd5e1;
+  border-radius: var(--radius-md);
+  padding: 1.4rem;
+}
+
+.study-q-progress-top {
+  margin-bottom: 1rem;
+}
+
+.study-q-progress-headline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.55rem;
+}
+
+.study-q-counter-badge {
+  font-size: 1.06rem;
+  font-weight: 800;
+  color: #1e3a8a;
+}
+
+.study-q-solved-counter {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #047857;
+}
+
+.study-q-progress-bar-track {
+  width: 100%;
+  height: 11px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.study-q-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #10b981);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.study-q-nav-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-bottom: 1.15rem;
+}
+
+.study-q-nav-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.95rem;
+  border-radius: 999px;
+  border: 1.5px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  font-family: var(--font-family);
+  font-size: 0.94rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.study-q-nav-pill:hover {
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+.study-q-nav-pill.active {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #1d4ed8;
+}
+
+.study-q-nav-pill.solved:not(.active) {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #065f46;
+}
+
+.study-active-question-banner {
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+  border: 2px solid #3b82f6;
+  border-right: 6px solid #2563eb;
+  border-radius: var(--radius-sm);
+  padding: 1.2rem 1.35rem;
+}
+
+.study-active-q-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 0.65rem;
+}
+
+.study-active-q-tag {
+  background: #1d4ed8;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.88rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+}
+
+.study-active-q-focus {
+  background: #e0f2fe;
+  color: #0369a1;
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+}
+
+.study-active-q-text {
+  font-size: 1.16rem;
+  font-weight: 700;
+  line-height: 1.7;
+  color: #0f172a;
+}
+
+/* Part 3: Real-Time Socratic Coach Chat */
+.study-socratic-coach-card {
+  background: #ffffff;
+  border: 2px solid #93c5fd;
+  border-radius: var(--radius-md);
+  padding: 1.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.study-coach-header {
+  border-bottom: 1.5px solid #e2e8f0;
+  padding-bottom: 0.85rem;
+}
+
+.study-coach-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #dbeafe;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.65rem;
+  flex-shrink: 0;
+}
+
+.study-coach-title {
+  margin: 0 0 0.2rem 0;
+  font-size: 1.22rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.study-coach-subtitle {
+  margin: 0;
+  font-size: 0.94rem;
+  color: #475569;
+}
+
+.study-coach-messages-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  max-height: 430px;
+  overflow-y: auto;
+  padding: 1rem;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: var(--radius-sm);
+}
+
+.study-chat-bubble-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.study-chat-bubble-row.user-row {
+  flex-direction: row-reverse;
+}
+
+.study-chat-avatar-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.study-chat-bubble {
+  max-width: 82%;
+  padding: 0.85rem 1.1rem;
+  border-radius: 14px;
+  line-height: 1.6;
+  font-size: 1.02rem;
+}
+
+.study-chat-bubble.coach-bubble {
+  background: #ffffff;
+  border: 1.5px solid #bfdbfe;
+  color: #0f172a;
+}
+
+.study-chat-bubble.coach-bubble.solved-coach-bubble {
+  background: #f0fdf4;
+  border-color: #4ade80;
+}
+
+.study-chat-bubble.user-bubble {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.study-chat-sender-name {
+  font-size: 0.8rem;
+  font-weight: 800;
+  margin-bottom: 0.25rem;
+  opacity: 0.85;
+}
+
+.study-coach-typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 0.95rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-sm);
+  color: #1e40af;
+  font-weight: 700;
+  font-size: 0.94rem;
+}
+
+.study-question-solved-action-box {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 2px solid #10b981;
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.25rem;
+}
+
+.study-solved-celebration-text {
+  font-size: 1.04rem;
+  color: #065f46;
+}
+
+.study-next-question-btn {
+  background: #059669;
+  min-height: 46px;
+  padding: 0.65rem 1.35rem;
+  font-size: 1.02rem;
+}
+
+.study-finish-all-btn {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+  min-height: 48px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1.05rem;
+}
+
+.study-quick-assist-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.study-quick-assist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  border: 1.5px solid #93c5fd;
+  background: #eff6ff;
+  color: #1e40af;
+  font-family: var(--font-family);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.study-quick-assist-chip:hover {
+  background: #dbeafe;
+  border-color: #2563eb;
+  transform: translateY(-1px);
+}
+
+.study-chat-input-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.study-chat-input {
+  flex: 1;
+  border: 2px solid #cbd5e1;
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  font-family: var(--font-family);
+  font-size: 1.02rem;
+  line-height: 1.5;
+  color: #0f172a;
+  resize: vertical;
+}
+
+.study-chat-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.study-chat-send-btn {
+  padding: 0.75rem 1.4rem;
+  font-size: 1.02rem;
+  min-height: 48px;
+  flex-shrink: 0;
+}
+
+
+/* ==========================================================================
+   Track 3: Festive Completion & Summary Exam Ready Celebration Modal
+   ========================================================================== */
+
+.study-exam-celebration-card {
+  max-width: 580px;
+  width: 92%;
+  text-align: center;
+  padding: 2.2rem 1.8rem;
+  border: 3px solid #10b981;
+  background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
+}
+
+.study-celebration-trophy {
+  font-size: 3.4rem;
+  line-height: 1.1;
+  margin-bottom: 0.75rem;
+}
+
+.study-celebration-title {
+  margin: 0 0 0.55rem 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #065f46;
+}
+
+.study-celebration-desc {
+  margin: 0 0 1.25rem 0;
+  font-size: 1.05rem;
+  color: #1e293b;
+}
+
+.study-celebration-exam-box {
+  background: #ffffff;
+  border: 2px solid #f59e0b;
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  text-align: right;
+}
+
+.study-celebration-exam-badge {
+  display: inline-block;
+  background: #fef3c7;
+  color: #b45309;
+  font-weight: 800;
+  font-size: 0.88rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  margin-bottom: 0.5rem;
+}
+
+.study-celebration-exam-name {
+  margin: 0 0 0.45rem 0;
+  font-size: 1.22rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.study-celebration-exam-info {
+  margin: 0;
+  font-size: 0.96rem;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.study-celebration-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.study-go-exam-green-btn {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  font-size: 1.08rem;
+  min-height: 50px;
+  justify-content: center;
+}
+
+.study-stay-tab-btn {
+  justify-content: center;
+  min-height: 44px;
+}

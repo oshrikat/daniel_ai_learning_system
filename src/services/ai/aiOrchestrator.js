@@ -31,7 +31,13 @@ async function callMultiTierAI(prompt, options = {}) {
   );
 
   const errors = [];
-  const hasImages = Array.isArray(options.images) && options.images.length > 0;
+  const normalizedImages = Array.isArray(options.inlineImages) && options.inlineImages.length > 0
+    ? options.inlineImages
+    : (Array.isArray(options.images) ? options.images : []);
+  const hasImages = normalizedImages.length > 0;
+  const enrichedOptions = hasImages
+    ? { ...options, inlineImages: normalizedImages, images: normalizedImages }
+    : options;
 
   // TIER 1 (PRIMARY — Google Gemini First)
   if (geminiKey) {
@@ -52,7 +58,7 @@ async function callMultiTierAI(prompt, options = {}) {
 
     for (const model of geminiModelsToTry) {
       try {
-        const reply = await callGeminiAPI(model, geminiKey, prompt, options);
+        const reply = await callGeminiAPI(model, geminiKey, prompt, enrichedOptions);
         if (appState?.apiConfig) {
           appState.apiConfig.verifiedGeminiModel = model;
         }
@@ -87,7 +93,7 @@ async function callMultiTierAI(prompt, options = {}) {
 
     for (const model of groqModelsToTry) {
       try {
-        const reply = await callGrokAPI(grokKey, prompt, model, options);
+        const reply = await callGrokAPI(grokKey, prompt, model, enrichedOptions);
         if (isGroq && !hasImages && appState?.apiConfig) {
           appState.apiConfig.verifiedGroqModel = model;
         }
@@ -852,16 +858,31 @@ ${exampleText}
 
     const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
     const passed = percentage >= 75;
+    const correctCount = perQuestionResults.filter(r => r.isCorrect).length;
+    const breakdown = perQuestionResults.map((r, idx) => ({
+      ...r,
+      status: r.isCorrect ? 'correct' : (r.score > 0 ? 'partial' : 'incorrect'),
+      earnedPoints: r.score,
+      maxPoints: r.maxPoints,
+      userAnswer: userAnswers && userAnswers[r.questionId] !== undefined ? userAnswers[r.questionId] : userAnswers[idx],
+      correctAnswer: r.correctSolution,
+      explanation: r.feedback
+    }));
     const overallFeedback = passed
       ? `כל הכבוד דניאל! עברת בהצלחה את המבחן המסכם בהנהלת חשבונות בציון ${percentage}! הפגנת שליטה מעולה בחובה וזכות, פקודות יומן וחישובים חשבונאיים 🏆`
       : `קיבלת ציון ${percentage} במבחן המסכם. כל ניסיון מחזק את ההבנה! עבור בנחת על ההסברים של השאלות ונסה שוב כשתרגיש מוכן 💪`;
 
     return {
-      totalScore,
-      maxScore,
+      score: percentage,
       percentage,
+      totalScore,
+      earnedPoints: totalScore,
+      maxScore,
+      totalPoints: maxScore,
+      correctCount,
       passed,
       perQuestionResults,
+      breakdown,
       overallFeedback
     };
   },
@@ -1137,6 +1158,166 @@ ${historyLines ? `היסטוריית שיחה בשאלה זו:\n${historyLines}\
     }
 
     return buildFallbackResult();
+  },
+
+  /**
+   * יצירה אוטומטית של מבחן מסכם מעשי מתוך יחידת שיעורי בית יומית שהושלמה (Step 4 of Milestone 3)
+   * @param {object} dailyCard
+   * @returns {Promise<object>}
+   */
+  async generateHomeworkSummaryExamFromCard(dailyCard = {}) {
+    const cardTitle = String(dailyCard?.title || 'תרגול שיעורי בית יומי').trim();
+    const dateLabel = dailyCard?.dateLabel || new Date().toLocaleDateString('he-IL');
+    const sourceQuestions = Array.isArray(dailyCard?.questions) ? dailyCard.questions : [];
+    const rules = Array.isArray(dailyCard?.introAndRules) ? dailyCard.introAndRules : [];
+
+    const buildFallbackHomeworkQuestions = () => {
+      if (sourceQuestions.length === 0) {
+        return this.getFallbackAccountingExamQuestions().slice(0, 4);
+      }
+      const ptsPerQ = Math.round(100 / Math.max(sourceQuestions.length, 3));
+      const generated = sourceQuestions.map((sq, idx) => {
+        const topic = sq.topic || 'תרגול משיעורי הבית';
+        const concept = sq.coreConcept || 'יישום חובה וזכות וחישוב חשבונאי';
+        if (idx % 3 === 0) {
+          return {
+            id: `hw_ex_q_${idx + 1}`,
+            type: 'multiple_choice',
+            topic,
+            points: ptsPerQ,
+            question: `בהתבסס על "${sq.questionText.slice(0, 110)}" — מהו העיקרון המרכזי הנכון לפתרון שאלה מסוג זה?`,
+            options: [
+              concept,
+              'רישום כל הסכומים בצד זכות בלבד ללא איזון',
+              'התעלמות ממע"מ ומסמכי המקור של העסקה',
+              'רישום העסקה רק בסוף השנה ללא פקודת יומן'
+            ],
+            correctIndex: 0,
+            correctOptionIndex: 0,
+            explanation: `העיקרון המדויק שלמדנו בדף העבודה: ${concept}.`
+          };
+        }
+        if (idx % 3 === 1) {
+          return {
+            id: `hw_ex_q_${idx + 1}`,
+            type: 'calculation',
+            topic,
+            points: ptsPerQ,
+            question: `שאלת תרגול עם נתונים חדשים (${topic}): עסק ביצע עסקה בסך 2,500 ₪ לפני מע"מ (18%). מהו סכום המע"מ בשקלים עבור עסקה זו?`,
+            expectedAnswer: 450,
+            correctAnswer: '450 ₪',
+            explanation: 'חישוב מע"מ 18% על 2,500 ₪: 2,500 כפול 0.18 = 450 ₪.'
+          };
+        }
+        return {
+          id: `hw_ex_q_${idx + 1}`,
+          type: 'open_journal_or_case',
+          topic,
+          points: ptsPerQ,
+          question: `יישום עצמאי (${topic}): בהמשך לשאלה "${sq.questionText.slice(0, 110)}", הסבר במילים שלך או רשום פקודת יומן (חובה / זכות) עבור מקרה דומה בסך 3,000 ₪.`,
+          correctAnswer: concept,
+          rubric: {
+            coreConcept: concept,
+            keywords: ['חובה', 'זכות', '3000', '3,000'],
+            sampleSolution: `יישום מלא לפי הכלל: ${concept} (בסכום 3,000 ₪ בחובה ובזכות).`
+          },
+          explanation: `פתרון מבוסס על העיקרון: ${concept}.`
+        };
+      });
+
+      while (generated.length < 3) {
+        const extra = this.getFallbackAccountingExamQuestions()[generated.length];
+        if (extra) generated.push({ ...extra, id: `hw_ex_q_${generated.length + 1}` });
+        else break;
+      }
+      return generated;
+    };
+
+    const qSummary = sourceQuestions
+      .map((q, i) => `${i + 1}. ${q.questionText} (עיקרון: ${q.coreConcept || ''})`)
+      .join('\n');
+
+    const prompt = `אתה בוחן פדגוגי מעצים בהנהלת חשבונות עבור דניאל.
+דניאל סיים כעת בהצלחה את דף העבודה היומי: "${cardTitle}".
+השאלות שדניאל פתר בדף העבודה:
+${qSummary}
+כללי האצבע של היחידה:
+${rules.join(' | ')}
+
+צור מבחן מסכם מעשי חדש בעברית הבוחן בדיוק את אותם עקרונות מהיחידה היומית, אך עם מספרים חדשים וניסוח רענן (בין 3 ל-5 שאלות, בשילוב: "multiple_choice", "calculation", "open_journal_or_case").
+החזר אך ורק JSON תקני במבנה:
+{
+  "questions": [
+    {
+      "id": "hw_ex_q_1",
+      "type": "multiple_choice",
+      "topic": "נושא",
+      "points": 25,
+      "question": "נוסח השאלה",
+      "options": ["תשובה נכונה", "מסיח 1", "מסיח 2", "מסיח 3"],
+      "correctIndex": 0,
+      "explanation": "הסבר קצר"
+    }
+  ]
+}`;
+
+    let examQuestions = null;
+    try {
+      const raw = await callMultiTierAI(prompt, { maxTokens: 1800 });
+      const parsed = raw ? this.cleanAndParseJSON(raw) : null;
+      if (parsed && Array.isArray(parsed.questions) && parsed.questions.length >= 2) {
+        const defaultPts = Math.round(100 / parsed.questions.length);
+        examQuestions = parsed.questions.map((q, idx) => ({
+          id: q.id || `hw_ex_q_${idx + 1}`,
+          type: ['multiple_choice', 'calculation', 'open_journal_or_case'].includes(q.type) ? q.type : 'multiple_choice',
+          topic: q.topic || cardTitle,
+          points: Number(q.points) || defaultPts,
+          question: q.question || `שאלה ${idx + 1}`,
+          options: Array.isArray(q.options) ? q.options : ['חובה וזכות מאוזנים', 'רק חובה', 'רק זכות', 'ללא רישום'],
+          correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+          correctOptionIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+          expectedAnswer: q.expectedAnswer !== undefined ? q.expectedAnswer : 360,
+          correctAnswer: q.correctAnswer || (Array.isArray(q.options) ? q.options[q.correctIndex || 0] : String(q.expectedAnswer || '')),
+          rubric: q.rubric || {
+            coreConcept: q.explanation || 'איזון חובה וזכות',
+            keywords: ['חובה', 'זכות'],
+            sampleSolution: q.explanation || 'חובה וזכות מאוזנים'
+          },
+          explanation: q.explanation || ''
+        }));
+      }
+    } catch (e) {
+      console.warn('[generateHomeworkSummaryExamFromCard] Using fallback homework exam generator:', e);
+    }
+
+    if (!examQuestions || examQuestions.length === 0) {
+      examQuestions = buildFallbackHomeworkQuestions();
+    }
+
+    const examObj = {
+      id: (dailyCard && dailyCard.linkedExamId) || `hw_exam_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      title: `מבחן מסכם: ${cardTitle}`,
+      sourceCardId: dailyCard?.id || null,
+      sourceCardTitle: cardTitle,
+      createdAt: new Date().toISOString(),
+      dateLabel,
+      isNew: true,
+      status: 'ready',
+      bestScore: null,
+      attempts: [],
+      userAnswers: {},
+      questions: examQuestions
+    };
+
+    if (typeof saveHomeworkSummaryExam === 'function') {
+      saveHomeworkSummaryExam(examObj);
+    }
+    if (dailyCard && typeof dailyCard === 'object') {
+      dailyCard.linkedExamId = examObj.id;
+      if (typeof saveAppState === 'function') saveAppState();
+    }
+
+    return examObj;
   }
 };
 

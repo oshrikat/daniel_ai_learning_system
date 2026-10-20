@@ -13,13 +13,13 @@ function renderTrackTabs() {
   if (Array.isArray(TRACKS) && !TRACKS.some(t => t.id === 'study_help')) {
     TRACKS.push({
       id: 'study_help',
-      label: 'מסלול 3: עזרה בלימודים 🎓',
+      label: '📚 עזרה בלימודים (תרגול יומי)',
       shortLabel: 'עזרה בלימודים',
-      title: 'עזרה בלימודים',
-      icon: '🎓',
-      description: 'עזרה אישית בשיעורי בית, הסבר מושגים ותרגול מונחה עם מאמן ה-AI',
-      dataVar: null,
-      engine: 'study_help'
+      title: 'עזרה בלימודים (תרגול יומי)',
+      icon: '📚',
+      engine: 'study_help',
+      description: 'העלאת דפי תרגול מהספר או הדבקת שאלות, לימוד מודרך בצ׳אט עם המאמן, ויצירת מבחן מסכם אוטומטי בהנהלת חשבונות',
+      dataVar: null
     });
   }
 
@@ -368,18 +368,23 @@ function renderRoadmap() {
     if (cpBadgeBox) cpBadgeBox.style.display = 'none';
 
     const titleEl = document.querySelector('.roadmap-title');
-    if (titleEl) titleEl.textContent = 'עזרה בלימודים ושיעורי בית עם מאמן ה-AI 🎓';
+    if (titleEl) titleEl.textContent = '📚 עזרה בלימודים (תרגול יומי)';
     const subEl = document.querySelector('.roadmap-subtitle');
-    if (subEl) subEl.textContent = 'העלאת החומר של היום, כללי אצבע בגובה העיניים ותרגול מונחה צעד אחר צעד';
+    if (subEl) subEl.textContent = activeTrack.description || 'העלאת דפי תרגול מהספר או הדבקת שאלות, לימוד מודרך בצ׳אט עם המאמן, ויצירת מבחן מסכם אוטומטי בהנהלת חשבונות';
 
-    const cardsCount = Array.isArray(appState.studyHelp?.dailyCards) ? appState.studyHelp.dailyCards.length : 0;
+    const units = Array.isArray(appState.studyHelpUnits) ? appState.studyHelpUnits : [];
+    const completedCount = units.filter(u => u.completed || u.isCompleted).length;
     const unitsText = document.getElementById('units-stat-text');
-    if (unitsText) unitsText.textContent = `${cardsCount} יחידות יומיות`;
+    if (unitsText) unitsText.textContent = `${completedCount} מתוך ${units.length} יחידות יומיות`;
 
     const bar = document.getElementById('weekly-progress-bar');
-    if (bar) bar.style.width = '100%';
+    if (bar) bar.style.width = units.length > 0 ? `${(completedCount / units.length) * 100}%` : '100%';
 
-    renderStudyHelpWorkspace(container);
+    if (typeof renderStudyHelpRoadmap === 'function') {
+      renderStudyHelpRoadmap(container);
+    } else if (typeof renderStudyHelpWorkspace === 'function') {
+      renderStudyHelpWorkspace(container);
+    }
     return;
   }
 
@@ -628,8 +633,110 @@ function renderRoadmap() {
       return examCard;
     };
 
-    // הצגת כרטיס המבחן המסכם גם בראש המסלול לנראות מיידית
+    // אזור ייעודי: "🏆 מבחנים מסכמים מתרגול שיעורי הבית (נוצרו אוטומטית מהלימוד היומי)"
+    const buildHomeworkSummaryExamsZone = () => {
+      if (!Array.isArray(appState.accountingSummaryExams)) {
+        appState.accountingSummaryExams = [];
+      }
+      const summaryExams = appState.accountingSummaryExams;
+      const completedTrackIds = (appState.trackProgress && Array.isArray(appState.trackProgress.accounting))
+        ? appState.trackProgress.accounting
+        : [];
+
+      const zoneEl = document.createElement('div');
+      zoneEl.id = 'homework-exams-zone';
+      zoneEl.className = 'card homework-exams-zone';
+      zoneEl.innerHTML = `
+        <div class="homework-exams-zone-header">
+          <div style="display:flex; align-items:center; gap:0.65rem;">
+            <span style="font-size:1.85rem; line-height:1;">🏆</span>
+            <div>
+              <h3 class="homework-exams-zone-title">🏆 מבחנים מסכמים מתרגול שיעורי הבית (נוצרו אוטומטית מהלימוד היומי)</h3>
+              <p class="homework-exams-zone-subtitle">
+                כל יחידת תרגול יומית שאתה משלים בטאב "📚 עזרה בלימודים" מייצרת כאן אוטומטית מבחן מסכם מעשי חדש לבדיקת שליטה עצמאית!
+              </p>
+            </div>
+          </div>
+          <span class="badge-tag" style="background:#fef3c7;color:#b45309;font-weight:800;">
+            ${summaryExams.length} מבחנים מסכמים
+          </span>
+        </div>
+
+        <div class="homework-exams-list">
+          ${summaryExams.length === 0 ? `
+            <div class="homework-exams-empty">
+              <span>💡 כאשר תסיים לפתור את כל השאלות ביחידת תרגול יומית תחת טאב <strong>"📚 עזרה בלימודים"</strong>, יופיע כאן אוטומטית מבחן מסכם מעשי חדש על החומר שלמדת!</span>
+            </div>
+          ` : summaryExams.map((exam, eIdx) => {
+            const examId = exam.unit_id || exam.id;
+            const isCompletedExam = Boolean(exam.isCompleted || exam.completed || completedTrackIds.includes(examId));
+            const isNewExam = Boolean(!isCompletedExam && (exam.isNewExam !== false));
+            const dateBadge = exam.createdAtLabel || exam.dateLabel || new Date().toLocaleDateString('he-IL');
+
+            return `
+              <div
+                class="checkpoint-card homework-summary-exam-item ${isNewExam ? 'is-new-card' : ''} ${isCompletedExam ? 'passed' : ''}"
+                data-summary-exam-id="${examId}"
+                style="cursor:pointer;"
+              >
+                <div class="checkpoint-info">
+                  <span style="font-size:2rem; line-height:1;">${isCompletedExam ? '✅' : '🏆'}</span>
+                  <div>
+                    <div class="study-card-badges-row">
+                      <span class="badge-tag">📅 ${dateBadge}</span>
+                      ${isCompletedExam
+                        ? `<span class="badge-completed-card">עבר בהצלחה ✅</span>`
+                        : `<span class="badge-new-card">חדש ✨</span>`
+                      }
+                    </div>
+                    <h4 class="checkpoint-title">${exam.title || `🏆 מבחן מסכם #${eIdx + 1}`}</h4>
+                    <span class="checkpoint-desc">
+                      מבחן מעשי הכולל חישוב נתונים, רישום פקודת יומן, 5 שאלות אמריקאיות ושאלת הבנה פתוחה.
+                    </span>
+                  </div>
+                </div>
+                <div class="day-action-box">
+                  <button type="button" class="primary-btn start-summary-exam-unit-btn" data-summary-exam-id="${examId}">
+                    <span>${isCompletedExam ? 'תרגל מבחן שוב 🔄' : 'התחל מבחן מסכם ▶'}</span>
+                  </button>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+
+      const openExamById = (examId) => {
+        if (!examId) return;
+        const found = summaryExams.find(x => (x.unit_id || x.id) === examId);
+        if (found) {
+          found.isNewExam = false;
+          saveAppState();
+        }
+        appState.activeUnitId = examId;
+        if (typeof showView === 'function') showView('unit');
+        if (typeof renderUnitPlayer === 'function') renderUnitPlayer(examId);
+      };
+
+      zoneEl.querySelectorAll('.homework-summary-exam-item').forEach(cardEl => {
+        const examId = cardEl.getAttribute('data-summary-exam-id');
+        cardEl.onclick = () => openExamById(examId);
+      });
+
+      zoneEl.querySelectorAll('.start-summary-exam-unit-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const examId = btn.getAttribute('data-summary-exam-id');
+          openExamById(examId);
+        };
+      });
+
+      return zoneEl;
+    };
+
+    // הצגת כרטיס המבחן המסכם הכללי + אזור מבחנים מסכמים מתרגול שיעורי הבית בראש המסלול
     container.appendChild(buildAccountingSummaryExamCard());
+    container.appendChild(buildHomeworkSummaryExamsZone());
 
     units.forEach((unit, idx) => {
       if (unit.isCompleted) completedCount++;

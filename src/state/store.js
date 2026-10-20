@@ -78,13 +78,13 @@ const TRACKS = [
   },
   {
     id: 'study_help',
-    label: 'מסלול 3: עזרה בלימודים 🎓',
+    label: '📚 עזרה בלימודים (תרגול יומי)',
     shortLabel: 'עזרה בלימודים',
-    title: 'עזרה בלימודים',
-    icon: '🎓',
-    description: 'עזרה אישית בשיעורי בית, הסבר מושגים ותרגול מונחה עם מאמן ה-AI',
-    dataVar: null,
-    engine: 'study_help'
+    title: 'עזרה בלימודים (תרגול יומי)',
+    icon: '📚',
+    engine: 'study_help',
+    description: 'העלאת דפי תרגול מהספר או הדבקת שאלות, לימוד מודרך בצ׳אט עם המאמן, ויצירת מבחן מסכם אוטומטי בהנהלת חשבונות',
+    dataVar: null
   }
 ];
 
@@ -144,6 +144,8 @@ let appState = {
     accounting: [],
     study_help: []
   },
+  studyHelpUnits: [],
+  accountingSummaryExams: [],
   studyHelp: {
     dailyCards: [],
     activeCardId: null,
@@ -156,7 +158,8 @@ let appState = {
     attempts: [],
     activeExam: null,
     bestScore: 0,
-    lastAttemptAt: null
+    lastAttemptAt: null,
+    homeworkExams: []
   },
   caregiverNotes: [
     {
@@ -253,6 +256,9 @@ function performSmartMergeAndMigration() {
         } else {
           appState.trackProgress = { general: [], accounting: [], study_help: [] };
         }
+        appState.trackProgress.study_help = appState.trackProgress.study_help || [];
+        appState.studyHelpUnits = Array.isArray(parsed.studyHelpUnits) ? parsed.studyHelpUnits : [];
+        appState.accountingSummaryExams = Array.isArray(parsed.accountingSummaryExams) ? parsed.accountingSummaryExams : [];
         if (parsed.studyHelp && typeof parsed.studyHelp === 'object') {
           appState.studyHelp = {
             dailyCards: Array.isArray(parsed.studyHelp.dailyCards) ? parsed.studyHelp.dailyCards : [],
@@ -268,7 +274,8 @@ function performSmartMergeAndMigration() {
             attempts: Array.isArray(parsed.accountingExam.attempts) ? parsed.accountingExam.attempts : [],
             activeExam: parsed.accountingExam.activeExam || null,
             bestScore: Number(parsed.accountingExam.bestScore) || 0,
-            lastAttemptAt: parsed.accountingExam.lastAttemptAt || null
+            lastAttemptAt: parsed.accountingExam.lastAttemptAt || null,
+            homeworkExams: Array.isArray(parsed.accountingExam.homeworkExams) ? parsed.accountingExam.homeworkExams : []
           };
         }
         if (parsed.user) appState.user = parsed.user;
@@ -367,6 +374,10 @@ function performSmartMergeAndMigration() {
         }
       }
     }
+    appState.trackProgress = appState.trackProgress || { general: [], accounting: [], study_help: [] };
+    appState.trackProgress.study_help = appState.trackProgress.study_help || [];
+    appState.studyHelpUnits = Array.isArray(appState.studyHelpUnits) ? appState.studyHelpUnits : [];
+    appState.accountingSummaryExams = Array.isArray(appState.accountingSummaryExams) ? appState.accountingSummaryExams : [];
   } catch (err) {
     console.error('Critical error in smart merge and migration:', err);
   }
@@ -517,6 +528,29 @@ function recordAccountingExamAttempt(completedExam) {
   appState.accountingExam.activeExam = null;
   saveAppState();
   return attemptRecord;
+}
+
+function saveHomeworkSummaryExam(examObj) {
+  if (!appState.accountingExam || typeof appState.accountingExam !== 'object') {
+    appState.accountingExam = { attempts: [], activeExam: null, bestScore: 0, lastAttemptAt: null, homeworkExams: [] };
+  }
+  if (!Array.isArray(appState.accountingExam.homeworkExams)) {
+    appState.accountingExam.homeworkExams = [];
+  }
+  const existingIdx = appState.accountingExam.homeworkExams.findIndex(
+    e => e.id === examObj.id || (examObj.sourceCardId && e.sourceCardId === examObj.sourceCardId)
+  );
+  if (existingIdx >= 0) {
+    appState.accountingExam.homeworkExams[existingIdx] = {
+      ...appState.accountingExam.homeworkExams[existingIdx],
+      ...examObj
+    };
+    saveAppState();
+    return appState.accountingExam.homeworkExams[existingIdx];
+  }
+  appState.accountingExam.homeworkExams.push(examObj);
+  saveAppState();
+  return examObj;
 }
 
 

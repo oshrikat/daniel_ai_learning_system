@@ -12,8 +12,8 @@ import os
 import sys
 
 PORT = 8080
-DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daniel_state.json")
-STATIC_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_FILE = os.path.join(STATIC_DIR, "data", "daniel_state.json")
 
 def load_env_keys():
     env_path = os.path.join(STATIC_DIR, ".env")
@@ -86,6 +86,7 @@ class DanielLearningHandler(http.server.SimpleHTTPRequestHandler):
             body = self.rfile.read(content_length)
             try:
                 data = json.loads(body.decode('utf-8'))
+                os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
                 with open(DATA_FILE, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
                 self.send_response(200)
