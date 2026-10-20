@@ -34,10 +34,13 @@ async function callMultiTierAI(prompt, options = {}) {
   const normalizedImages = Array.isArray(options.inlineImages) && options.inlineImages.length > 0
     ? options.inlineImages
     : (Array.isArray(options.images) ? options.images : []);
-  const hasImages = normalizedImages.length > 0;
-  const enrichedOptions = hasImages
-    ? { ...options, inlineImages: normalizedImages, images: normalizedImages }
-    : options;
+  const hasImages = normalizedImages.length > 0 || Boolean(options.rawPdfPart && options.rawPdfPart.data);
+  const enrichedOptions = {
+    ...options,
+    maxTokens: options.maxTokens || 8192,
+    jsonMode: Boolean(options.jsonMode),
+    ...(hasImages ? { inlineImages: normalizedImages, images: normalizedImages } : {})
+  };
 
   // TIER 1 (PRIMARY — Google Gemini First)
   if (geminiKey) {
@@ -414,16 +417,22 @@ const AIService = {
   },
 
   cleanAndParseJSON(text) {
+    if (!text || typeof text !== 'string') return null;
     try {
-      let clean = text.trim();
+      let clean = stripThinkTags(text).trim();
       if (clean.includes('```')) {
-        clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
+        clean = clean.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
       }
       const start = clean.indexOf('{');
       const end = clean.lastIndexOf('}');
       if (start !== -1 && end !== -1 && end > start) {
         clean = clean.substring(start, end + 1);
-        return JSON.parse(clean);
+        try {
+          return JSON.parse(clean);
+        } catch (innerErr) {
+          const sanitized = clean.replace(/,\s*([}\]])/g, '$1');
+          return JSON.parse(sanitized);
+        }
       }
     } catch (e) {
       console.warn('JSON parse error:', e);

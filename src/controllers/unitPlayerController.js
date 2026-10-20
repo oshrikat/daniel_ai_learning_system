@@ -1257,9 +1257,6 @@ function renderDailyStudyCardView(card) {
             <span style="font-size:1.5rem;">🧭</span>
             <h3 class="daily-rules-title">הקדמה וכללי אצבע לחומר של היום</h3>
           </div>
-          <button type="button" id="daily-rules-tts-btn" class="study-tts-msg-btn" title="הקרא כללי אצבע">
-            🔊 הקרא כללים
-          </button>
         </div>
         <ul class="daily-rules-list">
           ${rules.map(rule => `<li class="daily-rule-item">✨ ${rule}</li>`).join('')}
@@ -1305,9 +1302,6 @@ function renderDailyStudyCardView(card) {
           </div>
           <div class="daily-current-q-text-row">
             <h4 class="daily-current-q-text" id="daily-current-q-text">${currentQ.questionText}</h4>
-            <button type="button" id="daily-current-q-tts-btn" class="study-tts-msg-btn" title="הקרא שאלה">
-              🔊 הקרא שאלה
-            </button>
           </div>
         </div>
 
@@ -1327,11 +1321,6 @@ function renderDailyStudyCardView(card) {
             <div class="study-msg-bubble ${msg.role === 'user' ? 'user-msg' : 'assistant-msg'}" data-chat-idx="${mIdx}">
               <div class="study-msg-header">
                 <span class="study-msg-author">${msg.role === 'user' ? '👤 דניאל' : '🤖 המאמן הסוקרטי'}</span>
-                ${msg.role !== 'user' ? `
-                  <button type="button" class="study-tts-msg-btn daily-chat-tts-btn" data-chat-tts-idx="${mIdx}">
-                    🔊 הקרא
-                  </button>
-                ` : ''}
               </div>
               <div class="study-msg-content">${typeof formatStudyMessageHtml === 'function' ? formatStudyMessageHtml(msg.text) : msg.text}</div>
             </div>
