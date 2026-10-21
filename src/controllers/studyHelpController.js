@@ -54,6 +54,193 @@ function getTodayHebrewDateLabel(dateObj = new Date()) {
 }
 
 /**
+ * Ensures `appState.studyHelpStats` is initialized, updates `streakDays` automatically
+ * whenever Daniel studies on a new day, and syncs `lessonsCompleted`.
+ * @returns {{ streakDays: number, lastStudyDate: string, totalStars: number, lessonsCompleted: number }}
+ */
+function ensureStudyHelpStats() {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  if (!appState.studyHelpStats || typeof appState.studyHelpStats !== 'object') {
+    appState.studyHelpStats = {
+      streakDays: 1,
+      lastStudyDate: todayIso,
+      totalStars: 0,
+      lessonsCompleted: 0
+    };
+  }
+
+  const lastDate = String(appState.studyHelpStats.lastStudyDate || '');
+  if (lastDate && lastDate !== todayIso) {
+    const prev = new Date(lastDate + 'T00:00:00');
+    const curr = new Date(todayIso + 'T00:00:00');
+    const diffDays = Math.round((curr - prev) / (1000 * 60 * 60 * 24));
+    if (diffDays === 1) {
+      appState.studyHelpStats.streakDays = (Number(appState.studyHelpStats.streakDays) || 1) + 1;
+    } else if (diffDays > 1) {
+      appState.studyHelpStats.streakDays = Math.max(1, Number(appState.studyHelpStats.streakDays) || 1);
+    }
+    appState.studyHelpStats.lastStudyDate = todayIso;
+    saveAppState();
+  } else if (!lastDate) {
+    appState.studyHelpStats.lastStudyDate = todayIso;
+  }
+
+  const completedUnitsCount = Array.isArray(appState.studyHelpUnits)
+    ? appState.studyHelpUnits.filter(u => Boolean(u && (u.completed || u.isCompleted))).length
+    : 0;
+  if (completedUnitsCount > (Number(appState.studyHelpStats.lessonsCompleted) || 0)) {
+    appState.studyHelpStats.lessonsCompleted = completedUnitsCount;
+  }
+
+  return appState.studyHelpStats;
+}
+
+/**
+ * Awards Mastery Stars (`+1 ⭐` for Concept, `+2 ⭐` for Question+MFA, `+5 ⭐` for Lesson Completion),
+ * updates `appState.studyHelpStats`, and shows an energizing celebration toast.
+ * @param {number} starsToAdd
+ * @param {string} reasonLabel
+ */
+function awardStudyHelpStars(starsToAdd = 1, reasonLabel = '') {
+  const stats = ensureStudyHelpStats();
+  const added = Math.max(0, Number(starsToAdd) || 0);
+  if (added <= 0) return;
+
+  stats.totalStars = (Number(stats.totalStars) || 0) + added;
+  saveAppState();
+
+  document.querySelectorAll('.js-study-stars-count').forEach(el => {
+    el.textContent = String(stats.totalStars);
+  });
+  document.querySelectorAll('.js-study-lessons-count').forEach(el => {
+    el.textContent = String(stats.lessonsCompleted);
+  });
+  document.querySelectorAll('.js-study-streak-count').forEach(el => {
+    el.textContent = String(stats.streakDays);
+  });
+
+  if (typeof showToast === 'function') {
+    showToast(`⭐ +${added} כוכבי שליטה! ${reasonLabel ? `(${reasonLabel})` : ''} סה"כ: ${stats.totalStars} ⭐`, 'success');
+  }
+}
+
+/**
+ * Builds the motivating Habit & Momentum Bar HTML for the top of the Study Help tab and unit player.
+ * @returns {string}
+ */
+function buildHabitMomentumBarHtml() {
+  const stats = ensureStudyHelpStats();
+  return `
+    <section class="study-habit-momentum-bar" aria-label="מדד התמדה וכוכבי שליטה של דניאל">
+      <div class="study-habit-greeting-row">
+        <span class="study-habit-wave-icon" aria-hidden="true">🌟</span>
+        <p class="study-habit-greeting-text">
+          איזה כיף שחזרת דניאל! כל מושג ושאלה שאתה מפצח היום מקדמים אותך לצבירת כוכבים ולשליטה מלאה בחומר 🌟
+        </p>
+      </div>
+      <div class="study-habit-counters-row">
+        <div class="study-habit-stat-pill streak-pill" title="רצף ימי למידה">
+          <span class="habit-pill-icon">🔥</span>
+          <span>רצף למידה: <strong class="js-study-streak-count">${stats.streakDays}</strong> ימים</span>
+        </div>
+        <div class="study-habit-stat-pill stars-pill" title="כוכבי שליטה שצברת (+1 על מושג, +2 על שאלה, +5 על סיום שיעור)">
+          <span class="habit-pill-icon">⭐</span>
+          <span>כוכבי שליטה: <strong class="js-study-stars-count">${stats.totalStars}</strong></span>
+        </div>
+        <div class="study-habit-stat-pill lessons-pill" title="שיעורים מלאים שהושלמו">
+          <span class="habit-pill-icon">🏆</span>
+          <span>שיעורים שהושלמו: <strong class="js-study-lessons-count">${stats.lessonsCompleted}</strong></span>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+/**
+ * Builds the visual Guiding Stones Timeline HTML inside `openStudyHelpUnit(unitId)` showing:
+ * Each Concept Stone (`💎 מושג 1`...) -> Gate (`🔓`/`🔒`) -> Each Question Stone (`📝 שאלה 1`...) -> Trophy (`🏆 מבחן מסכם`).
+ * @param {object} unit
+ * @param {boolean} isStage1Active
+ * @param {boolean} allConceptsMastered
+ * @returns {string}
+ */
+function buildGuidingStonesTimelineHtml(unit, isStage1Active, allConceptsMastered) {
+  const concepts = Array.isArray(unit.concepts) ? unit.concepts : [];
+  const questions = Array.isArray(unit.questions) ? unit.questions : [];
+  const solvedArr = Array.isArray(unit.solvedQuestions) ? unit.solvedQuestions : [];
+  const allQuestionsSolved = questions.length > 0 && solvedArr.filter(Boolean).length === questions.length;
+  const unitDone = Boolean(unit.completed || unit.isCompleted || allQuestionsSolved);
+
+  const conceptStonesHtml = concepts.map((c, idx) => {
+    const isDone = Boolean(c.mastered);
+    const isCurrent = isStage1Active && unit.currentConceptIdx === idx;
+    return `
+      <button
+        type="button"
+        class="study-timeline-stone concept-stone ${isDone ? 'stone-completed' : ''} ${isCurrent ? 'stone-current' : ''}"
+        data-timeline-concept="${idx}"
+        title="${escapeHtmlAttr(c.term_name || `מושג ${idx + 1}`)}"
+      >
+        <span class="stone-emoji">${isDone ? '✅' : '💎'}</span>
+        <span class="stone-label">מושג ${idx + 1}</span>
+      </button>
+    `;
+  }).join('<span class="study-timeline-connector" aria-hidden="true"></span>');
+
+  const gateStoneHtml = `
+    <span class="study-timeline-connector" aria-hidden="true"></span>
+    <div
+      class="study-timeline-stone gate-stone ${allConceptsMastered ? 'stone-completed' : 'stone-locked'}"
+      title="${allConceptsMastered ? 'שער שלב 2 פתוח!' : 'השלם את המושגים כדי לפתוח את שער השאלות'}"
+    >
+      <span class="stone-emoji">${allConceptsMastered ? '🔓' : '🔒'}</span>
+      <span class="stone-label">שער התרגול</span>
+    </div>
+    <span class="study-timeline-connector" aria-hidden="true"></span>
+  `;
+
+  const questionStonesHtml = questions.map((q, idx) => {
+    const isSolved = Boolean(solvedArr[idx]);
+    const isCurrent = !isStage1Active && unit.currentQuestionIdx === idx;
+    return `
+      <button
+        type="button"
+        class="study-timeline-stone question-stone ${isSolved ? 'stone-completed' : ''} ${isCurrent ? 'stone-current' : ''} ${!allConceptsMastered ? 'stone-locked' : ''}"
+        data-timeline-question="${idx}"
+        ${!allConceptsMastered ? 'disabled' : ''}
+        title="${escapeHtmlAttr(q.question_number_label || `שאלה ${idx + 1}`)}"
+      >
+        <span class="stone-emoji">${isSolved ? '✅' : '📝'}</span>
+        <span class="stone-label">שאלה ${idx + 1}</span>
+      </button>
+    `;
+  }).join('<span class="study-timeline-connector" aria-hidden="true"></span>');
+
+  const trophyStoneHtml = `
+    <span class="study-timeline-connector" aria-hidden="true"></span>
+    <button
+      type="button"
+      class="study-timeline-stone trophy-stone ${unitDone ? 'stone-completed' : 'stone-locked'}"
+      id="btn-timeline-trophy-exam"
+      ${!unitDone ? 'disabled' : ''}
+      title="מבחן מסכם מעשי בחלונית הנהלת חשבונות"
+    >
+      <span class="stone-emoji">🏆</span>
+      <span class="stone-label">מבחן מסכם</span>
+    </button>
+  `;
+
+  return `
+    <div class="study-guiding-stones-timeline" role="navigation" aria-label="מסלול אבני הדרך בשיעור">
+      ${conceptStonesHtml}
+      ${gateStoneHtml}
+      ${questionStonesHtml}
+      ${trophyStoneHtml}
+    </div>
+  `;
+}
+
+/**
  * Displays the soothing full-screen Calming Async Loading Overlay for Daniel.
  * @param {string} [statusText]
  */
@@ -1005,8 +1192,10 @@ function openStudyHelpUnit(unitId) {
   const isStage1Active = unit.activeStage !== 'stage2' || !allConceptsMastered;
   const hasPageSnapshots = Array.isArray(unit.pageSnapshots) && unit.pageSnapshots.length > 0;
 
-  // Build 2-Stage Journey Bar HTML
+  // Build Habit & Momentum Bar + Visual Guiding Stones Timeline + 2-Stage Journey Bar HTML
   const journeyBarHtml = `
+    ${buildHabitMomentumBarHtml()}
+    ${buildGuidingStonesTimelineHtml(unit, isStage1Active, allConceptsMastered)}
     <nav class="study-journey-bar" aria-label="שלבי הלמידה ביחידה">
       <button
         type="button"
@@ -1016,7 +1205,7 @@ function openStudyHelpUnit(unitId) {
         <span class="journey-stage-icon">${allConceptsMastered ? '✅' : '1️⃣'}</span>
         <div class="journey-stage-info">
           <strong>שלב 1: הכנה לשיעור ופיצוח המושגים (${masteredConceptsCount}/${concepts.length})</strong>
-          <small>הסבר פשוט בגובה העיניים + דוגמה מהספר ווידוא הבנה</small>
+          <small>הסבר פשוט בגובה העיניים + דוגמה מהספר ווידוא הבנה (+1 ⭐ למושג)</small>
         </div>
       </button>
 
@@ -1029,7 +1218,7 @@ function openStudyHelpUnit(unitId) {
         <span class="journey-stage-icon">${!allConceptsMastered ? '🔒' : (solvedQuestionsCount === questions.length && questions.length > 0 ? '🏆' : '2️⃣')}</span>
         <div class="journey-stage-info">
           <strong>שלב 2: פתרון השאלות והטבלאות מהספר (${solvedQuestionsCount}/${questions.length})</strong>
-          <small>${!allConceptsMastered ? 'ייפתח מיד לאחר השלמת המושגים בשלב 1' : 'תרגול מודרך של כל השאלות מתוך דפי השיעור'}</small>
+          <small>${!allConceptsMastered ? 'ייפתח מיד לאחר השלמת המושגים בשלב 1' : 'תרגול מודרך של כל השאלות מתוך דפי השיעור (+2 ⭐ לשאלה)'}</small>
         </div>
       </button>
     </nav>
@@ -1370,7 +1559,12 @@ function openStudyHelpUnit(unitId) {
         if (chosenIdx === activeConcept.mfa_step2_correct_index) {
           activeConcept.check1Passed = true;
           activeConcept.mastered = true;
-          saveAppState();
+          if (!activeConcept.starAwarded) {
+            activeConcept.starAwarded = true;
+            awardStudyHelpStars(1, `פיצוח מושג: ${activeConcept.term_name}`);
+          } else {
+            saveAppState();
+          }
           if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
             SoundService.playSuccessSound();
           }
@@ -2005,11 +2199,25 @@ function openStudyHelpUnit(unitId) {
     currentQ.isCompleted = true;
     unit.solvedQuestions[qIdx] = true;
 
+    if (!currentQ.starAwarded) {
+      currentQ.starAwarded = true;
+      awardStudyHelpStars(2, `פתרון ${currentQ.question_number_label || `שאלה ${qIdx + 1}`} ווידוא הבנה`);
+    }
+
     const updatedSolvedCount = unit.solvedQuestions.filter(Boolean).length;
     const nowAllSolved = questions.length > 0 && updatedSolvedCount === questions.length;
     if (nowAllSolved) {
       unit.completed = true;
       unit.isCompleted = true;
+      if (!unit.bonusStarsAwarded) {
+        unit.bonusStarsAwarded = true;
+        const stats = ensureStudyHelpStats();
+        stats.lessonsCompleted = Math.max(
+          (Number(stats.lessonsCompleted) || 0) + 1,
+          (appState.studyHelpUnits || []).filter(u => Boolean(u && (u.completed || u.isCompleted))).length
+        );
+        awardStudyHelpStars(5, 'סיום יחידת שיעור מלאה 🏆');
+      }
     }
     saveAppState();
 
@@ -2556,6 +2764,44 @@ function bindJourneyBarEvents(blocksWrapper, unit, allConceptsMastered) {
       openStudyHelpUnit(unit.id);
     };
   }
+
+  // Bind Guiding Stones Timeline clicks
+  blocksWrapper.querySelectorAll('[data-timeline-concept]').forEach(stoneBtn => {
+    stoneBtn.onclick = () => {
+      const targetIdx = Number(stoneBtn.getAttribute('data-timeline-concept'));
+      if (!isNaN(targetIdx) && Array.isArray(unit.concepts) && targetIdx >= 0 && targetIdx < unit.concepts.length) {
+        unit.activeStage = 'stage1';
+        unit.currentConceptIdx = targetIdx;
+        saveAppState();
+        openStudyHelpUnit(unit.id);
+      }
+    };
+  });
+
+  blocksWrapper.querySelectorAll('[data-timeline-question]').forEach(stoneBtn => {
+    stoneBtn.onclick = () => {
+      if (!allConceptsMastered) {
+        if (typeof showToast === 'function') {
+          showToast('נשלים קודם את פיצוח המושגים בשלב 1 כדי לפתוח את אבני השאלות! 🔓', 'warning');
+        }
+        return;
+      }
+      const targetIdx = Number(stoneBtn.getAttribute('data-timeline-question'));
+      if (!isNaN(targetIdx) && Array.isArray(unit.questions) && targetIdx >= 0 && targetIdx < unit.questions.length) {
+        unit.activeStage = 'stage2';
+        unit.currentQuestionIdx = targetIdx;
+        saveAppState();
+        openStudyHelpUnit(unit.id);
+      }
+    };
+  });
+
+  const trophyBtn = blocksWrapper.querySelector('#btn-timeline-trophy-exam');
+  if (trophyBtn) {
+    trophyBtn.onclick = async () => {
+      await completeStudyHelpUnitAndGenerateExam(unit);
+    };
+  }
 }
 
 /**
@@ -2593,6 +2839,8 @@ function renderStudyHelpRoadmap(container) {
 
   target.innerHTML = `
     <div class="study-help-roadmap-wrapper" dir="rtl">
+      ${buildHabitMomentumBarHtml()}
+
       <!-- כרטיס מרכזי עליון: העלאת החומר של היום -->
       <section class="card study-upload-hub-card" aria-label="העלאת החומר של היום">
         <div class="study-upload-hub-top">
@@ -3063,6 +3311,15 @@ async function completeStudyHelpUnitAndGenerateExam(unit) {
 
   unit.completed = true;
   unit.isCompleted = true;
+  if (!unit.bonusStarsAwarded) {
+    unit.bonusStarsAwarded = true;
+    const stats = ensureStudyHelpStats();
+    stats.lessonsCompleted = Math.max(
+      (Number(stats.lessonsCompleted) || 0) + 1,
+      (appState.studyHelpUnits || []).filter(u => Boolean(u && (u.completed || u.isCompleted))).length
+    );
+    awardStudyHelpStars(5, 'סיום יחידת שיעור מלאה 🏆');
+  }
   if (!appState.trackProgress || typeof appState.trackProgress !== 'object') {
     appState.trackProgress = { general: [], accounting: [], study_help: [] };
   }
@@ -3095,20 +3352,34 @@ async function completeStudyHelpUnitAndGenerateExam(unit) {
 
   const examUnitId = 'acc_exam_' + Date.now();
   const dateLabel = unit.createdAtLabel || unit.dateLabel || getTodayHebrewDateLabel();
+
+  const practicedConceptsSummary = (unit.concepts || [])
+    .map((c, idx) => `מושג ${idx + 1} (עמוד ${c.page_number || 1}): "${c.term_name}" — הסבר: ${c.simple_explanation} | דוגמה מהספר: ${c.textbook_example || ''}`)
+    .join('\n');
+
   const practicedQuestionsSummary = (unit.questions || [])
-    .map((q, idx) => `שאלה ${idx + 1}: ${q.exact_book_text || q.original_question || q.questionText || ''} (פתרון: ${q.expected_answer_summary || ''})`)
+    .map((q, idx) => {
+      const tableRowsStr = (q.table_schema && Array.isArray(q.table_schema.expected_rows) && q.table_schema.expected_rows.length > 0)
+        ? ` | מבנה טבלה (${(q.table_schema.columns || []).join(' / ')}): ` +
+          q.table_schema.expected_rows.map(r => `[חובה: ${r.debit || 0}, זכות: ${r.credit || 0}, פרטים: ${r.details || ''}]`).join(', ')
+        : '';
+      return `שאלה ${idx + 1} (עמוד ${q.page_number || 1}): ${q.exact_book_text || q.original_question || q.questionText || ''} | פתרון מצופה: ${q.notebook_copy_summary || q.expected_answer_summary || ''}${tableRowsStr}`;
+    })
     .join('\n');
 
   const systemInstruction = `אתה מומחה לפיתוח מבחנים מעשיים בהנהלת חשבונות עבור דניאל.
 עליך לייצר יחידת מבחן מסכם מעשית בפורמט Dynamic Block Engine (JSON תקני בלבד בעברית, ללא טקסט חופשי מחוץ ל-JSON).`;
 
   const prompt = `דניאל סיים בהצלחה את יחידת התרגול היומית: "${unit.lesson_title || unit.title}".
-סיכום הנושא: ${unit.pages_summary || unit.topic_summary || unit.introText || ''}
-המושגים שנלמדו: ${(unit.concepts || []).map(c => `${c.term_name}: ${c.simple_explanation}`).join(' | ')}
-השאלות שדניאל פתר היום:
+סיכום הנושא והעמודים: ${unit.pages_summary || unit.topic_summary || unit.introText || ''}
+
+המושגים ודוגמאות הספר שנלמדו בשלב 1:
+${practicedConceptsSummary}
+
+השאלות, הטבלאות והמספרים שדניאל פתר בשלב 2:
 ${practicedQuestionsSummary}
 
-צור מבחן מסכם מעשי חדש הבוחן בדיוק את אותם עקרונות חשבונאיים עם **מספרים חדשים, תרחישים עסקיים חדשים ושאלות הבנה חדשות**.
+צור מבחן מסכם מעשי חדש הבוחן בדיוק את אותם מושגים, כללים ומבני טבלאות מתוך השיעור הזה עם **מספרים חדשים, תרחישים עסקיים חדשים ושאלות הבנה חדשות**.
 החזר אובייקט JSON תקני בלבד עם מערך "blocks" הכולל בדיוק את הבלוקים הבאים:
 1. בלוק "text" ("style": "lead", "content": "פתיחה מעודדת למבחן המסכם")
 2. בלוק "callout" ("style": "rule", "title": "...", "text": "תזכורת לכלל החשבונאי המרכזי")

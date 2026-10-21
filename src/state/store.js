@@ -146,6 +146,12 @@ let appState = {
   },
   studyHelpUnits: [],
   accountingSummaryExams: [],
+  studyHelpStats: {
+    streakDays: 1,
+    lastStudyDate: new Date().toISOString().slice(0, 10),
+    totalStars: 0,
+    lessonsCompleted: 0
+  },
   studyHelp: {
     dailyCards: [],
     activeCardId: null,
@@ -259,6 +265,21 @@ function performSmartMergeAndMigration() {
         appState.trackProgress.study_help = appState.trackProgress.study_help || [];
         appState.studyHelpUnits = Array.isArray(parsed.studyHelpUnits) ? parsed.studyHelpUnits : [];
         appState.accountingSummaryExams = Array.isArray(parsed.accountingSummaryExams) ? parsed.accountingSummaryExams : [];
+        if (parsed.studyHelpStats && typeof parsed.studyHelpStats === 'object') {
+          appState.studyHelpStats = {
+            streakDays: Math.max(1, Number(parsed.studyHelpStats.streakDays) || 1),
+            lastStudyDate: String(parsed.studyHelpStats.lastStudyDate || new Date().toISOString().slice(0, 10)),
+            totalStars: Math.max(0, Number(parsed.studyHelpStats.totalStars) || 0),
+            lessonsCompleted: Math.max(0, Number(parsed.studyHelpStats.lessonsCompleted) || 0)
+          };
+        } else {
+          appState.studyHelpStats = {
+            streakDays: 1,
+            lastStudyDate: new Date().toISOString().slice(0, 10),
+            totalStars: 0,
+            lessonsCompleted: 0
+          };
+        }
         if (parsed.studyHelp && typeof parsed.studyHelp === 'object') {
           appState.studyHelp = {
             dailyCards: Array.isArray(parsed.studyHelp.dailyCards) ? parsed.studyHelp.dailyCards : [],

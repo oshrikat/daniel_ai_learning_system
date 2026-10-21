@@ -2783,3 +2783,156 @@
   accent-color: #10b981;
   cursor: pointer;
 }
+
+
+/* ============================================================================
+   HABIT & MOMENTUM BAR + VISUAL GUIDING STONES TIMELINE
+   ============================================================================ */
+
+.study-habit-momentum-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 16px 22px;
+  margin-bottom: 18px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(59, 130, 246, 0.1), rgba(245, 158, 11, 0.08));
+  border: 2px solid rgba(16, 185, 129, 0.45);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.1);
+}
+
+.study-habit-greeting-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 320px;
+}
+
+.study-habit-wave-icon {
+  font-size: 1.65rem;
+  flex-shrink: 0;
+}
+
+.study-habit-greeting-text {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.study-habit-counters-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.study-habit-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 15px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-color);
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+}
+
+.study-habit-stat-pill.streak-pill {
+  border-color: rgba(249, 115, 22, 0.45);
+}
+
+.study-habit-stat-pill.stars-pill {
+  border-color: rgba(234, 179, 8, 0.55);
+}
+
+.study-habit-stat-pill.lessons-pill {
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.habit-pill-icon {
+  font-size: 1.15rem;
+}
+
+/* Visual Guiding Stones Timeline */
+.study-guiding-stones-timeline {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 6px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  border-radius: 16px;
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.04);
+}
+
+.study-timeline-stone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 2px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  flex-shrink: 0;
+}
+
+.study-timeline-stone:hover:not(.stone-locked):not(:disabled) {
+  border-color: var(--accent-primary);
+  transform: translateY(-2px);
+}
+
+.study-timeline-stone.stone-current {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.14);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+@keyframes stoneCompletePop {
+  0% {
+    transform: scale(0.92);
+  }
+  60% {
+    transform: scale(1.07);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.study-timeline-stone.stone-completed {
+  border-color: #10b981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.22), rgba(16, 185, 129, 0.1));
+  color: #059669;
+  font-weight: 800;
+  animation: stoneCompletePop 0.35s ease-out;
+}
+
+.study-timeline-stone.stone-locked {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.study-timeline-connector {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-color);
+  flex-shrink: 0;
+}
