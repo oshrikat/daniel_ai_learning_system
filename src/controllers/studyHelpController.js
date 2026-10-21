@@ -1416,7 +1416,8 @@ function openStudyHelpUnit(unitId) {
   }
 
   // ==========================================================================
-  // STAGE 2: GROUNDED TEXTBOOK QUESTIONS & REAL-TIME SOCRATIC COACH CHAT
+  // STAGE 2: GROUNDED HOMEWORK & TABLE SOLVER (ON-SCREEN + NOTEBOOK SUPPORT,
+  //          SELECT OR FREE WRITE, 2-STEP MFA, & INLINE PAGE SNAPSHOT VIEWER)
   // ==========================================================================
   const currentQ = questions[qIdx] || {
     exact_book_text: 'שאלה לתרגול',
@@ -1424,6 +1425,8 @@ function openStudyHelpUnit(unitId) {
     friendly_translation: 'הנהלת חשבונות',
     page_number: 1
   };
+  ensureQuestionStage2Schema(currentQ, qIdx, unit);
+
   const solvedCount = unit.solvedQuestions.filter(Boolean).length;
   const totalQ = Math.max(1, questions.length);
   const progressPct = Math.round((solvedCount / totalQ) * 100);
@@ -1432,16 +1435,49 @@ function openStudyHelpUnit(unitId) {
   const activeMessages = unit.chatHistory[qIdx] || [];
   const qPageNumber = Number(currentQ.page_number) || 1;
 
+  // Find matching page snapshot (or fallback to first snapshot)
+  const matchingSnapshot = hasPageSnapshots
+    ? (unit.pageSnapshots.find(p => Number(p.pageNumber) === qPageNumber) || unit.pageSnapshots[0])
+    : null;
+  const isInlinePageOpen = Boolean(currentQ.showInlinePageSnapshot);
+
+  // Table schema & rows state
+  const hasTableMode = Boolean(
+    (currentQ.table_schema && currentQ.table_schema.has_table) ||
+    currentQ.question_type === 'journal_table' ||
+    currentQ.question_type === 'general_table' ||
+    currentQ.forceShowTable
+  );
+  const tableColumns = (currentQ.table_schema && Array.isArray(currentQ.table_schema.columns) && currentQ.table_schema.columns.length >= 3)
+    ? currentQ.table_schema.columns
+    : ['חובה (סכום)', 'זכות (סכום)', 'פרטים / שם החשבון'];
+  const accountChoices = currentQ.table_schema && Array.isArray(currentQ.table_schema.account_choices)
+    ? currentQ.table_schema.account_choices
+    : [];
+  const userTableRows = Array.isArray(currentQ.userTableRows) ? currentQ.userTableRows : [];
+  const expectedRows = (currentQ.table_schema && Array.isArray(currentQ.table_schema.expected_rows))
+    ? currentQ.table_schema.expected_rows
+    : [];
+
+  const step1Done = Boolean(currentQ.step1Solved || isCurrentSolved);
+  const mfaConfirmed = Boolean(currentQ.mfaConfirmed || isCurrentSolved);
+  const hasMfaVerification = Boolean(
+    currentQ.mfa_verification &&
+    currentQ.mfa_verification.question &&
+    Array.isArray(currentQ.mfa_verification.options) &&
+    currentQ.mfa_verification.options.length >= 2
+  );
+
   blocksWrapper.innerHTML = `
     <div class="study-unit-player-container" dir="rtl">
       ${journeyBarHtml}
 
-      <!-- סרגל התקדמות שאלות וכרטיס השאלה הפעילה מהספר -->
+      <!-- סרגל התקדמות שאלות וכפתורי בחירת שאלה (שאלה אחת בכל פעם) -->
       <section class="card study-question-progress-card" aria-label="התקדמות בשאלות התרגול">
         <div class="study-q-progress-top">
           <div class="study-q-progress-headline">
-            <span class="study-q-counter-badge">שאלה ${qIdx + 1} מתוך ${questions.length} בדף התרגול של היום</span>
-            <span class="study-q-solved-counter">${solvedCount} מתוך ${questions.length} נפתרו ✅</span>
+            <span class="study-q-counter-badge">שאלה ${qIdx + 1} מתוך ${questions.length} בשיעור</span>
+            <span class="study-q-solved-counter">${solvedCount} מתוך ${questions.length} שאלות הושלמו ✅</span>
           </div>
           <div class="study-q-progress-bar-track">
             <div class="study-q-progress-bar-fill" style="width:${progressPct}%;"></div>
@@ -1449,7 +1485,7 @@ function openStudyHelpUnit(unitId) {
         </div>
 
         <!-- כפתורי ניווט בין שאלות -->
-        <div class="study-q-nav-pills" role="tablist" aria-label="בחירת שאלה בדף">
+        <div class="study-q-nav-pills" role="tablist" aria-label="בחירת שאלה בשיעור">
           ${questions.map((qItem, idx) => {
             const solved = Boolean(unit.solvedQuestions[idx]);
             const isActive = idx === qIdx;
@@ -1468,39 +1504,358 @@ function openStudyHelpUnit(unitId) {
           }).join('')}
         </div>
 
-        <!-- באנר השאלה הפעילה בקונטרסט גבוה (הטקסט המדויק מהספר + תרגום מונגש) -->
-        <div class="study-active-question-banner">
-          <div class="study-active-q-meta" style="justify-content:space-between;">
-            <div style="display:flex; align-items:center; gap:0.55rem; flex-wrap:wrap;">
-              <span class="study-active-q-tag">📌 ${currentQ.question_number_label || `שאלה ${qIdx + 1}`} (עמוד ${qPageNumber})</span>
-              ${isCurrentSolved ? `<span class="badge-completed-card">שאלה זו נפתרה בהצלחה ✅</span>` : ''}
-            </div>
+        <!-- 1. כותרת מיקום מעוגנת בספר + כפתור הצגה/הסתרה של צילום העמוד -->
+        <div class="study-grounded-location-banner">
+          <div class="study-grounded-location-text">
+            <span class="study-location-pin-badge">📍 דניאל, תסתכל בעמוד ${qPageNumber} בקובץ השיעור • ${currentQ.question_number_label || ('שאלה ' + (qIdx + 1))}</span>
+            ${isCurrentSolved ? `<span class="badge-completed-card">הושלם ב-100% ✅</span>` : ''}
+          </div>
+          <div class="study-grounded-location-actions">
             ${hasPageSnapshots ? `
-              <button type="button" id="btn-view-question-page" class="secondary-btn study-view-page-btn" data-page-num="${qPageNumber}">
-                <span>👁️ הצג את עמוד ${qPageNumber} מהקובץ</span>
+              <button
+                type="button"
+                id="btn-toggle-inline-page-snapshot"
+                class="secondary-btn study-view-page-btn ${isInlinePageOpen ? 'active-toggle' : ''}"
+              >
+                <span>👁️ הצג / הסתר את צילום עמוד ${qPageNumber} מהספר</span>
+              </button>
+              <button
+                type="button"
+                id="btn-zoom-page-modal"
+                class="secondary-btn study-view-page-btn"
+                title="פתח בהגדלה מלאה"
+              >
+                <span>🔍 הגדל עמוד</span>
               </button>
             ` : ''}
           </div>
-          <div class="study-active-q-text">
-            ${formatCoachChatHtml(currentQ.exact_book_text || currentQ.original_question || currentQ.questionText || '')}
-          </div>
-          ${currentQ.friendly_translation ? `
-            <div class="study-friendly-translation-box">
-              <strong>🧭 במילים פשוטות (מה מבקשים מאיתנו כאן?):</strong>
-              <p style="margin:0.25rem 0 0 0;">${formatCoachChatHtml(currentQ.friendly_translation)}</p>
+        </div>
+
+        <!-- חלונית צילום העמוד מתוך הספר (Inline Page Snapshot Viewer) -->
+        ${hasPageSnapshots && matchingSnapshot ? `
+          <div
+            id="study-inline-page-snapshot-drawer"
+            class="study-inline-page-snapshot-drawer"
+            style="display:${isInlinePageOpen ? 'block' : 'none'};"
+          >
+            <div class="study-inline-snapshot-toolbar">
+              <span>📄 צילום עמוד ${matchingSnapshot.pageNumber} מתוך קובץ השיעור (לחץ על התמונה להגדלה מלאה)</span>
+              ${unit.pageSnapshots.length > 1 ? `
+                <div class="study-inline-snapshot-page-pills">
+                  ${unit.pageSnapshots.map(snap => `
+                    <button
+                      type="button"
+                      class="study-inline-page-pill ${Number(snap.pageNumber) === Number(matchingSnapshot.pageNumber) ? 'active' : ''}"
+                      data-inline-page="${snap.pageNumber}"
+                    >
+                      עמוד ${snap.pageNumber}
+                    </button>
+                  `).join('')}
+                </div>
+              ` : ''}
             </div>
-          ` : ''}
+            <div class="study-inline-snapshot-img-wrap" id="study-inline-snapshot-zoom-trigger">
+              <img
+                id="study-inline-snapshot-img"
+                src="${matchingSnapshot.dataUrl}"
+                alt="צילום עמוד ${matchingSnapshot.pageNumber} מתוך קובץ השיעור"
+                class="study-inline-snapshot-img"
+              />
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- 2. תצוגה כפולה של השאלה: קופסה 1 (מה כתוב בספר) + קופסה 2 (תרגום פשוט וצעדים לדניאל) -->
+        <div class="study-dual-question-grid">
+          <!-- Box 1: מה כתוב בספר -->
+          <div class="study-book-quote-box">
+            <div class="study-dual-box-header book-header">
+              <span>📖 מה כתוב בספר (בעמוד ${qPageNumber}):</span>
+            </div>
+            <div class="study-book-exact-text">
+              ${formatCoachChatHtml(currentQ.exact_book_text || currentQ.original_question || currentQ.questionText || '')}
+            </div>
+          </div>
+
+          <!-- Box 2: תרגום פשוט לדניאל – מה עושים כאן צעד אחר צעד? -->
+          <div class="study-daniel-translation-box">
+            <div class="study-dual-box-header translation-header">
+              <span>🎯 תרגום פשוט לדניאל – מה עושים כאן צעד אחר צעד?</span>
+            </div>
+            <p class="study-daniel-friendly-text">
+              ${formatCoachChatHtml(currentQ.friendly_translation || '')}
+            </p>
+            ${Array.isArray(currentQ.step_by_step_guide) && currentQ.step_by_step_guide.length > 0 ? `
+              <ol class="study-guiding-stones-list">
+                ${currentQ.step_by_step_guide.map((stepStr, sIdx) => `
+                  <li class="study-guiding-stone-item">
+                    <span class="stone-num">${sIdx + 1}</span>
+                    <span class="stone-text">${formatCoachChatHtml(stepStr)}</span>
+                  </li>
+                `).join('')}
+              </ol>
+            ` : ''}
+          </div>
         </div>
       </section>
 
-      <!-- צ'אט ליווי אישי בזמן אמת (Socratic Coach Chat) -->
-      <section class="card study-socratic-coach-card" aria-label="צ'אט ליווי אישי בזמן אמת">
+      <!-- 3. סביבת פתרון רב-ערוצית גמישה (על המסך + תמיכה במחברת) -->
+      <section class="card study-multi-solver-workspace" aria-label="סביבת פתרון השאלה">
+        <div class="study-workspace-header">
+          <div>
+            <h3 class="study-workspace-title">🛠️ איך נוח לך לפתור את ${currentQ.question_number_label || `שאלה ${qIdx + 1}`}?</h3>
+            <p class="study-workspace-subtitle">אפשר למלא את הטבלה על המסך, לבחור מתוך האפשרויות המוכנות, או לכתוב חופשי למאמן בצ'אט — הכל נשמר ומתורגם בסוף לסיכום מסודר להעתקה למחברת!</p>
+          </div>
+          ${!hasTableMode ? `
+            <button type="button" id="btn-enable-table-mode" class="secondary-btn study-view-page-btn">
+              <span>📊 פתח טבלת חובה/זכות על המסך</span>
+            </button>
+          ` : ''}
+        </div>
+
+        <!-- Mode A: Interactive On-Screen Table (journal_table / general_table) -->
+        ${hasTableMode ? `
+          <div class="study-interactive-table-card" id="study-interactive-table-section">
+            <div class="study-solver-mode-badge mode-a-badge">
+              <span>📊 אפשרות א׳: מילוי טבלה אינטראקטיבית על המסך (בחירה מרשימה או הקלדה חופשית)</span>
+            </div>
+            <p class="study-solver-helper-note">
+              בחר את שם החשבון מהרשימה הנפתחת (או הקלד חופשי בתיבה) והזן את הסכומים בעמודת חובה או זכות:
+            </p>
+
+            <div class="study-table-responsive-wrap">
+              <table class="study-interactive-journal-table" aria-label="טבלת פתרון אינטראקטיבית">
+                <thead>
+                  <tr>
+                    <th style="width:48px;">#</th>
+                    <th>${tableColumns[0] || 'חובה (סכום)'}</th>
+                    <th>${tableColumns[1] || 'זכות (סכום)'}</th>
+                    <th>${tableColumns[2] || 'פרטים / שם החשבון'}</th>
+                  </tr>
+                </thead>
+                <tbody id="study-interactive-table-tbody">
+                  ${userTableRows.map((row, rIdx) => `
+                    <tr data-row-idx="${rIdx}">
+                      <td class="row-index-cell">${rIdx + 1}</td>
+                      <td>
+                        <input
+                          type="text"
+                          inputmode="decimal"
+                          class="styled-input study-table-amount-input debit-input"
+                          data-row="${rIdx}"
+                          data-field="debit"
+                          placeholder="סכום חובה..."
+                          value="${escapeHtmlAttr(row.debit || '')}"
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          inputmode="decimal"
+                          class="styled-input study-table-amount-input credit-input"
+                          data-row="${rIdx}"
+                          data-field="credit"
+                          placeholder="סכום זכות..."
+                          value="${escapeHtmlAttr(row.credit || '')}"
+                        />
+                      </td>
+                      <td>
+                        <div class="study-table-details-combo">
+                          <select
+                            class="styled-input study-table-account-select"
+                            data-row="${rIdx}"
+                            aria-label="בחירת חשבון מרשימה לשורה ${rIdx + 1}"
+                          >
+                            <option value="">-- בחר חשבון מהרשימה או הקלד משמאל --</option>
+                            ${accountChoices.map(acc => `
+                              <option value="${escapeHtmlAttr(acc)}" ${row.details === acc ? 'selected' : ''}>${acc}</option>
+                            `).join('')}
+                          </select>
+                          <input
+                            type="text"
+                            class="styled-input study-table-details-input"
+                            data-row="${rIdx}"
+                            data-field="details"
+                            placeholder="או הקלד שם חשבון / פרטים..."
+                            value="${escapeHtmlAttr(row.details || '')}"
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+                <tfoot>
+                  <tr class="study-table-totals-row">
+                    <td>סה"כ</td>
+                    <td id="study-table-total-debit">0</td>
+                    <td id="study-table-total-credit">0</td>
+                    <td id="study-table-balance-status">⚖️ הזן סכומים לבדיקת איזון</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div class="study-table-actions-bar">
+              <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <button type="button" id="btn-add-table-row" class="secondary-btn">
+                  <span>➕ הוסף שורה לטבלה</span>
+                </button>
+                <button type="button" id="btn-clear-table-rows" class="secondary-btn">
+                  <span>🔄 נקה טבלה</span>
+                </button>
+              </div>
+              <button type="button" id="btn-check-interactive-table" class="primary-btn study-check-table-btn">
+                <span>✅ בדוק את הטבלה שמילאתי</span>
+              </button>
+            </div>
+
+            <div id="study-table-feedback-box" class="study-mfa-feedback" style="display:none;"></div>
+          </div>
+        ` : ''}
+
+        <!-- Mode B: Guided Option Selection (בחירה מתוך אפשרויות ברורות) -->
+        ${Array.isArray(currentQ.guided_options) && currentQ.guided_options.length >= 2 ? `
+          <div class="study-guided-options-card" id="study-guided-options-section">
+            <div class="study-solver-mode-badge mode-b-badge">
+              <span>🎯 ${hasTableMode ? 'אפשרות ב׳: קשה לנסח לבד? בחר את הפתרון הנכון מתוך האפשרויות' : 'אפשרות א׳: בחירה נוחה מתוך אפשרויות ברורות'}</span>
+            </div>
+            <div class="study-guided-options-grid">
+              ${currentQ.guided_options.map((optText, oIdx) => {
+                const isCorrectOpt = oIdx === Number(currentQ.correct_option_index || 0);
+                return `
+                  <button
+                    type="button"
+                    class="study-guided-option-card-btn ${step1Done && isCorrectOpt ? 'correct-selected' : ''}"
+                    data-guided-opt-idx="${oIdx}"
+                  >
+                    <span class="guided-opt-letter">${idxToHebrewLetter(oIdx)}</span>
+                    <span class="guided-opt-text">${formatCoachChatHtml(optText)}</span>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+            <div id="study-guided-options-feedback" class="study-mfa-feedback" style="display:${step1Done ? 'block' : 'none'};">
+              ${step1Done ? '✅ בחירה מדויקת דניאל! זיהית את הפתרון הנכון.' : ''}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- 4. Step 2: Gentle Two-Step Verification ("MFA for Understanding") -->
+        ${hasMfaVerification ? `
+          <div
+            id="study-q-mfa-verification-card"
+            class="study-q-mfa-verification-card ${mfaConfirmed ? 'mfa-confirmed' : ''}"
+            style="display:${step1Done ? 'block' : 'none'};"
+          >
+            <div class="study-q-mfa-header">
+              <span class="study-q-mfa-icon">🌟</span>
+              <div>
+                <h4 class="study-q-mfa-title">
+                  מצוין דניאל! הצעד הראשון נכון! רק וידוא קטן של 10 שניות כדי שנהיה בטוחים ב-100%:
+                </h4>
+                <p class="study-q-mfa-question">${formatCoachChatHtml(currentQ.mfa_verification.question)}</p>
+              </div>
+            </div>
+            <div class="study-mfa-options-list">
+              ${currentQ.mfa_verification.options.map((mfaOpt, mIdx) => {
+                const isCorrectMfa = mIdx === Number(currentQ.mfa_verification.correct_index || 0);
+                return `
+                  <button
+                    type="button"
+                    class="study-mfa-option-btn q-mfa-opt-btn ${mfaConfirmed && isCorrectMfa ? 'correct-selected' : ''}"
+                    data-q-mfa-idx="${mIdx}"
+                  >
+                    <span class="opt-letter">${idxToHebrewLetter(mIdx)}.</span>
+                    <span>${formatCoachChatHtml(mfaOpt)}</span>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+            <div id="study-q-mfa-feedback" class="study-mfa-feedback ${mfaConfirmed ? 'success' : ''}" style="display:${mfaConfirmed ? 'block' : 'none'};">
+              ${mfaConfirmed ? '🎯 אלוף! הוכחת הבנה מלאה של השאלה ב-100%. הפתרון המלא מוכן עבורך למטה להעתקה למחברת!' : ''}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- 5. "✍️ מוכן להעתקה למחברת / לדף העבודה שלך" Card (נפתח מיד עם אישור ה-MFA) -->
+        <div
+          id="study-notebook-copy-card"
+          class="study-notebook-copy-card"
+          style="display:${isCurrentSolved ? 'block' : 'none'};"
+        >
+          <div class="study-notebook-copy-header">
+            <div>
+              <span class="study-notebook-badge">✍️ מוכן להעתקה למחברת / לדף העבודה שלך</span>
+              <h4 class="study-notebook-title">
+                הפתרון המלא והמסודר עבור עמוד ${qPageNumber} • ${currentQ.question_number_label || `שאלה ${qIdx + 1}`}
+              </h4>
+            </div>
+            <button type="button" id="btn-copy-notebook-text" class="secondary-btn study-copy-btn">
+              <span>📋 העתק טקסט</span>
+            </button>
+          </div>
+
+          <div class="study-notebook-solution-body" id="study-notebook-solution-text">
+            <p class="study-notebook-summary-paragraph">
+              ${formatCoachChatHtml(currentQ.notebook_copy_summary || currentQ.expected_answer_summary || '')}
+            </p>
+            ${expectedRows.length > 0 ? `
+              <div class="study-notebook-clean-table-wrap">
+                <table class="study-notebook-clean-table">
+                  <thead>
+                    <tr>
+                      <th>${tableColumns[0] || 'חובה (סכום)'}</th>
+                      <th>${tableColumns[1] || 'זכות (סכום)'}</th>
+                      <th>${tableColumns[2] || 'פרטים / שם החשבון'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${expectedRows.map(r => `
+                      <tr>
+                        <td class="num-cell">${r.debit || '—'}</td>
+                        <td class="num-cell">${r.credit || '—'}</td>
+                        <td class="details-cell"><strong>${r.details || ''}</strong></td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="study-notebook-footer-bar">
+            <label class="study-notebook-checkbox-label">
+              <input
+                type="checkbox"
+                id="chk-copied-to-notebook"
+                ${currentQ.copiedToNotebook ? 'checked' : ''}
+              />
+              <span>☑️ העתקתי למחברת שלי בעמוד ${qPageNumber} שאלה ${qIdx + 1}</span>
+            </label>
+
+            <div class="study-notebook-next-actions">
+              ${allSolved ? `
+                <button type="button" id="btn-finish-daily-unit-exam" class="primary-btn study-finish-all-btn">
+                  <span>🎉 סיימתי את כל יחידת הלימוד של היום! צור לי מבחן מסכם</span>
+                </button>
+              ` : `
+                <button type="button" id="btn-next-study-question" class="primary-btn study-next-question-btn">
+                  <span>המשך לשאלה הבאה בשיעור ▶</span>
+                </button>
+              `}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Mode C: כתיבה חופשית ועזרה בצ'אט עם המאמן האישי (Socratic AI Coach Chat) -->
+      <section class="card study-socratic-coach-card" aria-label="כתיבה חופשית ועזרה בצ'אט">
         <div class="study-coach-header">
           <div style="display:flex; align-items:center; gap:0.75rem;">
             <span class="study-coach-avatar" aria-hidden="true">🤖</span>
             <div>
-              <h3 class="study-coach-title">צ'אט ליווי אישי בזמן אמת — ${currentQ.question_number_label || `שאלה ${qIdx + 1}`}</h3>
-              <p class="study-coach-subtitle">פתור יחד עם המאמן צעד אחר צעד. תמיד אפשר להיעזר בכפתורי ההכוונה המהירים למטה!</p>
+              <h3 class="study-coach-title">💬 כתיבה חופשית ועזרה בצ'אט — ${currentQ.question_number_label || `שאלה ${qIdx + 1}`}</h3>
+              <p class="study-coach-subtitle">מעדיף לכתוב את התשובה במילים שלך או להתייעץ עם המאמן? כתוב כאן למטה או לחץ על אחד מכפתורי העזרה המהירים:</p>
             </div>
           </div>
         </div>
@@ -1526,25 +1881,6 @@ function openStudyHelpUnit(unitId) {
           <span>המאמן בודק ומנסח תשובה...</span>
         </div>
 
-        <!-- כפתור מעבר לשאלה הבאה או סיום חגיגי של כל היחידה -->
-        <div id="study-question-solved-banner" class="study-question-solved-action-box" style="display:${isCurrentSolved ? 'flex' : 'none'};">
-          ${allSolved ? `
-            <div class="study-solved-celebration-text">
-              🎉 <strong>מדהים דניאל! פתרת את כל ${questions.length} השאלות בדף התרגול של היום!</strong>
-            </div>
-            <button type="button" id="btn-finish-daily-unit-exam" class="primary-btn study-finish-all-btn">
-              <span>🎉 סיימתי את כל יחידת הלימוד של היום! צור לי מבחן מסכם</span>
-            </button>
-          ` : `
-            <div class="study-solved-celebration-text">
-              ✅ <strong>כל הכבוד דניאל! השלמת את שאלה ${qIdx + 1} בהצלחה.</strong>
-            </div>
-            <button type="button" id="btn-next-study-question" class="primary-btn study-next-question-btn">
-              <span>המשך לשאלה הבאה בדף ▶</span>
-            </button>
-          `}
-        </div>
-
         <!-- 3 כפתורי עזרה מהירה (Quick-Assist Chips) מעל תיבת ההקלדה -->
         <div class="study-quick-assist-bar" aria-label="כפתורי עזרה מהירה מהמאמן">
           <button type="button" class="study-quick-assist-chip" data-assist="hint">
@@ -1564,7 +1900,7 @@ function openStudyHelpUnit(unitId) {
             id="study-help-chat-input"
             class="study-chat-input"
             rows="2"
-            placeholder="כתוב כאן את התשובה שלך לשאלה ${qIdx + 1}, או שאל את המאמן כל דבר..."
+            placeholder="כתוב כאן חופשי את התשובה שלך לשאלה ${qIdx + 1}, או שאל את המאמן כל דבר..."
           ></textarea>
           <button type="button" id="btn-send-study-chat" class="primary-btn study-chat-send-btn">
             <span>שלח תשובה 🚀</span>
@@ -1577,9 +1913,47 @@ function openStudyHelpUnit(unitId) {
 
   bindJourneyBarEvents(blocksWrapper, unit, allConceptsMastered);
 
-  const viewQPageBtn = blocksWrapper.querySelector('#btn-view-question-page');
-  if (viewQPageBtn) {
-    viewQPageBtn.onclick = () => openLessonPageViewerModal(unit, qPageNumber);
+  // Bind Inline Page Snapshot Toggle & Zoom Modal
+  const toggleInlineSnapBtn = blocksWrapper.querySelector('#btn-toggle-inline-page-snapshot');
+  const inlineSnapDrawer = blocksWrapper.querySelector('#study-inline-page-snapshot-drawer');
+  if (toggleInlineSnapBtn && inlineSnapDrawer) {
+    toggleInlineSnapBtn.onclick = () => {
+      currentQ.showInlinePageSnapshot = !currentQ.showInlinePageSnapshot;
+      saveAppState();
+      inlineSnapDrawer.style.display = currentQ.showInlinePageSnapshot ? 'block' : 'none';
+      toggleInlineSnapBtn.classList.toggle('active-toggle', currentQ.showInlinePageSnapshot);
+    };
+  }
+  const zoomModalBtn = blocksWrapper.querySelector('#btn-zoom-page-modal');
+  if (zoomModalBtn) {
+    zoomModalBtn.onclick = () => openLessonPageViewerModal(unit, qPageNumber);
+  }
+  const inlineZoomTrigger = blocksWrapper.querySelector('#study-inline-snapshot-zoom-trigger');
+  if (inlineZoomTrigger) {
+    inlineZoomTrigger.onclick = () => openLessonPageViewerModal(unit, qPageNumber);
+  }
+  blocksWrapper.querySelectorAll('.study-inline-page-pill').forEach(pill => {
+    pill.onclick = () => {
+      const targetPage = Number(pill.getAttribute('data-inline-page'));
+      const snap = unit.pageSnapshots.find(p => Number(p.pageNumber) === targetPage);
+      const imgEl = blocksWrapper.querySelector('#study-inline-snapshot-img');
+      if (snap && imgEl) {
+        imgEl.src = snap.dataUrl;
+        blocksWrapper.querySelectorAll('.study-inline-page-pill').forEach(b => b.classList.remove('active'));
+        pill.classList.add('active');
+      }
+    };
+  });
+
+  // Allow enabling Interactive Table mode on any question
+  const enableTableBtn = blocksWrapper.querySelector('#btn-enable-table-mode');
+  if (enableTableBtn) {
+    enableTableBtn.onclick = () => {
+      currentQ.forceShowTable = true;
+      ensureQuestionStage2Schema(currentQ, qIdx, unit);
+      saveAppState();
+      openStudyHelpUnit(unit.id);
+    };
   }
 
   // Scroll chat box to bottom
@@ -1604,7 +1978,283 @@ function openStudyHelpUnit(unitId) {
     };
   });
 
-  // Helper to bind Next Question / Finish Unit buttons inside #study-question-solved-banner
+  // Helper to mark Step 1 solved and either show Step 2 MFA or finalize the question
+  const triggerStep1SuccessAndMfaGate = () => {
+    currentQ.step1Solved = true;
+    if (!hasMfaVerification) {
+      finalizeQuestionMasteryAndShowNotebookCard();
+      return;
+    }
+    saveAppState();
+    if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
+      SoundService.playSuccessSound();
+    }
+    const mfaCard = blocksWrapper.querySelector('#study-q-mfa-verification-card');
+    if (mfaCard) {
+      mfaCard.style.display = 'block';
+      if (typeof mfaCard.scrollIntoView === 'function') {
+        mfaCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  };
+
+  // Helper to finalize Step 2 MFA, mark question solved, play sound, and show Ready-to-Copy Notebook card
+  const finalizeQuestionMasteryAndShowNotebookCard = () => {
+    currentQ.step1Solved = true;
+    currentQ.mfaConfirmed = true;
+    currentQ.isCompleted = true;
+    unit.solvedQuestions[qIdx] = true;
+
+    const updatedSolvedCount = unit.solvedQuestions.filter(Boolean).length;
+    const nowAllSolved = questions.length > 0 && updatedSolvedCount === questions.length;
+    if (nowAllSolved) {
+      unit.completed = true;
+      unit.isCompleted = true;
+    }
+    saveAppState();
+
+    if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
+      SoundService.playSuccessSound();
+    }
+    openStudyHelpUnit(unit.id);
+    setTimeout(() => {
+      const notebookCard = document.getElementById('study-notebook-copy-card');
+      if (notebookCard && typeof notebookCard.scrollIntoView === 'function') {
+        notebookCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 120);
+  };
+
+  // Bind Mode A: Interactive Table Inputs, Totals Calculator, Add/Clear Row, & Check Button
+  if (hasTableMode) {
+    const updateTableLiveTotals = () => {
+      let sumDebit = 0;
+      let sumCredit = 0;
+      userTableRows.forEach(r => {
+        const d = parseFloat(String(r.debit || '').replace(/[^\d.-]/g, ''));
+        const c = parseFloat(String(r.credit || '').replace(/[^\d.-]/g, ''));
+        if (!isNaN(d)) sumDebit += d;
+        if (!isNaN(c)) sumCredit += c;
+      });
+      const totalDebitEl = blocksWrapper.querySelector('#study-table-total-debit');
+      const totalCreditEl = blocksWrapper.querySelector('#study-table-total-credit');
+      const balanceStatusEl = blocksWrapper.querySelector('#study-table-balance-status');
+      if (totalDebitEl) totalDebitEl.textContent = sumDebit.toLocaleString('he-IL');
+      if (totalCreditEl) totalCreditEl.textContent = sumCredit.toLocaleString('he-IL');
+      if (balanceStatusEl) {
+        if (sumDebit === 0 && sumCredit === 0) {
+          balanceStatusEl.innerHTML = '⚖️ הזן סכומים לבדיקת איזון';
+          balanceStatusEl.className = '';
+        } else if (Math.abs(sumDebit - sumCredit) < 0.01) {
+          balanceStatusEl.innerHTML = '✅ הטבלה מאוזנת! (חובה = זכות)';
+          balanceStatusEl.className = 'table-balanced-ok';
+        } else {
+          const diff = Math.abs(sumDebit - sumCredit).toLocaleString('he-IL');
+          balanceStatusEl.innerHTML = `⏳ הפרש לאיזון: ${diff} ש"ח`;
+          balanceStatusEl.className = 'table-balanced-diff';
+        }
+      }
+    };
+
+    blocksWrapper.querySelectorAll('.study-table-amount-input, .study-table-details-input').forEach(inp => {
+      inp.oninput = () => {
+        const rIdx = Number(inp.getAttribute('data-row'));
+        const field = inp.getAttribute('data-field');
+        if (userTableRows[rIdx] && field) {
+          userTableRows[rIdx][field] = inp.value;
+          saveAppState();
+          updateTableLiveTotals();
+        }
+      };
+    });
+
+    blocksWrapper.querySelectorAll('.study-table-account-select').forEach(sel => {
+      sel.onchange = () => {
+        const rIdx = Number(sel.getAttribute('data-row'));
+        if (userTableRows[rIdx] && sel.value) {
+          userTableRows[rIdx].details = sel.value;
+          const textInp = blocksWrapper.querySelector(`.study-table-details-input[data-row="${rIdx}"]`);
+          if (textInp) textInp.value = sel.value;
+          saveAppState();
+        }
+      };
+    });
+
+    updateTableLiveTotals();
+
+    const addRowBtn = blocksWrapper.querySelector('#btn-add-table-row');
+    if (addRowBtn) {
+      addRowBtn.onclick = () => {
+        currentQ.userTableRows.push({ debit: '', credit: '', details: '' });
+        saveAppState();
+        openStudyHelpUnit(unit.id);
+      };
+    }
+
+    const clearRowsBtn = blocksWrapper.querySelector('#btn-clear-table-rows');
+    if (clearRowsBtn) {
+      clearRowsBtn.onclick = () => {
+        currentQ.userTableRows = currentQ.userTableRows.map(() => ({ debit: '', credit: '', details: '' }));
+        saveAppState();
+        openStudyHelpUnit(unit.id);
+      };
+    }
+
+    const checkTableBtn = blocksWrapper.querySelector('#btn-check-interactive-table');
+    const tableFeedbackBox = blocksWrapper.querySelector('#study-table-feedback-box');
+    if (checkTableBtn) {
+      checkTableBtn.onclick = async () => {
+        const filledRows = userTableRows.filter(
+          r => String(r.debit || '').trim() || String(r.credit || '').trim() || String(r.details || '').trim()
+        );
+        if (filledRows.length === 0) {
+          if (tableFeedbackBox) {
+            tableFeedbackBox.style.display = 'block';
+            tableFeedbackBox.className = 'study-mfa-feedback warning';
+            tableFeedbackBox.innerHTML = '💡 מלא לפחות שורה אחת בטבלה (סכום חובה/זכות ושם החשבון) או בחר מתוך האפשרויות למטה.';
+          }
+          return;
+        }
+
+        // Check local match against expectedRows first
+        let localMatch = false;
+        let sumD = 0;
+        let sumC = 0;
+        filledRows.forEach(r => {
+          const d = parseFloat(String(r.debit || '').replace(/[^\d.-]/g, ''));
+          const c = parseFloat(String(r.credit || '').replace(/[^\d.-]/g, ''));
+          if (!isNaN(d)) sumD += d;
+          if (!isNaN(c)) sumC += c;
+        });
+
+        if (expectedRows.length > 0) {
+          let expD = 0;
+          let expC = 0;
+          expectedRows.forEach(er => {
+            const d = parseFloat(String(er.debit || '').replace(/[^\d.-]/g, ''));
+            const c = parseFloat(String(er.credit || '').replace(/[^\d.-]/g, ''));
+            if (!isNaN(d)) expD += d;
+            if (!isNaN(c)) expC += c;
+          });
+          if (expD > 0 && Math.abs(sumD - expD) < 0.5 && Math.abs(sumC - expC) < 0.5) {
+            localMatch = true;
+          }
+        } else if (sumD > 0 && Math.abs(sumD - sumC) < 0.01 && filledRows.every(r => String(r.details || '').trim().length >= 2)) {
+          localMatch = true;
+        }
+
+        if (localMatch) {
+          if (tableFeedbackBox) {
+            tableFeedbackBox.style.display = 'block';
+            tableFeedbackBox.className = 'study-mfa-feedback success';
+            tableFeedbackBox.innerHTML = '✅ כל הכבוד דניאל! הטבלה שמילאת מאוזנת ומדויקת! בוא נשלים את וידוא ההבנה הקצר למטה:';
+          }
+          triggerStep1SuccessAndMfaGate();
+          return;
+        }
+
+        // Otherwise ask the AI Coach to evaluate the table Daniel filled
+        checkTableBtn.disabled = true;
+        checkTableBtn.innerHTML = '<span>⏳ המאמן בודק את הטבלה...</span>';
+        const serializedTable = filledRows
+          .map((r, i) => `שורה ${i + 1}: חובה=${r.debit || 0}, זכות=${r.credit || 0}, פרטים=${r.details || 'ללא'}`)
+          .join(' | ');
+        const aiRes = await evaluateStudyHelpTurnWithAI({
+          unit,
+          qIdx,
+          userText: `מילאתי בטבלה: ${serializedTable}`,
+          assistMode: null
+        });
+        checkTableBtn.disabled = false;
+        checkTableBtn.innerHTML = '<span>✅ בדוק את הטבלה שמילאתי</span>';
+
+        if (tableFeedbackBox) {
+          tableFeedbackBox.style.display = 'block';
+          tableFeedbackBox.className = `study-mfa-feedback ${aiRes.is_question_solved ? 'success' : 'warning'}`;
+          tableFeedbackBox.innerHTML = formatCoachChatHtml(aiRes.coach_reply);
+        }
+        if (aiRes.is_question_solved) {
+          triggerStep1SuccessAndMfaGate();
+        }
+      };
+    }
+  }
+
+  // Bind Mode B: Guided Option Cards
+  const guidedFeedbackEl = blocksWrapper.querySelector('#study-guided-options-feedback');
+  blocksWrapper.querySelectorAll('.study-guided-option-card-btn').forEach(btn => {
+    btn.onclick = () => {
+      const chosenIdx = Number(btn.getAttribute('data-guided-opt-idx'));
+      const correctIdx = Number(currentQ.correct_option_index || 0);
+      if (chosenIdx === correctIdx) {
+        blocksWrapper.querySelectorAll('.study-guided-option-card-btn').forEach(b => b.classList.remove('correct-selected', 'wrong-selected'));
+        btn.classList.add('correct-selected');
+        if (guidedFeedbackEl) {
+          guidedFeedbackEl.style.display = 'block';
+          guidedFeedbackEl.className = 'study-mfa-feedback success';
+          guidedFeedbackEl.innerHTML = '✅ בחירה מצוינת דניאל! זיהית את הפתרון הנכון. עכשיו רק וידוא קצר של 10 שניות למטה:';
+        }
+        triggerStep1SuccessAndMfaGate();
+      } else {
+        btn.classList.add('wrong-selected');
+        if (guidedFeedbackEl) {
+          guidedFeedbackEl.style.display = 'block';
+          guidedFeedbackEl.className = 'study-mfa-feedback warning';
+          guidedFeedbackEl.innerHTML = '💡 קרא שוב את "תרגום פשוט לדניאל – מה עושים כאן צעד אחר צעד?" למעלה ונסה לבחור את האפשרות שמתאימה לכל הנתונים מהספר.';
+        }
+      }
+    };
+  });
+
+  // Bind Step 2: Gentle MFA Verification Options
+  const qMfaFeedbackEl = blocksWrapper.querySelector('#study-q-mfa-feedback');
+  blocksWrapper.querySelectorAll('.q-mfa-opt-btn').forEach(btn => {
+    btn.onclick = () => {
+      const chosenIdx = Number(btn.getAttribute('data-q-mfa-idx'));
+      const correctIdx = Number(currentQ.mfa_verification?.correct_index || 0);
+      if (chosenIdx === correctIdx) {
+        btn.classList.add('correct-selected');
+        finalizeQuestionMasteryAndShowNotebookCard();
+      } else {
+        btn.classList.add('wrong-selected');
+        if (qMfaFeedbackEl) {
+          qMfaFeedbackEl.style.display = 'block';
+          qMfaFeedbackEl.className = 'study-mfa-feedback warning';
+          qMfaFeedbackEl.innerHTML = '💡 כמעט! חשוב למה רשמנו את צד החובה וצד הזכות כך ובחר את ההסבר המתאים.';
+        }
+      }
+    };
+  });
+
+  // Bind Ready-to-Copy to Notebook Card Controls
+  const copyTextBtn = blocksWrapper.querySelector('#btn-copy-notebook-text');
+  if (copyTextBtn) {
+    copyTextBtn.onclick = () => {
+      const rowsText = expectedRows.length > 0
+        ? '\n' + expectedRows.map(r => `חובה: ${r.debit || '-'} | זכות: ${r.credit || '-'} | פרטים: ${r.details || ''}`).join('\n')
+        : '';
+      const textToCopy = `${currentQ.question_number_label || ('שאלה ' + (qIdx + 1))} (עמוד ${qPageNumber}):\n${currentQ.notebook_copy_summary || currentQ.expected_answer_summary || ''}${rowsText}`;
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(textToCopy);
+      }
+      if (typeof showToast === 'function') {
+        showToast('הפתרון הועתק! מוכן להדבקה או לכתיבה במחברת 📋', 'success');
+      }
+    };
+  }
+
+  const copiedChk = blocksWrapper.querySelector('#chk-copied-to-notebook');
+  if (copiedChk) {
+    copiedChk.onchange = () => {
+      currentQ.copiedToNotebook = Boolean(copiedChk.checked);
+      saveAppState();
+      if (copiedChk.checked && typeof showToast === 'function') {
+        showToast('כל הכבוד על הסדר במחברת דניאל! ✍️🌟', 'success');
+      }
+    };
+  }
+
+  // Bind Next Question / Finish Unit buttons
   const bindSolvedBannerButtons = () => {
     const nextBtn = blocksWrapper.querySelector('#btn-next-study-question');
     if (nextBtn) {
@@ -1630,12 +2280,11 @@ function openStudyHelpUnit(unitId) {
 
   bindSolvedBannerButtons();
 
-  // Handler for sending either a chat message or a quick-assist chip action
+  // Handler for Mode C: Free Writing & Socratic AI Coach Chat
   let isWaitingForCoach = false;
   const chatInput = blocksWrapper.querySelector('#study-help-chat-input');
   const sendBtn = blocksWrapper.querySelector('#btn-send-study-chat');
   const typingIndicator = blocksWrapper.querySelector('#study-help-typing-indicator');
-  const solvedBanner = blocksWrapper.querySelector('#study-question-solved-banner');
 
   const handleCoachInteraction = async ({ userDisplayMessage, assistMode = null }) => {
     if (isWaitingForCoach) return;
@@ -1703,55 +2352,7 @@ function openStudyHelpUnit(unitId) {
     }
 
     if (result.is_question_solved) {
-      unit.solvedQuestions[qIdx] = true;
-      if (unit.questions[qIdx]) {
-        unit.questions[qIdx].isCompleted = true;
-      }
-      const updatedSolvedCount = unit.solvedQuestions.filter(Boolean).length;
-      const nowAllSolved = questions.length > 0 && updatedSolvedCount === questions.length;
-      if (nowAllSolved) {
-        unit.completed = true;
-        unit.isCompleted = true;
-      }
-      saveAppState();
-
-      if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
-        SoundService.playSuccessSound();
-      }
-
-      const activePill = blocksWrapper.querySelector(`.study-q-nav-pill[data-q-idx="${qIdx}"]`);
-      if (activePill) {
-        activePill.classList.add('solved');
-        activePill.innerHTML = `<span>${currentQ.question_number_label || `שאלה ${qIdx + 1}`}</span><span>✅</span>`;
-      }
-      const solvedCounterEl = blocksWrapper.querySelector('.study-q-solved-counter');
-      if (solvedCounterEl) {
-        solvedCounterEl.textContent = `${updatedSolvedCount} מתוך ${questions.length} נפתרו ✅`;
-      }
-      const progressFillEl = blocksWrapper.querySelector('.study-q-progress-bar-fill');
-      if (progressFillEl) {
-        progressFillEl.style.width = `${Math.round((updatedSolvedCount / totalQ) * 100)}%`;
-      }
-
-      if (solvedBanner) {
-        solvedBanner.style.display = 'flex';
-        solvedBanner.innerHTML = nowAllSolved ? `
-          <div class="study-solved-celebration-text">
-            🎉 <strong>מדהים דניאל! פתרת את כל ${questions.length} השאלות בדף התרגול של היום!</strong>
-          </div>
-          <button type="button" id="btn-finish-daily-unit-exam" class="primary-btn study-finish-all-btn">
-            <span>🎉 סיימתי את כל יחידת הלימוד של היום! צור לי מבחן מסכם</span>
-          </button>
-        ` : `
-          <div class="study-solved-celebration-text">
-            ✅ <strong>כל הכבוד דניאל! השלמת את שאלה ${qIdx + 1} בהצלחה.</strong>
-          </div>
-          <button type="button" id="btn-next-study-question" class="primary-btn study-next-question-btn">
-            <span>המשך לשאלה הבאה בדף ▶</span>
-          </button>
-        `;
-        bindSolvedBannerButtons();
-      }
+      triggerStep1SuccessAndMfaGate();
     } else {
       saveAppState();
     }
@@ -1776,7 +2377,7 @@ function openStudyHelpUnit(unitId) {
     };
   }
 
-  const quickChips = blocksWrapper.querySelectorAll('.study-quick-assist-chip');
+  const quickChips = blocksWrapper.querySelectorAll('.study-quick-assist-chip[data-assist]');
   quickChips.forEach(chip => {
     chip.onclick = () => {
       const mode = chip.getAttribute('data-assist');
@@ -1791,6 +2392,127 @@ function openStudyHelpUnit(unitId) {
       });
     };
   });
+}
+
+/**
+ * Escapes double quotes for safe HTML attribute rendering.
+ * @param {string} val
+ * @returns {string}
+ */
+function escapeHtmlAttr(val) {
+  return String(val || '').replace(/"/g, '&quot;');
+}
+
+/**
+ * Normalizes Stage 2 question fields (table_schema, userTableRows, guided_options,
+ * mfa_verification, step_by_step_guide, notebook_copy_summary) so every question
+ * supports Mode A (Table), Mode B (Guided Options), Mode C (Free Chat), 2-Step MFA,
+ * and Ready-to-Copy to Notebook seamlessly.
+ * @param {object} q
+ * @param {number} qIdx
+ * @param {object} unit
+ */
+function ensureQuestionStage2Schema(q, qIdx, unit) {
+  if (!q || typeof q !== 'object') return;
+  q.page_number = Number(q.page_number) || 1;
+  q.question_number_label = String(q.question_number_label || `שאלה ${qIdx + 1}`).trim();
+  q.exact_book_text = String(q.exact_book_text || q.original_question || q.questionText || `שאלה ${qIdx + 1}`).trim();
+  q.friendly_translation = String(
+    q.friendly_translation ||
+    q.topic_focus ||
+    'נקרא יחד את הנתונים מהספר, נזהה מה נכנס ומה יצא, ונפתור צעד אחר צעד.'
+  ).trim();
+
+  if (!Array.isArray(q.step_by_step_guide) || q.step_by_step_guide.length === 0) {
+    q.step_by_step_guide = [
+      'שלב 1: קרא את נתוני השאלה וזהה את הסכומים והחשבונות המשתתפים.',
+      'שלב 2: קבע איזה חשבון נמצא בחובה ואיזה חשבון נמצא בזכות (או בחר מהאפשרויות המוכנות למטה).',
+      'שלב 3: אשר את וידוא ההבנה הקצר והעתק את הפתרון המסודר למחברת שלך.'
+    ];
+  }
+
+  // Table schema normalization
+  if (!q.table_schema || typeof q.table_schema !== 'object') {
+    q.table_schema = { has_table: false, columns: [], account_choices: [], expected_rows: [] };
+  }
+  if (!Array.isArray(q.table_schema.columns) || q.table_schema.columns.length < 3) {
+    q.table_schema.columns = ['חובה (סכום)', 'זכות (סכום)', 'פרטים / שם החשבון'];
+  }
+  if (!Array.isArray(q.table_schema.expected_rows)) {
+    q.table_schema.expected_rows = [];
+  }
+
+  const defaultAccounts = [
+    'קופה',
+    'עו"ש בנק',
+    'לקוחות',
+    'ספקים',
+    'הכנסות ממכירות',
+    'קניות סחורה',
+    'מע"מ עסקאות',
+    'מע"מ תשומות',
+    'הוצאות הנהלה וכלליות',
+    'הון עצמי'
+  ];
+  const expectedDetails = q.table_schema.expected_rows
+    .map(r => String(r?.details || '').trim())
+    .filter(Boolean);
+  const rawChoices = Array.isArray(q.table_schema.account_choices) ? q.table_schema.account_choices : [];
+  q.table_schema.account_choices = Array.from(new Set([...expectedDetails, ...rawChoices, ...defaultAccounts]));
+
+  const desiredRowCount = Math.max(2, q.table_schema.expected_rows.length);
+  if (!Array.isArray(q.userTableRows) || q.userTableRows.length === 0) {
+    q.userTableRows = Array.from({ length: desiredRowCount }, () => ({ debit: '', credit: '', details: '' }));
+  }
+
+  // Guided options fallback so Mode B is always available
+  if (!Array.isArray(q.guided_options) || q.guided_options.length < 2) {
+    const expectedSummary = String(
+      q.notebook_copy_summary ||
+      q.expected_answer_summary ||
+      (q.table_schema.expected_rows.length > 0
+        ? q.table_schema.expected_rows.map(r => `${r.details}: ${r.debit ? `חובה ${r.debit}` : `זכות ${r.credit}`}`).join(' , ')
+        : 'זיהוי הנתונים מהספר ורישום מאוזן של חובה וזכות בהתאם לכללי השיעור')
+    ).trim();
+
+    q.guided_options = [
+      expectedSummary,
+      'רישום צד אחד בלבד ללא איזון בין חובה לזכות',
+      'התעלמות מחלק מהנתונים והסכומים המופיעים בשאלה'
+    ];
+    q.correct_option_index = 0;
+  }
+
+  // Gentle 2-Step MFA verification normalization
+  if (
+    !q.mfa_verification ||
+    typeof q.mfa_verification !== 'object' ||
+    !q.mfa_verification.question ||
+    !Array.isArray(q.mfa_verification.options) ||
+    q.mfa_verification.options.length < 2
+  ) {
+    q.mfa_verification = {
+      question: 'למה הפתרון הזה נכון ומדויק לפי כללי הנהלת חשבונות?',
+      options: [
+        'כי הוא מבוסס ישירות על הנתונים בעמוד הספר ושומר על איזון מלא ונכון',
+        'כי ניחשנו סכומים אקראיים ללא קשר לשאלה'
+      ],
+      correct_index: 0
+    };
+  }
+
+  if (!q.notebook_copy_summary) {
+    q.notebook_copy_summary = String(
+      q.expected_answer_summary ||
+      q.guided_options[Number(q.correct_option_index) || 0] ||
+      'הפתרון אומת בהצלחה ומוכן להעתקה למחברת.'
+    ).trim();
+  }
+
+  if (unit && Array.isArray(unit.solvedQuestions) && unit.solvedQuestions[qIdx]) {
+    q.step1Solved = true;
+    q.mfaConfirmed = true;
+  }
 }
 
 /**

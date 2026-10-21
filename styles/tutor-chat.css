@@ -2192,3 +2192,594 @@
   color: var(--text-secondary);
   margin-bottom: 18px;
 }
+
+
+/* ============================================================================
+   STAGE 2: GROUNDED HOMEWORK & TABLE SOLVER (ON-SCREEN + NOTEBOOK SUPPORT,
+            SELECT OR FREE WRITE, 2-STEP MFA, & INLINE PAGE SNAPSHOT VIEWER)
+   ============================================================================ */
+
+/* 1. Grounded Location Banner & Inline Page Snapshot Drawer */
+.study-grounded-location-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 18px;
+  margin-bottom: 14px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.14), rgba(16, 185, 129, 0.08));
+  border: 2px solid rgba(59, 130, 246, 0.45);
+}
+
+.study-grounded-location-text {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.study-location-pin-badge {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.study-grounded-location-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.study-view-page-btn.active-toggle {
+  background: var(--accent-primary);
+  color: #ffffff;
+  border-color: var(--accent-primary);
+}
+
+.study-inline-page-snapshot-drawer {
+  margin-bottom: 16px;
+  border-radius: 16px;
+  border: 2px solid var(--accent-primary);
+  background: var(--bg-secondary);
+  padding: 14px 16px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+}
+
+.study-inline-snapshot-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.study-inline-snapshot-page-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.study-inline-page-pill {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.study-inline-page-pill.active,
+.study-inline-page-pill:hover {
+  border-color: var(--accent-primary);
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--accent-primary);
+}
+
+.study-inline-snapshot-img-wrap {
+  max-height: 520px;
+  overflow-y: auto;
+  text-align: center;
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 10px;
+  cursor: zoom-in;
+  border: 1px solid var(--border-color);
+}
+
+.study-inline-snapshot-img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+/* 2. Dual Question Display Grid (Book Quote + Accessible Translation for Daniel) */
+.study-dual-question-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 6px;
+}
+
+.study-book-quote-box,
+.study-daniel-translation-box {
+  border-radius: 16px;
+  padding: 18px 20px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.study-book-quote-box {
+  border-right: 5px solid #3b82f6;
+}
+
+.study-daniel-translation-box {
+  border-right: 5px solid #10b981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(59, 130, 246, 0.04));
+}
+
+.study-dual-box-header {
+  font-size: 0.96rem;
+  font-weight: 800;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.study-dual-box-header.book-header {
+  color: #2563eb;
+}
+
+.study-dual-box-header.translation-header {
+  color: #059669;
+}
+
+.study-book-exact-text {
+  font-size: 1.08rem;
+  font-weight: 700;
+  line-height: 1.75;
+  color: var(--text-primary);
+  white-space: pre-line;
+}
+
+.study-daniel-friendly-text {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.7;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.study-guiding-stones-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.study-guiding-stone-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+
+.stone-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.18);
+  color: #059669;
+  font-weight: 800;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.stone-text {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* 3. Multi-Format Answer Workspace (Mode A Table + Mode B Guided Options) */
+.study-multi-solver-workspace {
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: 18px;
+  padding: 20px 24px;
+  margin-bottom: 18px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+}
+
+.study-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.study-workspace-title {
+  margin: 0 0 4px 0;
+  font-size: 1.18rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.study-workspace-subtitle {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--text-secondary);
+}
+
+.study-solver-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.study-solver-mode-badge.mode-a-badge {
+  background: rgba(59, 130, 246, 0.14);
+  color: #2563eb;
+}
+
+.study-solver-mode-badge.mode-b-badge {
+  background: rgba(16, 185, 129, 0.14);
+  color: #059669;
+}
+
+.study-solver-helper-note {
+  margin: 0 0 12px 0;
+  font-size: 0.93rem;
+  color: var(--text-secondary);
+}
+
+/* Interactive Journal / Table Solver */
+.study-interactive-table-card {
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+}
+
+.study-table-responsive-wrap {
+  overflow-x: auto;
+  margin-bottom: 14px;
+}
+
+.study-interactive-journal-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg-card);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1.5px solid var(--border-color);
+}
+
+.study-interactive-journal-table th,
+.study-interactive-journal-table td {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  text-align: right;
+  vertical-align: middle;
+}
+
+.study-interactive-journal-table thead th {
+  background: rgba(59, 130, 246, 0.1);
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.row-index-cell {
+  text-align: center !important;
+  font-weight: 800;
+  color: var(--text-secondary);
+}
+
+.study-table-amount-input {
+  width: 100%;
+  min-width: 110px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-color);
+  font-size: 0.98rem;
+  font-weight: 700;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.study-table-details-combo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.study-table-account-select,
+.study-table-details-input {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-color);
+  font-size: 0.94rem;
+  font-weight: 600;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.study-table-totals-row td {
+  background: var(--bg-secondary);
+  font-weight: 800;
+  font-size: 0.96rem;
+}
+
+.table-balanced-ok {
+  color: #059669;
+  font-weight: 800;
+}
+
+.table-balanced-diff {
+  color: #d97706;
+  font-weight: 800;
+}
+
+.study-table-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.study-check-table-btn {
+  padding: 10px 20px;
+  font-weight: 800;
+}
+
+/* Mode B: Guided Options Cards */
+.study-guided-options-card {
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.study-guided-options-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.study-guided-option-card-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: right;
+  padding: 13px 16px;
+  border-radius: 14px;
+  border: 2px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.55;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.study-guided-option-card-btn:hover {
+  border-color: var(--accent-primary);
+  background: rgba(16, 185, 129, 0.06);
+  transform: translateY(-1px);
+}
+
+.study-guided-option-card-btn.correct-selected {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.15);
+  font-weight: 800;
+}
+
+.study-guided-option-card-btn.wrong-selected {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.guided-opt-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border-color);
+  font-weight: 800;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+/* 4. Step 2: Gentle MFA Verification Card */
+.study-q-mfa-verification-card {
+  border-radius: 16px;
+  border: 2px solid #3b82f6;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(16, 185, 129, 0.08));
+  padding: 18px 20px;
+  margin-top: 14px;
+  margin-bottom: 16px;
+}
+
+.study-q-mfa-verification-card.mfa-confirmed {
+  border-color: #10b981;
+}
+
+.study-q-mfa-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.study-q-mfa-icon {
+  font-size: 1.65rem;
+  flex-shrink: 0;
+}
+
+.study-q-mfa-title {
+  margin: 0 0 6px 0;
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.study-q-mfa-question {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #2563eb;
+}
+
+/* 5. "✍️ מוכן להעתקה למחברת / לדף העבודה שלך" Card */
+.study-notebook-copy-card {
+  border-radius: 18px;
+  border: 2.5px solid #10b981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(59, 130, 246, 0.06));
+  padding: 20px 22px;
+  margin-top: 16px;
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.15);
+}
+
+.study-notebook-copy-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.study-notebook-badge {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #10b981;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.study-notebook-title {
+  margin: 0;
+  font-size: 1.12rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.study-notebook-solution-body {
+  background: var(--bg-card);
+  border: 1.5px solid rgba(16, 185, 129, 0.45);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.study-notebook-summary-paragraph {
+  margin: 0 0 10px 0;
+  font-size: 1.04rem;
+  font-weight: 700;
+  line-height: 1.7;
+  color: var(--text-primary);
+  white-space: pre-line;
+}
+
+.study-notebook-clean-table-wrap {
+  overflow-x: auto;
+  margin-top: 10px;
+}
+
+.study-notebook-clean-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1.5px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.study-notebook-clean-table th,
+.study-notebook-clean-table td {
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  text-align: right;
+  font-size: 0.98rem;
+}
+
+.study-notebook-clean-table th {
+  background: rgba(16, 185, 129, 0.14);
+  font-weight: 800;
+}
+
+.study-notebook-clean-table .num-cell {
+  font-weight: 800;
+  font-family: monospace, inherit;
+  font-size: 1.02rem;
+}
+
+.study-notebook-footer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(16, 185, 129, 0.45);
+}
+
+.study-notebook-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.study-notebook-checkbox-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: #10b981;
+  cursor: pointer;
+}
