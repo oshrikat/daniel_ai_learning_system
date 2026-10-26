@@ -198,14 +198,52 @@ async function processPdfFile(file, startPageOffset = 0, maxPagesRemaining = 15,
 
       const page = await pdfDoc.getPage(pageNum);
 
-      // 1. Extract any selectable/embedded text on the page
+      // 1. Extract selectable/embedded text while preserving line breaks, table rows & numbered questions
       try {
         const textContent = await page.getTextContent();
-        const pageStr = (textContent.items || [])
-          .map(item => item.str || '')
-          .join(' ')
-          .replace(/\s+/g, ' ')
+        const items = Array.isArray(textContent.items) ? textContent.items : [];
+        let reconstructed = '';
+        let prevY = null;
+
+        for (const item of items) {
+          const chunk = typeof item.str === 'string' ? item.str : '';
+          const currY = (Array.isArray(item.transform) && typeof item.transform[5] === 'number')
+            ? item.transform[5]
+            : null;
+
+          if (prevY !== null && currY !== null && Math.abs(currY - prevY) > 4) {
+            if (!reconstructed.endsWith('\n')) {
+              reconstructed += '\n';
+            }
+          } else if (
+            reconstructed &&
+            !reconstructed.endsWith('\n') &&
+            !reconstructed.endsWith(' ') &&
+            chunk &&
+            !chunk.startsWith(' ')
+          ) {
+            reconstructed += ' ';
+          }
+
+          reconstructed += chunk;
+
+          if (item.hasEOL) {
+            if (!reconstructed.endsWith('\n')) {
+              reconstructed += '\n';
+            }
+            prevY = null;
+          } else if (currY !== null) {
+            prevY = currY;
+          }
+        }
+
+        const pageStr = reconstructed
+          .split('\n')
+          .map(line => line.replace(/[ \t]+/g, ' ').trim())
+          .filter((line, idx, arr) => line.length > 0 || (idx > 0 && arr[idx - 1].length > 0))
+          .join('\n')
           .trim();
+
         if (pageStr) {
           pageTexts.push(`--- עמוד ${globalPageNumber} ---\n${pageStr}`);
         }
@@ -238,15 +276,19 @@ async function processPdfFile(file, startPageOffset = 0, maxPagesRemaining = 15,
       }
     }
 
-    const images = pageSnapshots.length > 0
+    const hasRenderedSnapshots = pageSnapshots.length > 0;
+    const sendRawPdfWithImages = !hasRenderedSnapshots;
+    const images = hasRenderedSnapshots
       ? [...pageSnapshots]
       : (rawPdfPart ? [rawPdfPart] : []);
+    const fallbackRawPdfPart = sendRawPdfWithImages ? rawPdfPart : null;
 
     return {
       text: pageTexts.join('\n\n'),
       images,
       pageSnapshots,
-      rawPdfPart,
+      rawPdfPart: fallbackRawPdfPart,
+      sendRawPdfWithImages,
       pagesProcessed: numPages
     };
   } catch (pdfParseErr) {
@@ -331,7 +373,7 @@ const PDFExtractor = {
       extractedText: textChunks.join('\n\n').trim(),
       inlineImages,
       pageSnapshots,
-      rawPdfPart: primaryRawPdfPart,
+      rawPdfPart: pageSnapshots.length === 0 ? primaryRawPdfPart : null,
       pageCount: totalPages
     };
   }

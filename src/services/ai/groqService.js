@@ -1,5 +1,6 @@
 /**
  * Tier 2 (Secondary): Groq / Grok (xAI) API
+ * Includes a 25-second AbortController timeout and Hebrew-only system guard.
  * @param {string} apiKey
  * @param {string} prompt
  * @param {string} explicitModel
@@ -41,11 +42,27 @@ async function callGrokAPI(apiKey, prompt, explicitModel = '', options = {}) {
     { role: 'user', content: userContent }
   ];
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-    body: JSON.stringify({ model, messages, max_tokens: options.maxTokens || 1500 })
-  });
+  const timeoutMs = options.timeoutMs || 25000;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
+  let res;
+  try {
+    res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({ model, messages, max_tokens: options.maxTokens || 1500 }),
+      ...(controller ? { signal: controller.signal } : {})
+    });
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      throw new Error(`Groq/Grok (${model}) timed out after ${timeoutMs}ms`);
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+
   if (!res.ok) throw new Error(`Groq/Grok (${model}) HTTP ${res.status}`);
   const data = await res.json();
   const choice = data?.choices?.[0]?.message;
@@ -54,4 +71,3 @@ async function callGrokAPI(apiKey, prompt, explicitModel = '', options = {}) {
   if (!text) throw new Error(`Groq/Grok (${model}) returned empty content`);
   return text;
 }
-

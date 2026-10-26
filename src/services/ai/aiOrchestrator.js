@@ -1,3 +1,36 @@
+// Ensure callOpenRouterAPI enforces a 25-second AbortController timeout
+callOpenRouterAPI = async function (apiKey, prompt, explicitModel = '', options = {}) {
+  const key = cleanApiKey(apiKey);
+  const model = explicitModel || appState?.apiConfig?.verifiedOpenRouterModel || 'openai/gpt-4o-mini';
+  const timeoutMs = options.timeoutMs || 25000;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
+  let res;
+  try {
+    res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }] }),
+      ...(controller ? { signal: controller.signal } : {})
+    });
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      throw new Error(`OpenRouter (${model}) timed out after ${timeoutMs}ms`);
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+
+  if (!res.ok) throw new Error(`OpenRouter (${model}) HTTP ${res.status}`);
+  const data = await res.json();
+  const choice = data?.choices?.[0]?.message;
+  const text = stripThinkTags(choice?.content || choice?.reasoning_content || choice?.reasoning || '');
+  if (!text) throw new Error(`OpenRouter (${model}) returned empty content`);
+  return text;
+};
+
 /**
  * Unified sequential multi-tier AI fallback.
  * Tier 1 (Primary): Google Gemini -> Tier 2 (Secondary): Groq / Grok -> Tier 3 (Backup): OpenRouter -> Tier 4: Offline Fallback.
@@ -118,7 +151,7 @@ async function callMultiTierAI(prompt, options = {}) {
 
     for (const model of orModels) {
       try {
-        const reply = await callOpenRouterAPI(orKey, prompt, model);
+        const reply = await callOpenRouterAPI(orKey, prompt, model, enrichedOptions);
         if (appState?.apiConfig) {
           appState.apiConfig.verifiedOpenRouterModel = model;
         }
@@ -134,6 +167,66 @@ async function callMultiTierAI(prompt, options = {}) {
   console.error('[callMultiTierAI] All AI providers failed:', errors);
   showToast('שגיאת AI: כל ספקי ה-AI נכשלו. מופעל משוב אופליין מקומי (בדוק קונסול).', 'error');
   return '';
+}
+
+/**
+ * Dedicated fast conversational AI helper for WhatsApp-style Private Tutor & Global AI Bubble turns.
+ * Tries Groq first (`qwen/qwen3.8-27b` -> `llama-3.3-70b-versatile`) to keep chat instant and save Gemini quota,
+ * and falls back seamlessly to `callMultiTierAI(prompt, options)` if Groq is unavailable.
+ * @param {string} prompt
+ * @param {object} options
+ * @returns {Promise<string>}
+ */
+async function callGroqPreferredAI(prompt, options = {}) {
+  let savedState = {};
+  try {
+    savedState = JSON.parse(localStorage.getItem('DANIEL_AI_V3_CLEAN') || '{}');
+  } catch (e) {}
+  const cfg = { ...(savedState.apiConfig || {}), ...(appState?.apiConfig || {}) };
+
+  const grokKey = cleanApiKey(
+    localStorage.getItem('groq_api_key') ||
+    localStorage.getItem('xai_api_key') ||
+    cfg.groqKey ||
+    cfg.xaiKey ||
+    ''
+  );
+
+  const normalizedImages = Array.isArray(options.inlineImages) && options.inlineImages.length > 0
+    ? options.inlineImages
+    : (Array.isArray(options.images) ? options.images : []);
+  const hasImages = normalizedImages.length > 0 || Boolean(options.rawPdfPart && options.rawPdfPart.data);
+
+  if (grokKey && !hasImages) {
+    const isGroq = grokKey.startsWith('gsk_');
+    const groqModelsToTry = isGroq
+      ? [...new Set(['qwen/qwen3.8-27b', 'llama-3.3-70b-versatile', cfg.verifiedGroqModel].filter(Boolean))]
+      : ['grok-2-latest'];
+
+    const fastOptions = {
+      ...options,
+      maxTokens: options.maxTokens || 1500,
+      timeoutMs: options.timeoutMs || 25000
+    };
+
+    for (const model of groqModelsToTry) {
+      try {
+        const reply = await callGrokAPI(grokKey, prompt, model, fastOptions);
+        if (isGroq && appState?.apiConfig) {
+          appState.apiConfig.verifiedGroqModel = model;
+        }
+        return reply;
+      } catch (err) {
+        console.warn(`[callGroqPreferredAI] Groq (${model}) failed, trying next…`, err);
+      }
+    }
+  }
+
+  return callMultiTierAI(prompt, options);
+}
+
+if (typeof window !== 'undefined') {
+  window.callGroqPreferredAI = callGroqPreferredAI;
 }
 
 

@@ -26,28 +26,36 @@ async function callGeminiAPI(model, apiKey, prompt, options = {}) {
 
   const parts = [{ text: fullPrompt }];
 
-  if (options.rawPdfPart && options.rawPdfPart.data) {
+  const rawImageCandidates = Array.isArray(options.inlineImages) && options.inlineImages.length > 0
+    ? options.inlineImages
+    : (Array.isArray(options.images) ? options.images : []);
+  const imageList = rawImageCandidates.filter(img => img && img.data && !img.isNativePdf && img.mimeType !== 'application/pdf');
+
+  // Prevent duplicate payload inflation:
+  // If rendered page JPEG snapshots exist (imageList.length > 0), attach ONLY imageList and do NOT attach rawPdfPart.
+  // Attach rawPdfPart ONLY as a fallback when imageList.length === 0.
+  if (imageList.length > 0) {
+    imageList.forEach(img => {
+      parts.push({
+        inline_data: {
+          mime_type: img.mimeType || img.mime_type || 'image/jpeg',
+          data: String(img.data).replace(/^data:[^;]+;base64,/, '')
+        }
+      });
+    });
+  } else if (options.rawPdfPart && options.rawPdfPart.data) {
     parts.push({
       inline_data: {
         mime_type: options.rawPdfPart.mimeType || 'application/pdf',
         data: String(options.rawPdfPart.data).replace(/^data:[^;]+;base64,/, '')
       }
     });
-  }
-
-  const imageList = Array.isArray(options.inlineImages) && options.inlineImages.length > 0
-    ? options.inlineImages
-    : (Array.isArray(options.images) ? options.images : []);
-
-  if (imageList.length > 0) {
-    imageList.forEach(img => {
+  } else if (rawImageCandidates.length > 0) {
+    rawImageCandidates.forEach(img => {
       if (img && img.data) {
-        if (options.rawPdfPart && img.isNativePdf && img.data === options.rawPdfPart.data) {
-          return;
-        }
         parts.push({
           inline_data: {
-            mime_type: img.mimeType || img.mime_type || 'image/jpeg',
+            mime_type: img.mimeType || img.mime_type || 'application/pdf',
             data: String(img.data).replace(/^data:[^;]+;base64,/, '')
           }
         });
@@ -63,22 +71,37 @@ async function callGeminiAPI(model, apiKey, prompt, options = {}) {
     generationConfig.responseMimeType = 'application/json';
   }
 
-  let res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts }], generationConfig })
-  });
+  const timeoutMs = options.timeoutMs || 35000;
+  const fetchWithTimeout = async (bodyPayload) => {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : null;
+    try {
+      return await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload),
+        ...(controller ? { signal: controller.signal } : {})
+      });
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        throw new Error(`Gemini ${model} timed out after ${timeoutMs}ms`);
+      }
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
+  let res = await fetchWithTimeout({ contents: [{ parts }], generationConfig });
 
   if (res.status === 400 && generationConfig.responseMimeType) {
     const fallbackConfig = {
       temperature: generationConfig.temperature,
       maxOutputTokens: generationConfig.maxOutputTokens
     };
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts }], generationConfig: fallbackConfig })
-    });
+    res = await fetchWithTimeout({ contents: [{ parts }], generationConfig: fallbackConfig });
   }
 
   if (!res.ok) throw new Error(`Gemini ${model} HTTP ${res.status}`);

@@ -2936,3 +2936,51 @@
   background: var(--border-color);
   flex-shrink: 0;
 }
+
+
+/* ============================================================================
+   CORE STABILITY FIX: CALMING MODAL HIGH-CONTRAST CARD SURFACE
+   ============================================================================ */
+
+.study-calming-modal,
+.study-calming-card {
+  max-width: 560px;
+  width: 100%;
+  background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 55%, #eff6ff 100%);
+  border: 2px solid #86efac;
+  border-radius: 18px;
+  padding: 2.25rem 1.85rem;
+  text-align: center;
+  box-shadow: 0 22px 50px rgba(15, 23, 42, 0.35);
+  color: #0f172a;
+}
+
+.study-breathing-orb {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 1.15rem auto;
+  border-radius: 50%;
+  background: #dcfce7;
+  border: 3px solid #22c55e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  animation: studyBreathingPulse 2.8s ease-in-out infinite;
+}
+
+.study-calming-title {
+  color: #065f46;
+  font-weight: 800;
+}
+
+.study-calming-step-label {
+  color: #1d4ed8;
+  font-weight: 800;
+}
+
+.study-calming-subtitle {
+  color: #1e293b;
+  font-weight: 600;
+  margin-top: 0.9rem;
+}
