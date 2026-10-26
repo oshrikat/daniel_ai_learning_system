@@ -2984,3 +2984,564 @@
   font-weight: 600;
   margin-top: 0.9rem;
 }
+
+/* ============================================================================
+   PHASED SLIDE-BY-SLIDE PLAYER (`UnitBeatCursor`), PROMO SLIDE,
+   DUAL BOTTOM QUESTIONS, SUNLIGHT CHECKLIST, & WHATSAPP PRIVATE TUTOR (GROQ)
+   ============================================================================ */
+
+.study-slide-deck-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 0.65rem 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.study-slide-deck-header-right,
+.study-slide-deck-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.study-slide-prev-btn {
+  padding: 0.42rem 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  border-radius: 10px;
+}
+
+.study-slide-prev-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.study-slide-counter-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.85rem;
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.study-source-ref-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.85rem;
+  background: #f1f5f9;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+/* Promo Overview Slide (Slide 0) */
+.study-promo-overview-card {
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  border: 2px solid #93c5fd;
+  border-radius: 18px;
+  padding: 1.75rem 1.6rem;
+  box-shadow: 0 10px 28px rgba(30, 64, 175, 0.08);
+}
+
+.study-promo-top-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+
+.study-promo-main-title {
+  margin: 0 0 0.65rem 0;
+  font-size: 1.55rem;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.study-promo-summary-text {
+  margin: 0 0 1.25rem 0;
+  font-size: 1.05rem;
+  line-height: 1.65;
+  color: #334155;
+}
+
+.study-promo-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1.25rem;
+}
+
+.study-promo-stat-box {
+  background: #ffffff;
+  border: 1.5px solid #dbeafe;
+  border-radius: 14px;
+  padding: 1rem;
+  text-align: center;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
+}
+
+.promo-stat-icon {
+  display: block;
+  font-size: 1.65rem;
+  margin-bottom: 0.25rem;
+}
+
+.promo-stat-number {
+  font-size: 1.65rem;
+  font-weight: 900;
+  color: #1d4ed8;
+  line-height: 1.2;
+}
+
+.promo-stat-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #475569;
+  margin-top: 0.2rem;
+}
+
+.study-promo-how-it-works {
+  background: #f0fdf4;
+  border: 1.5px solid #bbf7d0;
+  border-radius: 14px;
+  padding: 1rem 1.2rem;
+  margin-bottom: 1.35rem;
+}
+
+.promo-how-title {
+  font-weight: 800;
+  color: #166534;
+  font-size: 1.02rem;
+  margin-bottom: 0.5rem;
+}
+
+.promo-how-list {
+  margin: 0;
+  padding-right: 1.25rem;
+  color: #1e293b;
+  line-height: 1.65;
+  font-size: 0.96rem;
+}
+
+.promo-how-list li + li {
+  margin-top: 0.35rem;
+}
+
+.study-promo-actions-row {
+  display: flex;
+  justify-content: center;
+}
+
+.study-promo-start-btn {
+  padding: 0.85rem 1.85rem;
+  font-size: 1.08rem;
+  font-weight: 800;
+  border-radius: 14px;
+}
+
+/* Dual Bottom Assessment Cards on `CONCEPT_SLIDE` */
+.study-dual-bottom-questions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.study-bottom-q-card {
+  background: #ffffff;
+  border: 2px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.study-bottom-q-card.q-passed {
+  background: #f0fdf4;
+  border-color: #22c55e;
+}
+
+.study-bottom-q-badge {
+  display: inline-block;
+  padding: 0.28rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  background: #eff6ff;
+  color: #1d4ed8;
+  margin-bottom: 0.6rem;
+}
+
+.study-bottom-q-card.q-passed .study-bottom-q-badge {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.study-slide-next-bar {
+  margin-top: 1.15rem;
+  padding: 0.95rem 1.15rem;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  border: 2px solid #cbd5e1;
+  background: #f8fafc;
+}
+
+.study-slide-next-bar.unlocked {
+  background: #ecfdf5;
+  border-color: #34d399;
+}
+
+.study-slide-next-caption {
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: #334155;
+  flex: 1;
+  min-width: 220px;
+}
+
+.study-slide-next-bar.unlocked .study-slide-next-caption {
+  color: #065f46;
+}
+
+.study-advance-slide-btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.35);
+}
+
+/* Guiding Stones Timeline Tutor & Promo Stones */
+.study-timeline-stone.tutor-stone {
+  border-color: #fbbf24;
+  background: #fffbeb;
+}
+
+.study-timeline-stone.tutor-stone.stone-completed {
+  border-color: #22c55e;
+  background: #dcfce7;
+}
+
+.study-timeline-stone.promo-stone {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+/* Sunlight Mastery Checklist Banner (`PRIVATE_TUTOR_SLIDE`) */
+.sunlight-mastery-banner {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 2px solid #f59e0b;
+  border-radius: 16px;
+  padding: 1.1rem 1.3rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 6px 18px rgba(245, 158, 11, 0.12);
+}
+
+.sunlight-banner-title {
+  font-size: 1.06rem;
+  font-weight: 900;
+  color: #92400e;
+  margin-bottom: 0.75rem;
+}
+
+.sunlight-checklist-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.sunlight-term-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2px solid #fcd34d;
+  color: #78350f;
+  font-size: 0.92rem;
+  font-weight: 800;
+  transition: all 0.25s ease;
+}
+
+.sunlight-term-pill.verified {
+  background: #dcfce7;
+  border-color: #22c55e;
+  color: #14532d;
+}
+
+.sunlight-pill-status {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.sunlight-term-pill.verified .sunlight-pill-status {
+  background: #bbf7d0;
+  color: #166534;
+}
+
+/* WhatsApp Private Tutor Card (`PRIVATE_TUTOR_SLIDE`) */
+.whatsapp-tutor-card {
+  border-radius: 18px;
+  overflow: hidden;
+  border: 2px solid #128c7e;
+  background: #efeae2;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  margin-bottom: 1rem;
+}
+
+.whatsapp-tutor-header {
+  background: #075e54;
+  color: #ffffff;
+  padding: 0.85rem 1.15rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.whatsapp-tutor-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #25d366;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.45rem;
+  flex-shrink: 0;
+}
+
+.whatsapp-tutor-header-info {
+  flex: 1;
+  min-width: 180px;
+}
+
+.whatsapp-tutor-name {
+  font-size: 1.06rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.whatsapp-tutor-status {
+  font-size: 0.84rem;
+  color: #d1fae5;
+}
+
+.whatsapp-shield-badge {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.whatsapp-tutor-feed {
+  min-height: 270px;
+  max-height: 430px;
+  overflow-y: auto;
+  padding: 1.1rem 1.15rem;
+  background-color: #efeae2;
+  background-image: radial-gradient(rgba(18, 140, 126, 0.08) 1px, transparent 1px);
+  background-size: 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.whatsapp-bubble-row {
+  display: flex;
+  width: 100%;
+}
+
+.whatsapp-bubble-row.incoming-row {
+  justify-content: flex-start;
+}
+
+.whatsapp-bubble-row.outgoing-row {
+  justify-content: flex-end;
+}
+
+.whatsapp-bubble {
+  max-width: 82%;
+  padding: 0.65rem 0.9rem 0.45rem 0.9rem;
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.13);
+  position: relative;
+  line-height: 1.55;
+  font-size: 0.98rem;
+}
+
+.whatsapp-bubble.incoming {
+  background: #ffffff;
+  color: #111b21;
+  border-top-right-radius: 3px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.whatsapp-bubble.outgoing {
+  background: #dcf8c6;
+  color: #111b21;
+  border-top-left-radius: 3px;
+}
+
+.whatsapp-bubble-text {
+  word-break: break-word;
+}
+
+.whatsapp-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+  font-size: 0.74rem;
+  color: #667781;
+}
+
+.whatsapp-ticks {
+  color: #34b7f1;
+  font-weight: 900;
+  letter-spacing: -2px;
+  font-size: 0.82rem;
+}
+
+.whatsapp-typing-indicator {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #ffffff;
+  color: #075e54;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.whatsapp-input-bar {
+  background: #f0f2f5;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-top: 1px solid #d1d5db;
+}
+
+.whatsapp-tutor-input {
+  flex: 1;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.68rem 1.1rem;
+  font-size: 0.98rem;
+  color: #0f172a;
+  outline: none;
+}
+
+.whatsapp-tutor-input:focus {
+  border-color: #128c7e;
+  box-shadow: 0 0 0 3px rgba(18, 140, 126, 0.16);
+}
+
+.whatsapp-send-btn {
+  background: #128c7e;
+  color: #ffffff;
+  border: none;
+  border-radius: 999px;
+  padding: 0.68rem 1.25rem;
+  font-size: 0.96rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.whatsapp-send-btn:hover:not([disabled]) {
+  background: #075e54;
+}
+
+.whatsapp-send-btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Strict Phased Gate Bar (`PRIVATE_TUTOR_SLIDE`) */
+.tutor-phased-gate-bar {
+  padding: 1rem 1.2rem;
+  border-radius: 16px;
+  border: 2px solid #cbd5e1;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.95rem;
+  flex-wrap: wrap;
+}
+
+.tutor-phased-gate-bar.unlocked {
+  background: linear-gradient(135deg, #ecfdf5 0%, #dcfce7 100%);
+  border-color: #22c55e;
+  box-shadow: 0 8px 22px rgba(34, 197, 94, 0.14);
+}
+
+.tutor-phased-gate-caption {
+  font-size: 0.96rem;
+  font-weight: 800;
+  color: #475569;
+  flex: 1;
+  min-width: 230px;
+}
+
+.tutor-phased-gate-bar.unlocked .tutor-phased-gate-caption {
+  color: #14532d;
+}
+
+.tutor-phased-gate-btn {
+  padding: 0.78rem 1.35rem;
+  font-size: 1rem;
+  font-weight: 800;
+  border-radius: 12px;
+}
+
+.tutor-phased-gate-btn[disabled] {
+  opacity: 0.48;
+  cursor: not-allowed;
+  filter: grayscale(0.45);
+}
+
+@media (max-width: 680px) {
+  .study-dual-bottom-questions-grid {
+    grid-template-columns: 1fr;
+  }
+  .whatsapp-bubble {
+    max-width: 92%;
+  }
+  .study-slide-next-bar,
+  .tutor-phased-gate-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

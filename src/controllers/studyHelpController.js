@@ -157,61 +157,79 @@ function buildHabitMomentumBarHtml() {
 }
 
 /**
- * Builds the visual Guiding Stones Timeline HTML inside `openStudyHelpUnit(unitId)` showing:
- * Each Concept Stone (`💎 מושג 1`...) -> Gate (`🔓`/`🔒`) -> Each Question Stone (`📝 שאלה 1`...) -> Trophy (`🏆 מבחן מסכם`).
+ * Builds the visual Guiding Stones Timeline HTML inside `openStudyHelpUnit(unitId)` driven by `UnitBeatCursor`:
+ * Promo (`🎬 פתיחה`) -> [Concept Slides (`💎 מושג ...`) -> WhatsApp Private Tutor (`☀️ מורה פרטי ...`)] -> Gate (`🔓`/`🔒`) -> Homework Slides (`📝 שאלה ...`) -> Trophy (`🏆 מבחן מסכם`).
  * @param {object} unit
- * @param {boolean} isStage1Active
- * @param {boolean} allConceptsMastered
  * @returns {string}
  */
-function buildGuidingStonesTimelineHtml(unit, isStage1Active, allConceptsMastered) {
-  const concepts = Array.isArray(unit.concepts) ? unit.concepts : [];
+function buildGuidingStonesTimelineHtml(unit) {
+  const deck = UnitBeatCursor.getFlatSlideDeck(unit);
+  const activeSlide = UnitBeatCursor.getCurrentSlide(unit);
+  const allBeatsMastered = UnitBeatCursor.areAllConceptBeatsMastered(unit);
   const questions = Array.isArray(unit.questions) ? unit.questions : [];
   const solvedArr = Array.isArray(unit.solvedQuestions) ? unit.solvedQuestions : [];
-  const allQuestionsSolved = questions.length > 0 && solvedArr.filter(Boolean).length === questions.length;
-  const unitDone = Boolean(unit.completed || unit.isCompleted || allQuestionsSolved);
+  const allQuestionsSolved = questions.length === 0 ? allBeatsMastered : (solvedArr.filter(Boolean).length === questions.length);
+  const unitDone = Boolean(unit.completed || unit.isCompleted || (allBeatsMastered && allQuestionsSolved));
 
-  const conceptStonesHtml = concepts.map((c, idx) => {
-    const isDone = Boolean(c.mastered);
-    const isCurrent = isStage1Active && unit.currentConceptIdx === idx;
+  const stage1Nodes = deck.filter(s => s.type !== 'HOMEWORK_SLIDE');
+  const hwNodes = deck.filter(s => s.type === 'HOMEWORK_SLIDE');
+
+  const stage1StonesHtml = stage1Nodes.map(s => {
+    const isCurrent = activeSlide && activeSlide.slideIndex === s.slideIndex;
+    const isDone = Boolean(s.isCompleted);
+    const isLocked = !s.isUnlocked;
+    let emoji = '💎';
+    let stoneClass = 'concept-stone';
+    if (s.type === 'PROMO_OVERVIEW_SLIDE') {
+      emoji = isDone ? '✅' : '🎬';
+      stoneClass = 'promo-stone';
+    } else if (s.type === 'PRIVATE_TUTOR_SLIDE') {
+      emoji = isDone ? '✅' : (isLocked ? '🔒' : '☀️');
+      stoneClass = 'tutor-stone';
+    } else {
+      emoji = isDone ? '✅' : (isLocked ? '🔒' : '💎');
+    }
+
     return `
       <button
         type="button"
-        class="study-timeline-stone concept-stone ${isDone ? 'stone-completed' : ''} ${isCurrent ? 'stone-current' : ''}"
-        data-timeline-concept="${idx}"
-        title="${escapeHtmlAttr(c.term_name || `מושג ${idx + 1}`)}"
+        class="study-timeline-stone ${stoneClass} ${isDone ? 'stone-completed' : ''} ${isCurrent ? 'stone-current' : ''} ${isLocked ? 'stone-locked' : ''}"
+        data-cursor-slide-idx="${s.slideIndex}"
+        ${isLocked ? 'disabled' : ''}
+        title="${escapeHtmlAttr(s.fullTitle || s.shortLabel)}"
       >
-        <span class="stone-emoji">${isDone ? '✅' : '💎'}</span>
-        <span class="stone-label">מושג ${idx + 1}</span>
+        <span class="stone-emoji">${emoji}</span>
+        <span class="stone-label">${escapeHtmlAttr(s.shortLabel)}</span>
       </button>
     `;
   }).join('<span class="study-timeline-connector" aria-hidden="true"></span>');
 
-  const gateStoneHtml = `
+  const gateStoneHtml = questions.length > 0 ? `
     <span class="study-timeline-connector" aria-hidden="true"></span>
     <div
-      class="study-timeline-stone gate-stone ${allConceptsMastered ? 'stone-completed' : 'stone-locked'}"
-      title="${allConceptsMastered ? 'שער שלב 2 פתוח!' : 'השלם את המושגים כדי לפתוח את שער השאלות'}"
+      class="study-timeline-stone gate-stone ${allBeatsMastered ? 'stone-completed' : 'stone-locked'}"
+      title="${allBeatsMastered ? 'שער שיעורי הבית פתוח!' : 'השלם את כל קבוצות המושגים ושיחות המורה הפרטי כדי לפתוח את שער שיעורי הבית'}"
     >
-      <span class="stone-emoji">${allConceptsMastered ? '🔓' : '🔒'}</span>
-      <span class="stone-label">שער התרגול</span>
+      <span class="stone-emoji">${allBeatsMastered ? '🔓' : '🔒'}</span>
+      <span class="stone-label">שער שיעורי הבית</span>
     </div>
     <span class="study-timeline-connector" aria-hidden="true"></span>
-  `;
+  ` : '';
 
-  const questionStonesHtml = questions.map((q, idx) => {
-    const isSolved = Boolean(solvedArr[idx]);
-    const isCurrent = !isStage1Active && unit.currentQuestionIdx === idx;
+  const hwStonesHtml = hwNodes.map(s => {
+    const isCurrent = activeSlide && activeSlide.slideIndex === s.slideIndex;
+    const isDone = Boolean(s.isCompleted);
+    const isLocked = !s.isUnlocked;
     return `
       <button
         type="button"
-        class="study-timeline-stone question-stone ${isSolved ? 'stone-completed' : ''} ${isCurrent ? 'stone-current' : ''} ${!allConceptsMastered ? 'stone-locked' : ''}"
-        data-timeline-question="${idx}"
-        ${!allConceptsMastered ? 'disabled' : ''}
-        title="${escapeHtmlAttr(q.question_number_label || `שאלה ${idx + 1}`)}"
+        class="study-timeline-stone question-stone ${isDone ? 'stone-completed' : ''} ${isCurrent ? 'stone-current' : ''} ${isLocked ? 'stone-locked' : ''}"
+        data-cursor-slide-idx="${s.slideIndex}"
+        ${isLocked ? 'disabled' : ''}
+        title="${escapeHtmlAttr(s.fullTitle || s.shortLabel)}"
       >
-        <span class="stone-emoji">${isSolved ? '✅' : '📝'}</span>
-        <span class="stone-label">שאלה ${idx + 1}</span>
+        <span class="stone-emoji">${isDone ? '✅' : (isLocked ? '🔒' : '📝')}</span>
+        <span class="stone-label">${escapeHtmlAttr(s.shortLabel)}</span>
       </button>
     `;
   }).join('<span class="study-timeline-connector" aria-hidden="true"></span>');
@@ -231,10 +249,10 @@ function buildGuidingStonesTimelineHtml(unit, isStage1Active, allConceptsMastere
   `;
 
   return `
-    <div class="study-guiding-stones-timeline" role="navigation" aria-label="מסלול אבני הדרך בשיעור">
-      ${conceptStonesHtml}
+    <div class="study-guiding-stones-timeline" role="navigation" aria-label="מסלול שקופיות ופעימות השיעור">
+      ${stage1StonesHtml}
       ${gateStoneHtml}
-      ${questionStonesHtml}
+      ${hwStonesHtml}
       ${trophyStoneHtml}
     </div>
   `;
@@ -260,10 +278,10 @@ function showStudyHelpLoadingOverlay(statusText = 'קורא את הדפים שה
         <div class="study-calming-steps-list">
           <div class="study-calming-step-pill" data-step="1">1. קורא וסורק את כל עמודי השיעור שהעלית...</div>
           <div class="study-calming-step-pill" data-step="2">2. מחלץ מושגים, דוגמאות מהספר ושאלות תרגול מדויקות...</div>
-          <div class="study-calming-step-pill" data-step="3">3. מכין את שלב פיצוח המושגים ואת צ'אט המאמן...</div>
+          <div class="study-calming-step-pill" data-step="3">3. מכין את השקופית ואת שיחת המורה הפרטי...</div>
         </div>
         <p class="study-calming-subtitle">
-          קח נשימה רגועה, דניאל 💙 עוד כמה שניות כל החומר מהקובץ יהיה מונגש ומסודר צעד אחר צעד.
+          קח נשימה רגועה, דניאל 💙 עוד כמה שניות הכל יהיה מונגש ומסודר צעד אחר צעד.
         </p>
       </div>
     `;
@@ -284,7 +302,7 @@ function showStudyHelpLoadingOverlay(statusText = 'קורא את הדפים שה
       const isMatch =
         (stepNum === '1' && (text.includes('קורא') || text.includes('סורק'))) ||
         (stepNum === '2' && (text.includes('ממפה') || text.includes('מזהה') || text.includes('מחלץ') || text.includes('מנתח'))) ||
-        (stepNum === '3' && (text.includes('בונה') || text.includes('מכין') || text.includes('פעימ')));
+        (stepNum === '3' && (text.includes('בונה') || text.includes('מכין') || text.includes('פעימ') || text.includes('מעביר') || text.includes('מורה')));
       pill.classList.toggle('active', isMatch);
     });
   };
@@ -669,12 +687,15 @@ function groupConceptOutlinesIntoBeats(conceptOutlines = [], unitId = 'unit', fa
       slides: [],
       tutorSlide: {
         beatIndex: beatIdx,
-        required_terms_checklist: group.map(g => ({
+        required_terms_checklist: group.map((g, localIdx) => ({
+          term_id: `${unitId}_c${conceptIndices[localIdx] + 1}`,
           term_name: g.term_name,
           page_number: g.page_number,
           verified: false
         })),
         chatHistory: [],
+        handoffCompleted: false,
+        all_beat_terms_mastered: false,
         completed: false
       },
       completed: false
@@ -1274,6 +1295,8 @@ ${outlinesPayloadText}
         mfa_step2_correct_index: 0,
         extraSimplerAnalogy: existingConcept.extraSimplerAnalogy || '',
         check1Passed: Boolean(existingConcept.check1Passed || existingConcept.mastered),
+        openQuestionPassed: Boolean(existingConcept.openQuestionPassed || existingConcept.mastered),
+        slideQuestionsCompleted: Boolean((existingConcept.check1Passed && existingConcept.openQuestionPassed) || existingConcept.slideQuestionsCompleted || existingConcept.mastered),
         mastered: Boolean(existingConcept.mastered)
       };
 
@@ -1285,15 +1308,27 @@ ${outlinesPayloadText}
     });
 
     beat.slides = normalizedSlides;
-    beat.tutorSlide = {
-      beatIndex,
-      required_terms_checklist: normalizedSlides.map(s => ({
+    const prevChecklist = Array.isArray(beat.tutorSlide?.required_terms_checklist)
+      ? beat.tutorSlide.required_terms_checklist
+      : [];
+    const builtChecklist = normalizedSlides.map((s, sIdx) => {
+      const prevItem = prevChecklist[sIdx];
+      return {
+        term_id: s.id,
         term_name: s.term_name,
         page_number: s.page_number,
-        verified: Boolean(s.mastered)
-      })),
+        verified: Boolean(prevItem?.verified || s.mastered)
+      };
+    });
+    const allBeatVerified = builtChecklist.length > 0 && builtChecklist.every(item => Boolean(item.verified));
+
+    beat.tutorSlide = {
+      beatIndex,
+      required_terms_checklist: builtChecklist,
       chatHistory: Array.isArray(beat.tutorSlide?.chatHistory) ? beat.tutorSlide.chatHistory : [],
-      completed: normalizedSlides.every(s => Boolean(s.mastered))
+      handoffCompleted: Boolean(beat.tutorSlide?.handoffCompleted),
+      all_beat_terms_mastered: Boolean(beat.tutorSlide?.all_beat_terms_mastered || allBeatVerified),
+      completed: Boolean(beat.tutorSlide?.completed || allBeatVerified)
     };
     beat.status = 'ready';
     beat.generatedAt = new Date().toISOString();
@@ -1823,6 +1858,9 @@ async function generateDailyStudyUnitFromMaterial({
       total_questions: normalizedQuestionOutlines.length
     },
     learnerAdaptationProfile,
+    slideInteractionLog: [],
+    currentSlideIdx: 0,
+    promoCompleted: false,
     conceptBeats,
     homeworkBeats,
     beatsWorkerActive: false,
@@ -1894,10 +1932,67 @@ async function generateDailyStudyUnitFromMaterial({
 }
 
 /**
- * Ensures `unit.concepts` exists for older saved units so Stage 1 works seamlessly.
+ * Invokes `callGroqPreferredAI` (fast Groq channel for open checks & WhatsApp Private Tutor)
+ * with seamless fallback to `callMultiTierAI` when running in environments without `callGroqPreferredAI`.
+ * @param {string} prompt
+ * @param {object} [options]
+ * @returns {Promise<string>}
+ */
+async function invokeGroqPreferred(prompt, options = {}) {
+  if (typeof callGroqPreferredAI === 'function') {
+    return callGroqPreferredAI(prompt, options);
+  }
+  if (typeof window !== 'undefined' && typeof window.callGroqPreferredAI === 'function') {
+    return window.callGroqPreferredAI(prompt, options);
+  }
+  return callMultiTierAI(prompt, options);
+}
+
+/**
+ * Formats current time as HH:MM for WhatsApp chat bubbles.
+ * @param {Date} [d]
+ * @returns {string}
+ */
+function formatWhatsAppClockTime(d = new Date()) {
+  const dt = d instanceof Date && !isNaN(d) ? d : new Date();
+  return `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * Logs a slide interaction event into `unit.slideInteractionLog` for Private Tutor handoff & dynamic adaptation.
+ * @param {object} unit
+ * @param {object} entry
+ */
+function appendSlideInteractionLog(unit, entry) {
+  if (!unit) return;
+  if (!Array.isArray(unit.slideInteractionLog)) {
+    unit.slideInteractionLog = [];
+  }
+  unit.slideInteractionLog.push({
+    timestamp: new Date().toISOString(),
+    ...entry
+  });
+  if (unit.slideInteractionLog.length > 120) {
+    unit.slideInteractionLog = unit.slideInteractionLog.slice(-120);
+  }
+}
+
+/**
+ * Ensures `unit.concepts`, `unit.conceptBeats`, `unit.homeworkBeats`, and `unit.slideInteractionLog`
+ * exist and are normalized (seamless upgrade for both new Beats units and previously saved legacy units).
  * @param {object} unit
  */
 function ensureUnitConceptsState(unit) {
+  if (!unit) return;
+  if (!Array.isArray(unit.slideInteractionLog)) {
+    unit.slideInteractionLog = [];
+  }
+  if (!unit.learnerAdaptationProfile || typeof unit.learnerAdaptationProfile !== 'object') {
+    unit.learnerAdaptationProfile = createDefaultLearnerAdaptationProfile();
+  }
+
+  const unitAlreadyCompleted = Boolean(unit.completed || unit.isCompleted);
+
   if (!Array.isArray(unit.concepts) || unit.concepts.length === 0) {
     const rules = Array.isArray(unit.goldenRules) && unit.goldenRules.length > 0
       ? unit.goldenRules
@@ -1908,6 +2003,7 @@ function ensureUnitConceptsState(unit) {
       index: idx + 1,
       term_name: `כלל מפתח ${idx + 1} בשיעור`,
       page_number: 1,
+      paragraphs: [String(rText)],
       simple_explanation: String(rText),
       textbook_example: (unit.questions && unit.questions[0] && (unit.questions[0].exact_book_text || unit.questions[0].original_question)) || String(rText),
       mfa_step1_question: 'איך ניישם את הכלל הזה בתרגול של היום?',
@@ -1916,29 +2012,758 @@ function ensureUnitConceptsState(unit) {
         'נדלג על בדיקת הנתונים'
       ],
       mfa_step1_correct_index: 0,
-      mfa_step2_why_question: 'וידוא הבנה שני: למה חשוב לפעול לפי הכלל הזה?',
+      mfa_step2_why_question: 'הסבר במילים שלך מדוע חשוב לפעול לפי הכלל הזה:',
       mfa_step2_options: [
         'כדי להבטיח פתרון מדויק ומאוזן ב-100% ללא ניחושים',
         'כי אין חשיבות לדיוק בנתונים'
       ],
       mfa_step2_correct_index: 0,
       extraSimplerAnalogy: '',
-      check1Passed: Boolean(unit.completed || unit.isCompleted),
-      mastered: Boolean(unit.completed || unit.isCompleted)
+      check1Passed: unitAlreadyCompleted,
+      openQuestionPassed: unitAlreadyCompleted,
+      slideQuestionsCompleted: unitAlreadyCompleted,
+      mastered: unitAlreadyCompleted
     }));
+  }
+
+  // Upgrade every concept so it always has `paragraphs`, `book_example`, `interactive_widget`, and `bottom_questions`
+  const sourceLabel = unit.sourceLabel || 'קובץ השיעור';
+  unit.concepts.forEach((c, idx) => {
+    if (!c.id) c.id = `${unit.id}_c${idx + 1}`;
+    c.page_number = Math.max(1, Number(c.page_number) || 1);
+    if (!c.source_citation) {
+      c.source_citation = `📍 מקור: ${sourceLabel} • עמוד ${c.page_number}`;
+    }
+    if (!Array.isArray(c.paragraphs) || c.paragraphs.length === 0) {
+      c.paragraphs = String(c.simple_explanation || c.term_name || '')
+        .split(/\n{2,}/)
+        .map(s => s.trim())
+        .filter(Boolean);
+      if (c.paragraphs.length === 0) c.paragraphs = [c.term_name || `מושג ${idx + 1}`];
+    }
+    if (!c.book_example || typeof c.book_example !== 'object') {
+      c.book_example = {
+        title: `דוגמה מתוך עמוד ${c.page_number} בספר`,
+        exact_excerpt: String(c.textbook_example || c.raw_book_excerpt || c.simple_explanation || '').trim(),
+        steps: ['קריאת הנתונים והסכומים מתוך העמוד בספר', 'זיהוי הצדדים ויישום הכלל החשבונאי']
+      };
+    }
+    if (!c.interactive_widget || typeof c.interactive_widget !== 'object' || !Array.isArray(c.interactive_widget.options)) {
+      c.interactive_widget = {
+        widget_type: 'direction_selector',
+        prompt: `בדיקה מהירה על "${c.term_name}": מה הצעד הנכון לפי הדוגמה בספר?`,
+        options: ['יישום הכלל לפי נתוני העמוד בספר', 'ניחוש ללא בדיקת הנתונים'],
+        correct_index: 0,
+        explanation: 'מדויק! תמיד נשענים על הנתונים מהעמוד בספר.',
+        completed: Boolean(c.mastered)
+      };
+    }
+    if (!c.bottom_questions || !c.bottom_questions.mc_question || !c.bottom_questions.open_question) {
+      const legacyOpts = Array.isArray(c.mfa_step1_options) && c.mfa_step1_options.length >= 2
+        ? c.mfa_step1_options
+        : ['יישום הכלל לפי הדוגמה בעמוד הספר', 'ניחוש אקראי ללא בדיקה', 'התעלמות מנתוני השאלה'];
+      c.bottom_questions = {
+        mc_question: {
+          question: String(c.mfa_step1_question || `מה אומר הכלל של "${c.term_name}"?`).trim(),
+          options: legacyOpts,
+          correct_index: Math.min(Math.max(0, Number(c.mfa_step1_correct_index) || 0), legacyOpts.length - 1),
+          explanation: 'תשובה מדויקת! זה בדיוק הרעיון המרכזי.',
+          answeredCorrectly: Boolean(c.check1Passed || c.mastered)
+        },
+        open_question: {
+          question: `הסבר במשפט קצר במילים שלך: מה חשוב לזכור לגבי "${c.term_name}"?`,
+          expected_core_idea: String(c.simple_explanation || c.paragraphs.join(' ')).trim(),
+          hint: `היעזר בהסבר או בדוגמה מעמוד ${c.page_number} למעלה.`,
+          userAnswer: '',
+          verified: Boolean(c.openQuestionPassed || c.mastered)
+        }
+      };
+    }
+    if (c.mastered) {
+      c.check1Passed = true;
+      c.openQuestionPassed = true;
+      c.slideQuestionsCompleted = true;
+    } else if (c.check1Passed && c.openQuestionPassed) {
+      c.slideQuestionsCompleted = true;
+    }
+  });
+
+  // Upgrade legacy units lacking `conceptBeats` into ready 1-3 concept beats
+  if (!Array.isArray(unit.conceptBeats) || unit.conceptBeats.length === 0) {
+    const groups = [];
+    for (let i = 0; i < unit.concepts.length; i += 3) {
+      groups.push(unit.concepts.slice(i, i + 3));
+    }
+    let runningIdx = 0;
+    unit.conceptBeats = groups.map((grp, bIdx) => {
+      const cIndices = grp.map(() => {
+        const cur = runningIdx++;
+        unit.concepts[cur].beatIndex = bIdx;
+        unit.concepts[cur].isBeatReady = true;
+        return cur;
+      });
+      const allGrpMastered = grp.every(c => Boolean(c.mastered));
+      return {
+        beatIndex: bIdx,
+        id: `${unit.id}_cbeat_${bIdx}`,
+        status: 'ready',
+        conceptOutlines: grp.map(c => ({
+          term_name: c.term_name,
+          page_number: c.page_number,
+          source_section_label: `עמוד ${c.page_number}`,
+          raw_book_excerpt: c.textbook_example || c.simple_explanation || ''
+        })),
+        conceptIndices: cIndices,
+        slides: grp,
+        tutorSlide: {
+          beatIndex: bIdx,
+          required_terms_checklist: grp.map(c => ({
+            term_id: c.id,
+            term_name: c.term_name,
+            page_number: c.page_number,
+            verified: Boolean(c.mastered)
+          })),
+          chatHistory: [],
+          handoffCompleted: allGrpMastered,
+          all_beat_terms_mastered: allGrpMastered,
+          completed: allGrpMastered
+        },
+        completed: allGrpMastered
+      };
+    });
+  } else {
+    // Normalize existing `tutorSlide` structures on all `conceptBeats`
+    unit.conceptBeats.forEach((beat, bIdx) => {
+      if (!beat) return;
+      const cIndices = Array.isArray(beat.conceptIndices) ? beat.conceptIndices : [];
+      if (!beat.tutorSlide || typeof beat.tutorSlide !== 'object') {
+        beat.tutorSlide = {
+          beatIndex: bIdx,
+          required_terms_checklist: [],
+          chatHistory: [],
+          handoffCompleted: false,
+          all_beat_terms_mastered: false,
+          completed: false
+        };
+      }
+      if (!Array.isArray(beat.tutorSlide.required_terms_checklist) || beat.tutorSlide.required_terms_checklist.length === 0) {
+        beat.tutorSlide.required_terms_checklist = cIndices.map(cIdx => {
+          const cObj = unit.concepts[cIdx] || {};
+          return {
+            term_id: cObj.id || `${unit.id}_c${cIdx + 1}`,
+            term_name: cObj.term_name || `מושג ${cIdx + 1}`,
+            page_number: Number(cObj.page_number) || 1,
+            verified: Boolean(cObj.mastered)
+          };
+        });
+      } else {
+        beat.tutorSlide.required_terms_checklist.forEach((chk, localIdx) => {
+          const gIdx = cIndices[localIdx];
+          const cObj = typeof gIdx === 'number' ? unit.concepts[gIdx] : null;
+          if (!chk.term_id) {
+            chk.term_id = (cObj && cObj.id) ? cObj.id : `${unit.id}_b${bIdx}_t${localIdx + 1}`;
+          }
+          if (cObj && cObj.term_name) {
+            chk.term_name = cObj.term_name;
+          }
+          if (unitAlreadyCompleted) {
+            chk.verified = true;
+          }
+        });
+      }
+      if (!Array.isArray(beat.tutorSlide.chatHistory)) {
+        beat.tutorSlide.chatHistory = [];
+      }
+      if (unitAlreadyCompleted || beat.tutorSlide.completed || beat.tutorSlide.required_terms_checklist.every(t => Boolean(t.verified))) {
+        if (beat.tutorSlide.required_terms_checklist.length > 0 && beat.tutorSlide.required_terms_checklist.every(t => Boolean(t.verified))) {
+          beat.tutorSlide.all_beat_terms_mastered = true;
+          beat.tutorSlide.completed = true;
+          beat.completed = true;
+        }
+      }
+    });
+  }
+
+  // Upgrade legacy units lacking `homeworkBeats`
+  if ((!Array.isArray(unit.homeworkBeats) || unit.homeworkBeats.length === 0) && Array.isArray(unit.questions) && unit.questions.length > 0) {
+    const qGroups = [];
+    for (let i = 0; i < unit.questions.length; i += 3) {
+      qGroups.push(unit.questions.slice(i, i + 3));
+    }
+    let runningQ = 0;
+    unit.homeworkBeats = qGroups.map((qGrp, hwIdx) => {
+      const qIndices = qGrp.map(() => {
+        const cur = runningQ++;
+        unit.questions[cur].beatIndex = hwIdx;
+        unit.questions[cur].isBeatReady = true;
+        return cur;
+      });
+      return {
+        beatIndex: hwIdx,
+        id: `${unit.id}_hwbeat_${hwIdx}`,
+        status: 'ready',
+        questionOutlines: qGrp.map((q, j) => ({
+          question_number_label: q.question_number_label || `שאלה ${qIndices[j] + 1}`,
+          page_number: Number(q.page_number) || 1,
+          question_type: q.question_type || 'open_question',
+          exact_book_text: q.exact_book_text || q.original_question || ''
+        })),
+        questionIndices: qIndices,
+        questions: qGrp,
+        completed: false
+      };
+    });
   }
 
   if (typeof unit.currentConceptIdx !== 'number' || unit.currentConceptIdx < 0 || unit.currentConceptIdx >= unit.concepts.length) {
     unit.currentConceptIdx = 0;
   }
 
-  const allConceptsMastered = unit.concepts.every(c => Boolean(c.mastered));
-  if (!unit.activeStage) {
-    unit.activeStage = allConceptsMastered ? 'stage2' : 'stage1';
+  const allBeatsMastered = (unit.conceptBeats || []).every(b => Boolean(b?.tutorSlide?.all_beat_terms_mastered));
+  if (typeof unit.currentSlideIdx !== 'number' || unit.currentSlideIdx < 0) {
+    unit.currentSlideIdx = 0;
   }
-  if (!allConceptsMastered) {
+  if (!unit.activeStage) {
+    unit.activeStage = allBeatsMastered ? 'stage2' : 'stage1';
+  }
+  if (!allBeatsMastered) {
     unit.activeStage = 'stage1';
   }
+}
+
+// ============================================================================
+// `UnitBeatCursor` — Ordered Phased Slide Deck & Mastery Gate Controller
+// Sequence:
+//   Slide 0: `PROMO_OVERVIEW_SLIDE`
+//   For each `beatIndex` in `0 .. K-1`:
+//     1-3 x `CONCEPT_SLIDE` -> 1 x `PRIVATE_TUTOR_SLIDE` (Groq WhatsApp Gate)
+//   Only after ALL `conceptBeats` & `PRIVATE_TUTOR_SLIDE` gates pass:
+//     `HOMEWORK_SLIDE` (0 .. M-1)
+// ============================================================================
+
+const UnitBeatCursor = {
+  /**
+   * Returns true iff ALL `conceptBeats` (and their `PRIVATE_TUTOR_SLIDE` WhatsApp gates) are 100% mastered.
+   * @param {object} unit
+   * @returns {boolean}
+   */
+  areAllConceptBeatsMastered(unit) {
+    if (!unit) return false;
+    ensureUnitConceptsState(unit);
+    const beats = Array.isArray(unit.conceptBeats) ? unit.conceptBeats : [];
+    if (beats.length === 0) return true;
+    return beats.every(b => Boolean(b?.tutorSlide?.all_beat_terms_mastered || b?.tutorSlide?.completed));
+  },
+
+  /**
+   * Builds the complete flat ordered slide deck for `unit` with live `isUnlocked` and `isCompleted` flags.
+   * @param {object} unit
+   * @returns {Array<object>}
+   */
+  getFlatSlideDeck(unit) {
+    if (!unit) return [];
+    ensureUnitConceptsState(unit);
+
+    const deck = [];
+    const concepts = Array.isArray(unit.concepts) ? unit.concepts : [];
+    const conceptBeats = Array.isArray(unit.conceptBeats) ? unit.conceptBeats : [];
+    const questions = Array.isArray(unit.questions) ? unit.questions : [];
+    const solvedArr = Array.isArray(unit.solvedQuestions) ? unit.solvedQuestions : [];
+
+    // Slide 0: PROMO_OVERVIEW_SLIDE
+    deck.push({
+      slideIndex: 0,
+      type: 'PROMO_OVERVIEW_SLIDE',
+      shortLabel: 'פתיחה',
+      fullTitle: `פתיחת השיעור: ${unit.lesson_title || unit.title || ''}`,
+      isUnlocked: true,
+      isCompleted: Boolean(unit.promoCompleted || (unit.currentSlideIdx || 0) > 0 || unit.completed)
+    });
+
+    // Concept Beats (1-3 CONCEPT_SLIDE + 1 PRIVATE_TUTOR_SLIDE per beat)
+    for (let bIdx = 0; bIdx < conceptBeats.length; bIdx++) {
+      const beat = conceptBeats[bIdx];
+      const prevBeatTutorMastered = bIdx === 0
+        ? true
+        : Boolean(conceptBeats[bIdx - 1]?.tutorSlide?.all_beat_terms_mastered || conceptBeats[bIdx - 1]?.tutorSlide?.completed);
+
+      const cIndices = Array.isArray(beat?.conceptIndices) ? beat.conceptIndices : [];
+      let allSlidesInBeatDone = true;
+      let prevConceptSlideDone = true;
+
+      for (let localIdx = 0; localIdx < cIndices.length; localIdx++) {
+        const cIdx = cIndices[localIdx];
+        const cObj = concepts[cIdx] || {};
+        const slideQuestionsDone = Boolean(
+          (cObj.check1Passed && cObj.openQuestionPassed) ||
+          cObj.slideQuestionsCompleted ||
+          cObj.mastered
+        );
+        const isUnlocked = Boolean(prevBeatTutorMastered && (localIdx === 0 ? true : prevConceptSlideDone));
+
+        deck.push({
+          slideIndex: deck.length,
+          type: 'CONCEPT_SLIDE',
+          beatIndex: bIdx,
+          conceptIdx: cIdx,
+          localIdxInBeat: localIdx,
+          beatSize: cIndices.length,
+          shortLabel: `מושג ${cIdx + 1}`,
+          fullTitle: `מושג ${cIdx + 1}: ${cObj.term_name || ''}`,
+          isUnlocked,
+          isCompleted: slideQuestionsDone
+        });
+
+        if (!slideQuestionsDone) {
+          allSlidesInBeatDone = false;
+        }
+        prevConceptSlideDone = slideQuestionsDone;
+      }
+
+      const tutorMastered = Boolean(beat?.tutorSlide?.all_beat_terms_mastered || beat?.tutorSlide?.completed);
+      deck.push({
+        slideIndex: deck.length,
+        type: 'PRIVATE_TUTOR_SLIDE',
+        beatIndex: bIdx,
+        shortLabel: `מורה פרטי ${bIdx + 1}`,
+        fullTitle: `שיחת מורה פרטי בוואטסאפ — קבוצה ${bIdx + 1} מתוך ${conceptBeats.length}`,
+        isUnlocked: Boolean(prevBeatTutorMastered && allSlidesInBeatDone),
+        isCompleted: tutorMastered
+      });
+    }
+
+    // Homework Slides (Strictly locked until ALL Concept Beats + Private Tutor Slides are 100% mastered!)
+    const allTutorGatesPassed = this.areAllConceptBeatsMastered(unit);
+    for (let qIdx = 0; qIdx < questions.length; qIdx++) {
+      const qObj = questions[qIdx] || {};
+      const hwBeatIdx = typeof qObj.beatIndex === 'number' ? qObj.beatIndex : 0;
+      const qSolved = Boolean(solvedArr[qIdx] || qObj.isCompleted);
+
+      deck.push({
+        slideIndex: deck.length,
+        type: 'HOMEWORK_SLIDE',
+        qIdx,
+        hwBeatIndex: hwBeatIdx,
+        shortLabel: qObj.question_number_label || `שאלה ${qIdx + 1}`,
+        fullTitle: `${qObj.question_number_label || `שאלה ${qIdx + 1}`} (עמוד ${qObj.page_number || 1})`,
+        isUnlocked: allTutorGatesPassed,
+        isCompleted: qSolved
+      });
+    }
+
+    return deck;
+  },
+
+  /**
+   * Returns the current valid unlocked slide descriptor for `unit` (clamping `unit.currentSlideIdx` if needed).
+   * @param {object} unit
+   * @returns {object|null}
+   */
+  getCurrentSlide(unit) {
+    const deck = this.getFlatSlideDeck(unit);
+    if (deck.length === 0) return null;
+
+    let idx = typeof unit.currentSlideIdx === 'number' ? unit.currentSlideIdx : 0;
+    if (idx < 0 || idx >= deck.length) idx = 0;
+
+    if (!deck[idx].isUnlocked) {
+      // Snap back to the furthest unlocked slide in the deck
+      let furthestUnlocked = 0;
+      for (let i = 0; i < deck.length; i++) {
+        if (deck[i].isUnlocked) furthestUnlocked = i;
+      }
+      idx = furthestUnlocked;
+    }
+
+    unit.currentSlideIdx = idx;
+    return deck[idx];
+  },
+
+  /**
+   * Navigates `unit` to `targetSlideIdx`, running Beat readiness checks or `performAsyncTutorContextHandoff`
+   * when entering a `PRIVATE_TUTOR_SLIDE`, then re-renders `openStudyHelpUnit(unit.id)`.
+   * @param {object} unit
+   * @param {number} targetSlideIdx
+   * @returns {Promise<boolean>}
+   */
+  async goToSlide(unit, targetSlideIdx) {
+    if (!unit) return false;
+    const deck = this.getFlatSlideDeck(unit);
+    if (targetSlideIdx < 0 || targetSlideIdx >= deck.length) return false;
+
+    const prevSlide = this.getCurrentSlide(unit);
+    const targetSlide = deck[targetSlideIdx];
+
+    if (!targetSlide.isUnlocked) {
+      if (targetSlide.type === 'HOMEWORK_SLIDE') {
+        if (typeof showToast === 'function') {
+          showToast('שקופיות שיעורי הבית ייפתחו מיד לאחר שכל קבוצות המושגים יהיו ברורות ב-100% מול המורה הפרטי! ☀️🔒', 'warning');
+        }
+      } else if (targetSlide.type === 'PRIVATE_TUTOR_SLIDE') {
+        if (typeof showToast === 'function') {
+          showToast('השלם תחילה את 2 השאלות בתחתית שקופיות המושגים בקבוצה זו כדי להיכנס לשיחת המורה הפרטי! 📝', 'warning');
+        }
+      } else {
+        if (typeof showToast === 'function') {
+          showToast('השלם את השקופית הנוכחית כדי לפתוח את השקופית הבאה צעד אחר צעד 🌟', 'warning');
+        }
+      }
+      return false;
+    }
+
+    if (prevSlide && prevSlide.type === 'PROMO_OVERVIEW_SLIDE' && targetSlideIdx > 0) {
+      unit.promoCompleted = true;
+    }
+
+    if (targetSlide.type === 'CONCEPT_SLIDE') {
+      const targetBeat = unit.conceptBeats?.[targetSlide.beatIndex];
+      if (targetBeat) {
+        const enteringNewBeat = prevSlide && prevSlide.beatIndex !== targetSlide.beatIndex;
+        const targetUntouched = (targetBeat.conceptIndices || []).every(
+          cIdx => !unit.concepts?.[cIdx]?.check1Passed && !unit.concepts?.[cIdx]?.openQuestionPassed && !unit.concepts?.[cIdx]?.mastered
+        );
+        const shouldAdapt = Boolean(enteringNewBeat && unit.learnerAdaptationProfile?.dirtyForNextBeat && targetUntouched);
+        if (targetBeat.status !== 'ready' || shouldAdapt) {
+          await ensureBeatReadyForLearner(unit, 'concept', targetSlide.beatIndex, shouldAdapt);
+        }
+      }
+      unit.currentConceptIdx = targetSlide.conceptIdx;
+      unit.activeStage = 'stage1';
+    } else if (targetSlide.type === 'PRIVATE_TUTOR_SLIDE') {
+      unit.activeStage = 'stage1';
+      const beat = unit.conceptBeats?.[targetSlide.beatIndex];
+      if (
+        beat &&
+        (!beat.tutorSlide?.handoffCompleted ||
+          !Array.isArray(beat.tutorSlide?.chatHistory) ||
+          beat.tutorSlide.chatHistory.length === 0)
+      ) {
+        await performAsyncTutorContextHandoff(unit, targetSlide.beatIndex);
+      }
+    } else if (targetSlide.type === 'HOMEWORK_SLIDE') {
+      const hwBeat = unit.homeworkBeats?.[targetSlide.hwBeatIndex];
+      if (hwBeat && hwBeat.status !== 'ready') {
+        await ensureBeatReadyForLearner(unit, 'homework', targetSlide.hwBeatIndex, false);
+      }
+      unit.currentQuestionIdx = targetSlide.qIdx;
+      unit.activeStage = 'stage2';
+    } else {
+      unit.activeStage = 'stage1';
+    }
+
+    unit.currentSlideIdx = targetSlideIdx;
+    saveAppState();
+    openStudyHelpUnit(unit.id);
+    if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    return true;
+  },
+
+  /**
+   * Advances to the next slide in the flat deck (`unit.currentSlideIdx + 1`).
+   * @param {object} unit
+   * @returns {Promise<boolean>}
+   */
+  async advanceNext(unit) {
+    const cur = this.getCurrentSlide(unit);
+    if (!cur) return false;
+    return this.goToSlide(unit, cur.slideIndex + 1);
+  },
+
+  /**
+   * Navigates to the previous slide in the flat deck (`unit.currentSlideIdx - 1`).
+   * @param {object} unit
+   * @returns {Promise<boolean>}
+   */
+  async goPrev(unit) {
+    const cur = this.getCurrentSlide(unit);
+    if (!cur || cur.slideIndex <= 0) return false;
+    return this.goToSlide(unit, cur.slideIndex - 1);
+  },
+
+  /**
+   * Jumps directly to the `HOMEWORK_SLIDE` corresponding to `qIdx` (if unlocked).
+   * @param {object} unit
+   * @param {number} qIdx
+   * @returns {Promise<boolean>}
+   */
+  async goToHomeworkQuestion(unit, qIdx) {
+    const deck = this.getFlatSlideDeck(unit);
+    const found = deck.find(s => s.type === 'HOMEWORK_SLIDE' && s.qIdx === qIdx);
+    if (!found) return false;
+    return this.goToSlide(unit, found.slideIndex);
+  }
+};
+
+/**
+ * Async Context Handoff (`performAsyncTutorContextHandoff(unit, beatIndex)`):
+ * Displays `showStudyHelpLoadingOverlay("🔄 מעביר את התשובות והנקודות שלך למורה הפרטי ומכין את השיחה...")`
+ * while `callGroqPreferredAI` synthesizes Daniel's answers/mistakes on the 1–3 Concept Slides of `beatIndex`
+ * and generates the Private Tutor's personalized WhatsApp opening message!
+ * @param {object} unit
+ * @param {number} beatIndex
+ * @returns {Promise<void>}
+ */
+async function performAsyncTutorContextHandoff(unit, beatIndex) {
+  if (!unit || !Array.isArray(unit.conceptBeats) || !unit.conceptBeats[beatIndex]) return;
+  const beat = unit.conceptBeats[beatIndex];
+  ensureUnitConceptsState(unit);
+
+  showStudyHelpLoadingOverlay('🔄 מעביר את התשובות והנקודות שלך למורה הפרטי ומכין את השיחה...');
+
+  try {
+    const checklist = beat.tutorSlide.required_terms_checklist || [];
+    const cIndices = Array.isArray(beat.conceptIndices) ? beat.conceptIndices : [];
+    const beatConceptsSummary = cIndices.map((gIdx, idx) => {
+      const c = unit.concepts[gIdx] || {};
+      return `${idx + 1}. מושג "${c.term_name}" (עמוד ${c.page_number || 1}): ${(c.paragraphs || [c.simple_explanation]).join(' ')}`;
+    }).join('\n');
+
+    const beatLogs = (Array.isArray(unit.slideInteractionLog) ? unit.slideInteractionLog : [])
+      .filter(entry => Number(entry?.beatIndex) === Number(beatIndex))
+      .slice(-12);
+
+    const logsSummary = beatLogs.length > 0
+      ? beatLogs.map(l => {
+          if (l.questionType === 'open_question') {
+            return `- בשאלה הפתוחה על "${l.term_name}" דניאל כתב: "${l.userAnswer}" (${l.passed ? 'עבר בהצלחה' : 'התקשה מעט'})`;
+          }
+          if (l.questionType === 'mc_question') {
+            return `- בשאלה האמריקאית על "${l.term_name}": ${l.passed ? 'ענה נכון' : 'טעה בניסיון ראשון ותיקן'}`;
+          }
+          if (l.questionType === 'simpler_analogy') {
+            return `- דניאל ביקש הסבר פשוט נוסף על "${l.term_name}"`;
+          }
+          return '';
+        }).filter(Boolean).join('\n')
+      : '- דניאל השלים את השקופיות בקבוצה זו בהצלחה.';
+
+    const firstUnverifiedTerm = checklist.find(t => !t.verified) || checklist[0] || { term_name: 'המושג הראשון' };
+
+    const systemInstruction = `אתה המורה הפרטי האישי של דניאל (בחור בן 28) בהנהלת חשבונות, המשוחח איתו בצ'אט בסגנון וואטסאפ טבעי, חם, קצר ובגובה העיניים.
+כל הודעה שלך חייבת להיות קצרה וטבעית (1 עד 3 משפטים קצרים בלבד!). החזר אך ורק JSON תקני בעברית.`;
+
+    const prompt = `דניאל סיים עכשיו את שקופיות קבוצת המושגים ${beatIndex + 1} מתוך ${unit.conceptBeats.length} בשיעור "${unit.lesson_title || unit.title}".
+
+המושגים שחייבים להיות ברורים לו כמו שמש בבוקר בקבוצה זו:
+${beatConceptsSummary}
+
+מה דניאל ענה בשקופיות של קבוצה זו עכשיו:
+${logsSummary}
+
+כתוב הודעת פתיחה אישית קצרה בוואטסאפ לדניאל (1-3 משפטים קצרים בלבד!):
+1. פרגן לו במשפט קצר על משהו ספציפי שהוא ענה/כתב בשקופיות עכשיו.
+2. בקש ממנו להסביר לך במילים שלו מהראש ובפשטות את המושג הראשון ברשימה: "${firstUnverifiedTerm.term_name}" (למשל מה זה אומר או דוגמה קטנה), כדי שנסמן יחד שהכל ברור ב-100%.
+
+החזר JSON תקני בלבד:
+{
+  "opening_whatsapp_message": "..."
+}`;
+
+    let openingText = '';
+    try {
+      const raw = await invokeGroqPreferred(prompt, {
+        systemInstruction,
+        jsonMode: true,
+        maxTokens: 700
+      });
+      const parsed = parseJsonFromAIResponse(raw);
+      if (parsed && typeof parsed.opening_whatsapp_message === 'string' && parsed.opening_whatsapp_message.trim()) {
+        openingText = parsed.opening_whatsapp_message.trim();
+      }
+    } catch (err) {
+      console.warn('[PrivateTutor Handoff] Fallback opening message used:', err);
+    }
+
+    if (!openingText) {
+      const lastOpenEntry = [...beatLogs].reverse().find(l => l.questionType === 'open_question' && l.userAnswer);
+      const personalNote = lastOpenEntry
+        ? `אהבתי מאוד את מה שכתבת בשקופית ("${lastOpenEntry.userAnswer}")! 👏 `
+        : 'כל הכבוד על השלמת השקופיות בקבוצה הזו! 👏 ';
+      openingText = `${personalNote}בוא נוודא שהכל יושב בראש ברור כמו שמש בבוקר ☀️ — איך היית מסביר לי במשפט פשוט מהראש מה זה **${firstUnverifiedTerm.term_name}**?`;
+    }
+
+    beat.tutorSlide.chatHistory = [
+      {
+        role: 'tutor',
+        text: openingText,
+        timeLabel: formatWhatsAppClockTime(),
+        timestamp: new Date().toISOString()
+      }
+    ];
+    beat.tutorSlide.handoffCompleted = true;
+    saveAppState();
+  } finally {
+    hideStudyHelpLoadingOverlay();
+  }
+}
+
+/**
+ * Evaluates Daniel's WhatsApp reply inside `PRIVATE_TUTOR_SLIDE` via `callGroqPreferredAI` (`jsonMode: true`),
+ * returning `{ verified_term_ids, all_beat_terms_mastered, tutor_whatsapp_reply }` and updating the Sunlight Checklist!
+ * @param {object} unit
+ * @param {number} beatIndex
+ * @param {string} userMessage
+ * @returns {Promise<{ verified_term_ids: string[], all_beat_terms_mastered: boolean, tutor_whatsapp_reply: string }>}
+ */
+async function evaluatePrivateTutorTurnWithGroq(unit, beatIndex, userMessage) {
+  const beat = unit.conceptBeats?.[beatIndex];
+  const checklist = beat?.tutorSlide?.required_terms_checklist || [];
+  const cIndices = Array.isArray(beat?.conceptIndices) ? beat.conceptIndices : [];
+
+  const termsSpecText = checklist.map((item, idx) => {
+    const gIdx = cIndices[idx];
+    const cObj = typeof gIdx === 'number' ? (unit.concepts?.[gIdx] || {}) : {};
+    const coreRule = Array.isArray(cObj.paragraphs) ? cObj.paragraphs.join(' ') : (cObj.simple_explanation || '');
+    return `- term_id: "${item.term_id}" | term_name: "${item.term_name}" (עמוד ${item.page_number}) | סטטוס נוכחי: ${item.verified ? 'כבר אומת ✅' : 'ממתין לבדיקה ⏳'} | הסבר מהספר: ${coreRule}`;
+  }).join('\n');
+
+  const recentChatText = (beat?.tutorSlide?.chatHistory || [])
+    .slice(-10)
+    .map(m => `${m.role === 'user' ? 'דניאל' : 'המורה הפרטי'}: ${m.text}`)
+    .join('\n');
+
+  const alreadyVerifiedIds = checklist.filter(t => Boolean(t.verified)).map(t => t.term_id);
+
+  const systemInstruction = `אתה המורה הפרטי האישי של דניאל (בן 28) בהנהלת חשבונות בצ'אט וואטסאפ.
+סגנון השיחה שלך: חם, מעודד, ישראלי וטבעי, קצר וממוקד — בין 1 ל-3 משפטים קצרים בלבד בכל הודעה!
+תפקידך לוודא שכל אחד מ-${checklist.length} המושגים ברשימת הקבוצה ברור לדניאל כמו שמש בבוקר במילים הפשוטות שלו (בלי העתק-הדבק ובלי לדרוש ניסוח אקדמי נוקשה — העיקר שהרעיון והכיוון נכונים!).
+חוקים חשובים:
+1. החזר ב-"verified_term_ids" את כל ה-term_id של המושגים שדניאל כבר הוכיח שהוא מבין (כולל אלו שכבר אומתו קודם + כל מושג שהוא הסביר נכון עכשיו).
+2. אם עדיין נשארו מושגים ברשימה שטרם אומתו, פרגן על מה שהסביר נכון ושאל שאלה קצרה ופשוטה על המושג הבא ברשימה שטרם אומת ("all_beat_terms_mastered": false).
+3. אם דניאל התבלבל או ביקש עזרה, תן לו דוגמה יומיומית קטנטנה ב-1-2 משפטים ובקש ממנו לנסות שוב במילים שלו ("all_beat_terms_mastered": false).
+4. אך ורק כאשר **כל** ${checklist.length} המושגים שברשימה אומתו במלואם, החזר את כל ה-term_id שלהם ב-"verified_term_ids", קבע "all_beat_terms_mastered": true, וכתוב הודעת סיום נלהבת וקצרה שפותחת לו את ההמשך!
+החזר אך ורק אובייקט JSON תקני בעברית.`;
+
+  const prompt = `שיעור: "${unit.lesson_title || unit.title}" (קבוצת מושגים ${beatIndex + 1} מתוך ${unit.conceptBeats.length})
+
+רשימת המושגים של הקבוצה לאימות:
+${termsSpecText}
+
+מושגים שכבר אומתו קודם: ${JSON.stringify(alreadyVerifiedIds)}
+
+היסטוריית שיחת הוואטסאפ בקבוצה זו:
+${recentChatText}
+
+הודעה חדשה מדניאל עכשיו:
+"${userMessage}"
+
+החזר JSON תקני בלבד במבנה המדויק:
+{
+  "verified_term_ids": ["..."],
+  "all_beat_terms_mastered": false,
+  "tutor_whatsapp_reply": "הודעת וואטסאפ קצרה (1-3 משפטים) לדניאל"
+}`;
+
+  let verifiedSet = new Set(alreadyVerifiedIds);
+  let replyText = '';
+  let aiDeclaredAllMastered = false;
+
+  try {
+    const raw = await invokeGroqPreferred(prompt, {
+      systemInstruction,
+      jsonMode: true,
+      maxTokens: 900
+    });
+    const parsed = parseJsonFromAIResponse(raw);
+    if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.verified_term_ids)) {
+        parsed.verified_term_ids.forEach(val => {
+          const cleanVal = String(val || '').trim();
+          if (!cleanVal) return;
+          // Match by exact term_id or by term_name
+          const matched = checklist.find(
+            item => item.term_id === cleanVal || item.term_name.trim() === cleanVal
+          );
+          if (matched) {
+            verifiedSet.add(matched.term_id);
+          }
+        });
+      }
+      aiDeclaredAllMastered = Boolean(parsed.all_beat_terms_mastered);
+      if (typeof parsed.tutor_whatsapp_reply === 'string' && parsed.tutor_whatsapp_reply.trim()) {
+        replyText = parsed.tutor_whatsapp_reply.trim();
+      }
+    }
+  } catch (err) {
+    console.warn('[PrivateTutor Groq] Fallback heuristic evaluation used:', err);
+  }
+
+  // Offline / fallback safety if AI returned empty reply
+  if (!replyText) {
+    const cleanUser = String(userMessage || '').trim();
+    const wordCount = cleanUser.split(/\s+/).filter(Boolean).length;
+    const nextUnverified = checklist.find(t => !verifiedSet.has(t.term_id));
+
+    if (wordCount >= 3 && cleanUser.length >= 8 && nextUnverified) {
+      verifiedSet.add(nextUnverified.term_id);
+      const stillRemaining = checklist.find(t => !verifiedSet.has(t.term_id));
+      if (stillRemaining) {
+        replyText = `בול דניאל, הסברת מעולה את **${nextUnverified.term_name}**! 🙌 עכשיו בוא נבדוק את המושג הבא שלנו: איך היית מסביר במילים שלך מה זה **${stillRemaining.term_name}**?`;
+      } else {
+        replyText = `אלוף דניאל! 🌟 הסברת במילים שלך את כל המושגים בקבוצה הזו בצורה הכי ברורה שיש — הכל ברור כמו שמש בבוקר! אפשר להתקדם בשמחה הלאה.`;
+      }
+    } else if (nextUnverified) {
+      replyText = `אתה בכיוון טוב דניאל! 💬 נסה לכתוב במשפט קצר ופשוט מהראש מה אומר המושג **${nextUnverified.term_name}** (או לתת דוגמה קטנה מחיי היומיום).`;
+    } else {
+      replyText = `מעולה דניאל! 🌟 כל המושגים בקבוצה הזו ברורים ב-100%!`;
+    }
+  }
+
+  // Sync checklist verification flags
+  checklist.forEach(item => {
+    if (verifiedSet.has(item.term_id)) {
+      item.verified = true;
+    }
+  });
+
+  // Strict mastery check: if single concept and AI declared all mastered, mark verified;
+  // for multi-concept beats, require every checklist term to be verified (or AI explicitly verified all).
+  if (aiDeclaredAllMastered && (checklist.length <= 1 || verifiedSet.size >= checklist.length)) {
+    checklist.forEach(item => { item.verified = true; });
+  }
+  const allMasteredNow = checklist.length > 0 && checklist.every(item => Boolean(item.verified));
+
+  beat.tutorSlide.all_beat_terms_mastered = allMasteredNow;
+  beat.tutorSlide.completed = allMasteredNow;
+  beat.completed = allMasteredNow;
+
+  // Update concept `mastered` flags for verified terms & award stars if newly mastered
+  cIndices.forEach((gIdx, localIdx) => {
+    const chk = checklist[localIdx];
+    const cObj = unit.concepts?.[gIdx];
+    if (chk && chk.verified && cObj) {
+      cObj.mastered = true;
+      if (!cObj.starAwarded) {
+        cObj.starAwarded = true;
+        awardStudyHelpStars(1, `אימות מושג מול המורה הפרטי: ${cObj.term_name}`);
+      }
+    }
+  });
+
+  appendSlideInteractionLog(unit, {
+    slideType: 'PRIVATE_TUTOR_SLIDE',
+    beatIndex,
+    questionType: 'whatsapp_tutor_turn',
+    userAnswer: userMessage,
+    passed: allMasteredNow,
+    verified_term_ids: Array.from(verifiedSet),
+    aiFeedback: replyText
+  });
+
+  if (unit.learnerAdaptationProfile) {
+    unit.learnerAdaptationProfile.recentLearnerNotes.push(userMessage);
+    if (unit.learnerAdaptationProfile.recentLearnerNotes.length > 5) {
+      unit.learnerAdaptationProfile.recentLearnerNotes.shift();
+    }
+  }
+
+  return {
+    verified_term_ids: checklist.filter(t => t.verified).map(t => t.term_id),
+    all_beat_terms_mastered: allMasteredNow,
+    tutor_whatsapp_reply: replyText
+  };
 }
 
 /**
@@ -2115,10 +2940,13 @@ ${modeDirective}
 
 /**
  * Interactive Daily Study Unit View (`openStudyHelpUnit(unitId)`):
- * Displays `#view-unit`, hides `#unit-steps-wrapper`, and renders the 2-Stage Track 3 interface
- * inside `#unit-blocks-wrapper`:
- * - Stage 1: Lesson Promo + Concept & Textbook Example Mastery Gate with Gentle 2-Step MFA
- * - Stage 2: Grounded Textbook Questions & Real-Time Socratic Coach Chat
+ * Driven by `UnitBeatCursor` (`getFlatSlideDeck(unit)`):
+ * - Slide 0: `PROMO_OVERVIEW_SLIDE`
+ * - Per Concept Beat (`beatIndex = 0 .. K-1`):
+ *   - 1–3 x `CONCEPT_SLIDE` (paragraphs + book_example + interactive_widget + dual bottom questions)
+ *   - Async Context Handoff -> `PRIVATE_TUTOR_SLIDE` (WhatsApp UI powered by Groq + Sunlight Mastery Checklist + Anti-ChatGPT Shield + Strict Phased Gate)
+ * - Only after ALL `conceptBeats` & `PRIVATE_TUTOR_SLIDE` gates are 100% mastered:
+ *   - `HOMEWORK_SLIDE`s (Grounded Stage 2 Homework & Table Solver)
  * @param {string} unitId
  */
 function openStudyHelpUnit(unitId) {
@@ -2155,37 +2983,74 @@ function openStudyHelpUnit(unitId) {
   }
 
   const concepts = Array.isArray(unit.concepts) ? unit.concepts : [];
+  const conceptBeats = Array.isArray(unit.conceptBeats) ? unit.conceptBeats : [];
   const questions = Array.isArray(unit.questions) ? unit.questions : [];
-  const masteredConceptsCount = concepts.filter(c => Boolean(c.mastered)).length;
-  const allConceptsMastered = concepts.length === 0 || masteredConceptsCount === concepts.length;
+  const deck = UnitBeatCursor.getFlatSlideDeck(unit);
+  const activeSlide = UnitBeatCursor.getCurrentSlide(unit) || {
+    slideIndex: 0,
+    type: 'PROMO_OVERVIEW_SLIDE',
+    shortLabel: 'פתיחה',
+    fullTitle: unit.lesson_title || unit.title || '',
+    isUnlocked: true,
+    isCompleted: false
+  };
+
+  // Sync Stage & Question/Concept indices from `activeSlide`
+  if (activeSlide.type === 'CONCEPT_SLIDE') {
+    unit.currentConceptIdx = activeSlide.conceptIdx;
+    unit.activeStage = 'stage1';
+  } else if (activeSlide.type === 'PRIVATE_TUTOR_SLIDE') {
+    unit.activeStage = 'stage1';
+  } else if (activeSlide.type === 'HOMEWORK_SLIDE') {
+    unit.currentQuestionIdx = activeSlide.qIdx;
+    unit.activeStage = 'stage2';
+  } else {
+    unit.activeStage = 'stage1';
+  }
 
   if (typeof unit.currentQuestionIdx !== 'number' || unit.currentQuestionIdx < 0 || unit.currentQuestionIdx >= Math.max(1, questions.length)) {
     unit.currentQuestionIdx = 0;
   }
   const qIdx = unit.currentQuestionIdx;
-  const isStage1Active = unit.activeStage !== 'stage2' || !allConceptsMastered || questions.length === 0;
 
-  // Stage C Gate: If Daniel reaches a Beat that is still being generated, show Calming Loading Dialog until ready
-  if (isStage1Active && concepts[unit.currentConceptIdx]) {
-    const targetCBeatIdx = typeof concepts[unit.currentConceptIdx].beatIndex === 'number'
-      ? concepts[unit.currentConceptIdx].beatIndex
-      : -1;
+  // Stage C Gate & Async Tutor Context Handoff Gate before rendering active slide
+  if (activeSlide.type === 'CONCEPT_SLIDE') {
+    const targetCBeatIdx = activeSlide.beatIndex;
     if (
+      typeof targetCBeatIdx === 'number' &&
       targetCBeatIdx >= 0 &&
-      Array.isArray(unit.conceptBeats) &&
-      unit.conceptBeats[targetCBeatIdx] &&
-      unit.conceptBeats[targetCBeatIdx].status !== 'ready'
+      conceptBeats[targetCBeatIdx] &&
+      conceptBeats[targetCBeatIdx].status !== 'ready'
     ) {
       ensureBeatReadyForLearner(unit, 'concept', targetCBeatIdx).then(() => {
         openStudyHelpUnit(unit.id);
       });
       return;
     }
-  } else if (!isStage1Active && questions[qIdx]) {
-    const targetHwBeatIdx = typeof questions[qIdx].beatIndex === 'number'
-      ? questions[qIdx].beatIndex
-      : -1;
+  } else if (activeSlide.type === 'PRIVATE_TUTOR_SLIDE') {
+    const targetCBeatIdx = activeSlide.beatIndex;
+    const beatObj = conceptBeats[targetCBeatIdx];
+    if (beatObj && beatObj.status !== 'ready') {
+      ensureBeatReadyForLearner(unit, 'concept', targetCBeatIdx)
+        .then(() => performAsyncTutorContextHandoff(unit, targetCBeatIdx))
+        .then(() => openStudyHelpUnit(unit.id));
+      return;
+    }
     if (
+      beatObj &&
+      (!beatObj.tutorSlide?.handoffCompleted ||
+        !Array.isArray(beatObj.tutorSlide?.chatHistory) ||
+        beatObj.tutorSlide.chatHistory.length === 0)
+    ) {
+      performAsyncTutorContextHandoff(unit, targetCBeatIdx).then(() => {
+        openStudyHelpUnit(unit.id);
+      });
+      return;
+    }
+  } else if (activeSlide.type === 'HOMEWORK_SLIDE') {
+    const targetHwBeatIdx = activeSlide.hwBeatIndex;
+    if (
+      typeof targetHwBeatIdx === 'number' &&
       targetHwBeatIdx >= 0 &&
       Array.isArray(unit.homeworkBeats) &&
       unit.homeworkBeats[targetHwBeatIdx] &&
@@ -2229,23 +3094,60 @@ function openStudyHelpUnit(unitId) {
 
   const dateLabel = unit.createdAtLabel || unit.dateLabel || getTodayHebrewDateLabel();
   const displayTitle = unit.lesson_title || unit.title;
+  const sourceLabel = unit.sourceLabel || 'קובץ השיעור';
   if (viewTitleEl) viewTitleEl.textContent = `📚 עזרה בלימודים • ${displayTitle}`;
   if (badgeEl) badgeEl.textContent = `📅 ${dateLabel}`;
   if (mainTitleEl) mainTitleEl.textContent = displayTitle;
-  if (goalDescEl) goalDescEl.textContent = unit.pages_summary || unit.topic_summary || 'לימוד מונחה צעד אחר צעד מתוך עמודי השיעור שלך';
+  if (goalDescEl) goalDescEl.textContent = unit.pages_summary || unit.topic_summary || 'לימוד מונחה שקופית אחר שקופית מתוך עמודי השיעור שלך';
 
+  const masteredBeatsCount = conceptBeats.filter(b => Boolean(b?.tutorSlide?.all_beat_terms_mastered || b?.tutorSlide?.completed)).length;
+  const allConceptsMastered = UnitBeatCursor.areAllConceptBeatsMastered(unit);
+  const isStage1Active = activeSlide.type !== 'HOMEWORK_SLIDE';
   const solvedQuestionsCount = Array.isArray(unit.solvedQuestions) ? unit.solvedQuestions.filter(Boolean).length : 0;
   const hasPageSnapshots = Array.isArray(unit.pageSnapshots) && unit.pageSnapshots.length > 0;
-  const hasBeatsPipeline = Array.isArray(unit.conceptBeats) && unit.conceptBeats.length > 0;
-  const totalBeatsCount = (unit.conceptBeats?.length || 0) + (unit.homeworkBeats?.length || 0);
+  const totalBeatsCount = conceptBeats.length + (unit.homeworkBeats?.length || 0);
   const readyBeatsCount =
-    (unit.conceptBeats || []).filter(b => b && b.status === 'ready').length +
+    conceptBeats.filter(b => b && b.status === 'ready').length +
     (unit.homeworkBeats || []).filter(b => b && b.status === 'ready').length;
 
-  // Build Habit & Momentum Bar + Visual Guiding Stones Timeline + 2-Stage Journey Bar HTML
+  const slideDeckHeaderHtml = `
+    <div class="study-slide-deck-header" role="region" aria-label="סרגל שקופיות היחידה">
+      <div class="study-slide-deck-header-right">
+        <button
+          type="button"
+          id="btn-prev-slide-deck"
+          class="secondary-btn study-slide-prev-btn"
+          ${activeSlide.slideIndex <= 0 ? 'disabled' : ''}
+        >
+          <span>◀ השקופית הקודמת</span>
+        </button>
+        <span class="study-slide-counter-pill">
+          שקופית ${activeSlide.slideIndex + 1} מתוך ${deck.length} • ${escapeHtmlAttr(activeSlide.shortLabel)}
+        </span>
+      </div>
+      <div class="study-slide-deck-header-left">
+        ${totalBeatsCount > 0 ? `
+          <span
+            id="study-beats-bg-status-pill"
+            class="badge-tag"
+            style="background:${readyBeatsCount >= totalBeatsCount ? '#dcfce7' : '#e0f2fe'};color:${readyBeatsCount >= totalBeatsCount ? '#166534' : '#0369a1'};font-weight:700;"
+          >
+            ${readyBeatsCount >= totalBeatsCount ? `✅ כל ${totalBeatsCount} קבוצות התוכן מוכנות` : `⚡ קבוצות מוכנות ברקע: ${readyBeatsCount}/${totalBeatsCount}`}
+          </span>
+        ` : ''}
+        ${hasPageSnapshots ? `
+          <button type="button" id="btn-open-all-pages-viewer" class="secondary-btn study-view-page-btn">
+            <span>👁️ קובץ השיעור (${unit.pageSnapshots.length} עמודים)</span>
+          </button>
+        ` : ''}
+      </div>
+    </div>
+  `;
+
+  // Build Habit & Momentum Bar + Visual Guiding Stones Timeline + 2-Stage Journey Bar + Slide Deck Header HTML
   const journeyBarHtml = `
     ${buildHabitMomentumBarHtml()}
-    ${buildGuidingStonesTimelineHtml(unit, isStage1Active, allConceptsMastered)}
+    ${buildGuidingStonesTimelineHtml(unit)}
     <nav class="study-journey-bar" aria-label="שלבי הלמידה ביחידה">
       <button
         type="button"
@@ -2254,8 +3156,8 @@ function openStudyHelpUnit(unitId) {
       >
         <span class="journey-stage-icon">${allConceptsMastered ? '✅' : '1️⃣'}</span>
         <div class="journey-stage-info">
-          <strong>שלב 1: הכנה לשיעור ופיצוח המושגים (${masteredConceptsCount}/${concepts.length})</strong>
-          <small>פעימות לימוד מותאמות אישית + דוגמה מהספר ווידוא הבנה (+1 ⭐ למושג)</small>
+          <strong>שלב 1: שקופיות המושגים ושיחת המורה הפרטי (${masteredBeatsCount}/${conceptBeats.length} קבוצות)</strong>
+          <small>1–3 שקופיות מושגים בכל קבוצה + אימות במילים שלך מול המורה הפרטי בוואטסאפ ☀️</small>
         </div>
       </button>
 
@@ -2267,25 +3169,111 @@ function openStudyHelpUnit(unitId) {
       >
         <span class="journey-stage-icon">${!allConceptsMastered ? '🔒' : (solvedQuestionsCount === questions.length && questions.length > 0 ? '🏆' : '2️⃣')}</span>
         <div class="journey-stage-info">
-          <strong>שלב 2: פתרון השאלות והטבלאות מהספר (${solvedQuestionsCount}/${questions.length})</strong>
-          <small>${questions.length === 0 ? 'קובץ זה מכיל מושגים ודוגמאות בלבד' : (!allConceptsMastered ? 'ייפתח מיד לאחר השלמת המושגים בשלב 1' : 'תרגול מודרך של כל השאלות מתוך דפי השיעור (+2 ⭐ לשאלה)')}</small>
+          <strong>שלב 2: שקופיות שיעורי הבית מהספר (${solvedQuestionsCount}/${questions.length})</strong>
+          <small>${questions.length === 0 ? 'קובץ זה מכיל מושגים ודוגמאות בלבד' : (!allConceptsMastered ? 'נפתח מיד לאחר שכל קבוצות המושגים מאומתות ב-100% מול המורה הפרטי!' : 'פתרון מודרך של כל שאלות שיעורי הבית מהספר (+2 ⭐ לשאלה)')}</small>
         </div>
       </button>
     </nav>
+    ${slideDeckHeaderHtml}
   `;
 
-  if (isStage1Active) {
-    // ========================================================================
-    // STAGE 1: LESSON PROMO + BEAT SLIDES (CONCEPT + BOOK EXAMPLE + WIDGET + 2 BOTTOM QUESTIONS)
-    // ========================================================================
-    const cIdx = unit.currentConceptIdx;
+  // ==========================================================================
+  // SLIDE TYPE 0: `PROMO_OVERVIEW_SLIDE`
+  // ==========================================================================
+  if (activeSlide.type === 'PROMO_OVERVIEW_SLIDE') {
+    blocksWrapper.innerHTML = `
+      <div class="study-unit-player-container" dir="rtl">
+        ${journeyBarHtml}
+
+        <section class="card study-promo-overview-card" aria-label="פתיחת השיעור ומפת הדרך">
+          <div class="study-promo-top-badges">
+            <span class="study-today-date-badge">📅 ${dateLabel}</span>
+            <span class="study-source-ref-badge">📍 מקור: ${escapeHtmlAttr(sourceLabel)}</span>
+            <span class="badge-tag" style="background:#fef3c7;color:#92400e;font-weight:800;">🎬 שקופית פתיחה לשיעור</span>
+          </div>
+
+          <h2 class="study-promo-main-title">${displayTitle}</h2>
+          <p class="study-promo-summary-text">
+            ${formatCoachChatHtml(unit.pages_summary || unit.topic_summary || 'ביחידה זו נלמד צעד אחר צעד את כל המושגים והדוגמאות מהספר, נאמת אותם בשיחה קצרה עם המורה הפרטי, ונפתור יחד את שיעורי הבית.')}
+          </p>
+
+          <div class="study-promo-stats-grid">
+            <div class="study-promo-stat-box">
+              <span class="promo-stat-icon">💎</span>
+              <div class="promo-stat-number">${conceptBeats.length}</div>
+              <div class="promo-stat-label">קבוצות מושגים (${concepts.length} שקופיות מושגים)</div>
+            </div>
+            <div class="study-promo-stat-box">
+              <span class="promo-stat-icon">☀️</span>
+              <div class="promo-stat-number">${conceptBeats.length}</div>
+              <div class="promo-stat-label">שיחות וואטסאפ קצרות עם המורה הפרטי</div>
+            </div>
+            <div class="study-promo-stat-box">
+              <span class="promo-stat-icon">📝</span>
+              <div class="promo-stat-number">${questions.length}</div>
+              <div class="promo-stat-label">שאלות שיעורי בית מתוך הספר</div>
+            </div>
+          </div>
+
+          <div class="study-promo-how-it-works">
+            <div class="promo-how-title">🧭 איך עובדת הלמידה החכמה שלנו היום?</div>
+            <ol class="promo-how-list">
+              <li>בכל <strong>שקופית מושג</strong> קוראים הסבר קצר + דוגמה מהספר ועונים על <strong>2 שאלות קצרות</strong> בתחתית השקופית.</li>
+              <li>אחרי כל <strong>1 עד 3 שקופיות מושגים</strong> עוברים ל<strong>שיחת וואטסאפ עם המורה הפרטי</strong> — מוודאים במילים שלך שהכל ברור כמו שמש בבוקר ☀️.</li>
+              <li>רק כשכל המושגים ברורים ב-100%, נפתחות <strong>שקופיות שיעורי הבית</strong> מתוך הספר!</li>
+            </ol>
+          </div>
+
+          <div class="study-promo-actions-row">
+            ${deck.length > 1 ? `
+              <button type="button" id="btn-start-first-beat-slide" class="primary-btn study-promo-start-btn">
+                <span>🚀 התחל בקבוצת המושגים הראשונה ▶</span>
+              </button>
+            ` : `
+              <button type="button" id="btn-finish-concepts-only-exam" class="primary-btn study-promo-start-btn">
+                <span>🎉 צור לי מבחן מסכם 🏆</span>
+              </button>
+            `}
+          </div>
+        </section>
+      </div>
+    `;
+
+    bindJourneyBarEvents(blocksWrapper, unit, allConceptsMastered);
+
+    const startFirstSlideBtn = blocksWrapper.querySelector('#btn-start-first-beat-slide');
+    if (startFirstSlideBtn) {
+      startFirstSlideBtn.onclick = async () => {
+        unit.promoCompleted = true;
+        saveAppState();
+        await UnitBeatCursor.advanceNext(unit);
+      };
+    }
+
+    const finishEmptyBtn = blocksWrapper.querySelector('#btn-finish-concepts-only-exam');
+    if (finishEmptyBtn) {
+      finishEmptyBtn.onclick = async () => {
+        await completeStudyHelpUnitAndGenerateExam(unit);
+      };
+    }
+    return;
+  }
+
+  // ==========================================================================
+  // SLIDE TYPE 1: `CONCEPT_SLIDE` (1-3 slides per Concept Beat)
+  // ==========================================================================
+  if (activeSlide.type === 'CONCEPT_SLIDE') {
+    const cIdx = activeSlide.conceptIdx;
+    const bIdx = activeSlide.beatIndex;
+    const localIdx = activeSlide.localIdxInBeat;
+    const beatSize = activeSlide.beatSize;
     const activeConcept = concepts[cIdx] || concepts[0];
     const pageNum = Number(activeConcept?.page_number) || 1;
-    const conceptCheck1Done = Boolean(activeConcept?.check1Passed || activeConcept?.mastered);
-    const conceptMastered = Boolean(activeConcept?.mastered);
-    const activeBeatIdx = typeof activeConcept?.beatIndex === 'number' ? activeConcept.beatIndex : 0;
-    const activeBeatObj = hasBeatsPipeline ? unit.conceptBeats[activeBeatIdx] : null;
-    const hasBeatSlideSchema = Boolean(activeConcept?.bottom_questions && activeConcept.bottom_questions.mc_question && activeConcept.bottom_questions.open_question);
+    const q1Done = Boolean(activeConcept?.check1Passed || activeConcept?.mastered);
+    const q2Done = Boolean(activeConcept?.openQuestionPassed || activeConcept?.mastered);
+    const bothSlideQuestionsDone = Boolean(q1Done && q2Done);
+
+    const sourceBadgeText = `📍 מקור: ${sourceLabel} • עמוד ${pageNum}`;
 
     const paragraphsHtml = Array.isArray(activeConcept?.paragraphs) && activeConcept.paragraphs.length > 0
       ? activeConcept.paragraphs
@@ -2316,108 +3304,66 @@ function openStudyHelpUnit(unitId) {
       ? activeConcept.interactive_widget
       : null;
 
-    const mcQ = hasBeatSlideSchema ? activeConcept.bottom_questions.mc_question : null;
-    const openQ = hasBeatSlideSchema ? activeConcept.bottom_questions.open_question : null;
+    const mcQ = activeConcept?.bottom_questions?.mc_question || {
+      question: activeConcept?.mfa_step1_question || `מה הרעיון המרכזי במושג "${activeConcept?.term_name || ''}"?`,
+      options: activeConcept?.mfa_step1_options || ['יישום הכלל לפי הדוגמה בספר', 'ניחוש אקראי'],
+      correct_index: Number(activeConcept?.mfa_step1_correct_index) || 0,
+      explanation: 'תשובה מדויקת!'
+    };
+    const openQ = activeConcept?.bottom_questions?.open_question || {
+      question: `הסבר במשפט קצר במילים שלך את "${activeConcept?.term_name || ''}":`,
+      expected_core_idea: activeConcept?.simple_explanation || '',
+      hint: `היעזר בהסבר או בדוגמה מעמוד ${pageNum} למעלה.`,
+      userAnswer: ''
+    };
 
-    // Sync tutorSlide checklist verification status with concept mastery
-    if (activeBeatObj && activeBeatObj.tutorSlide && Array.isArray(activeBeatObj.tutorSlide.required_terms_checklist)) {
-      activeBeatObj.tutorSlide.required_terms_checklist.forEach((chkItem, localIdx) => {
-        const gIdx = Array.isArray(activeBeatObj.conceptIndices) ? activeBeatObj.conceptIndices[localIdx] : -1;
-        if (gIdx >= 0 && concepts[gIdx]) {
-          chkItem.verified = Boolean(concepts[gIdx].mastered);
-        }
-      });
-      activeBeatObj.tutorSlide.completed = activeBeatObj.tutorSlide.required_terms_checklist.every(i => Boolean(i.verified));
-      activeBeatObj.completed = activeBeatObj.tutorSlide.completed;
-    }
+    const isLastConceptSlideInBeat = localIdx >= beatSize - 1;
 
     blocksWrapper.innerHTML = `
       <div class="study-unit-player-container" dir="rtl">
         ${journeyBarHtml}
 
-        <!-- באנר פרומו לשיעור של היום -->
-        <section class="card study-lesson-promo-banner" aria-label="פרומו לשיעור">
-          <div class="study-intro-card-header">
-            <div class="study-intro-badges">
-              <span class="study-today-date-badge">📅 ${dateLabel}</span>
-              <span class="badge-tag" style="background:#dcfce7;color:#166534;font-weight:800;">🧭 שלב 1 מתוך 2: מבינים את החומר לפני שפותרים</span>
-              ${hasBeatsPipeline ? `
-                <span class="badge-tag" style="background:#ede9fe;color:#5b21b6;font-weight:800;">
-                  🎵 פעימה ${activeBeatIdx + 1} מתוך ${unit.conceptBeats.length}
-                </span>
-                <span
-                  id="study-beats-bg-status-pill"
-                  class="badge-tag"
-                  style="background:${readyBeatsCount >= totalBeatsCount ? '#dcfce7' : '#e0f2fe'};color:${readyBeatsCount >= totalBeatsCount ? '#166534' : '#0369a1'};font-weight:700;"
-                >
-                  ${readyBeatsCount >= totalBeatsCount ? `✅ כל ${totalBeatsCount} הפעימות מוכנות ומותאמות אישית` : `⚡ פעימות מוכנות ברקע: ${readyBeatsCount}/${totalBeatsCount}`}
-                </span>
-              ` : ''}
-            </div>
-            ${hasPageSnapshots ? `
-              <button type="button" id="btn-open-all-pages-viewer" class="secondary-btn study-view-page-btn">
-                <span>👁️ צפה בעמודי הקובץ (${unit.pageSnapshots.length} עמודים)</span>
-              </button>
-            ` : ''}
-          </div>
-          <h3 class="study-intro-unit-title">${displayTitle}</h3>
-          <p class="study-intro-summary-text">${formatCoachChatHtml(unit.pages_summary || unit.topic_summary || '')}</p>
-        </section>
-
-        <!-- כרטיס שקופית מושג בפעימה + דוגמה מהספר + ווידג'ט אינטראקטיבי + 2 שאלות בתחתית -->
-        <section class="card study-concept-mastery-card" aria-label="כרטיס מושג ודוגמה מהספר">
+        <section class="card study-concept-mastery-card" aria-label="שקופית מושג ודוגמה מהספר">
+          <!-- פס מיקום קבוצת המושגים הנוכחית -->
           <div class="study-q-progress-top">
             <div class="study-q-progress-headline">
-              <span class="study-q-counter-badge">מושג ${cIdx + 1} מתוך ${concepts.length} בשיעור</span>
-              <span class="study-q-solved-counter">${masteredConceptsCount} מתוך ${concepts.length} מושגים הובנו ב-100% ✅</span>
+              <span class="study-q-counter-badge">
+                💎 קבוצת מושגים ${bIdx + 1} מתוך ${conceptBeats.length} • שקופית מושג ${localIdx + 1} מתוך ${beatSize} בקבוצה
+              </span>
+              <span class="study-q-solved-counter">
+                ${bothSlideQuestionsDone ? '✅ 2/2 שאלות בשקופית הושלמו' : `${(q1Done ? 1 : 0) + (q2Done ? 1 : 0)} מתוך 2 שאלות בשקופית הושלמו`}
+              </span>
             </div>
             <div class="study-q-progress-bar-track">
-              <div class="study-q-progress-bar-fill" style="width:${Math.round((masteredConceptsCount / Math.max(1, concepts.length)) * 100)}%;"></div>
+              <div class="study-q-progress-bar-fill" style="width:${bothSlideQuestionsDone ? 100 : ((q1Done || q2Done) ? 50 : 12)}%;"></div>
             </div>
-          </div>
-
-          <!-- כפתורי ניווט בין מושגים -->
-          <div class="study-q-nav-pills" role="tablist" aria-label="בחירת מושג בשיעור">
-            ${concepts.map((cItem, idx) => {
-              const isCurrent = idx === cIdx;
-              const isDone = Boolean(cItem.mastered);
-              return `
-                <button
-                  type="button"
-                  class="study-q-nav-pill concept-nav-pill ${isCurrent ? 'active' : ''} ${isDone ? 'solved' : ''}"
-                  data-concept-idx="${idx}"
-                  role="tab"
-                  aria-selected="${isCurrent ? 'true' : 'false'}"
-                >
-                  <span>${idx + 1}. ${cItem.term_name}</span>
-                  <span>${isDone ? '✅' : (isCurrent ? '🔵' : '⚪')}</span>
-                </button>
-              `;
-            }).join('')}
           </div>
 
           <!-- תוכן שקופית המושג הפעילה -->
           <div class="study-concept-detail-box">
             <div class="study-concept-top-bar">
               <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
-                <span class="study-active-q-tag">
-                  ${escapeHtmlAttr(activeConcept.source_citation || `📄 מתוך עמוד ${pageNum} בקובץ השיעור`)}
+                <span class="study-source-ref-badge">
+                  ${escapeHtmlAttr(sourceBadgeText)}
                 </span>
-                ${conceptMastered ? `<span class="badge-completed-card">✅ ברור כשמש בבוקר!</span>` : ''}
+                ${bothSlideQuestionsDone ? `<span class="badge-completed-card">✅ מוכן להמשך!</span>` : ''}
               </div>
-              ${hasPageSnapshots ? `
-                <button type="button" id="btn-view-concept-page" class="secondary-btn study-view-page-btn" data-page-num="${pageNum}">
-                  <span>👁️ הצג את עמוד ${pageNum} מהקובץ</span>
+              <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                <button type="button" id="btn-simpler-analogy" class="study-quick-assist-chip">
+                  <span>🤔 תסביר לי בעוד דרך פשוטה יותר</span>
                 </button>
-              ` : ''}
+                <button type="button" id="btn-view-concept-page" class="secondary-btn study-view-page-btn" data-page-num="${pageNum}">
+                  <span>👁️ הצג עמוד ${pageNum} מהספר</span>
+                </button>
+              </div>
             </div>
 
             <h3 class="study-concept-term-title">💡 מושג ${cIdx + 1}: ${activeConcept.term_name}</h3>
 
             <div class="study-concept-columns">
-              <!-- בלוק 1: הסבר אינטואיטיבי + הכלל המלא מהספר (1-2 פסקאות בהירות) -->
+              <!-- בלוק 1: 1-2 פסקאות קצרות ובהירות -->
               <div class="study-concept-explain-panel simple-panel">
-                <div class="study-panel-badge">🌱 הסבר בהיר: אינטואיציה יומיומית + הכלל המלא מהספר</div>
+                <div class="study-panel-badge">🌱 הסבר קצר וברור (אינטואיציה + הכלל המלא מהספר)</div>
                 ${paragraphsHtml}
                 ${activeConcept.extraSimplerAnalogy ? `
                   <div class="study-extra-analogy-box">
@@ -2427,17 +3373,17 @@ function openStudyHelpUnit(unitId) {
                 ` : ''}
               </div>
 
-              <!-- בלוק 2: דוגמה פתורה מהעמוד שהועלה בספר מפורקת לצעדים -->
+              <!-- בלוק 2: דוגמה פתורה מהעמוד בספר -->
               <div class="study-concept-explain-panel textbook-panel">
                 <div class="study-panel-badge">📖 ${escapeHtmlAttr(bookExObj?.title || `דוגמה מתוך עמוד ${pageNum} בספר`)}</div>
                 ${bookExampleHtml}
               </div>
             </div>
 
-            <!-- מיני-ווידג'ט התנסות אינטראקטיבית על המסך (כשזמין בפעימה) -->
+            <!-- מיקרו-ווידג'ט אינטראקטיבי של המושג -->
             ${widgetObj ? `
               <div class="study-mfa-step-box ${widgetObj.completed ? 'step-passed' : ''}" id="concept-interactive-widget-box" style="margin-top:1rem; background:#f8fafc;">
-                <div class="study-mfa-step-badge">🧩 בדיקה אינטראקטיבית מהירה על המסך</div>
+                <div class="study-mfa-step-badge">🧩 מיקרו-תרגול אינטראקטיבי על המושג</div>
                 <p class="study-mfa-question-text">${formatCoachChatHtml(widgetObj.prompt)}</p>
                 <div class="study-mfa-options-list">
                   ${widgetObj.options.map((wOpt, wIdx) => `
@@ -2457,31 +3403,26 @@ function openStudyHelpUnit(unitId) {
               </div>
             ` : ''}
 
-            <!-- 2 שאלות בתחתית השקופית (MC + Open Question) או 2-Step MFA ליחידות ישנות -->
+            <!-- בתחתית השקופית: אך ורק 2 השאלות של שקופית זו (1 אמריקאית + 1 פתוחה במילים שלך) -->
             <div class="study-mfa-gate-container">
               <div class="study-mfa-header-row">
-                <h4 class="study-mfa-gate-title">
-                  ${hasBeatSlideSchema
-                    ? '🎯 2 שאלות וידוא הבנה בתחתית השקופית (אמריקאית + פתוחה במילים שלך)'
-                    : '🎯 וידוא הבנה עדין ב-2 צעדים (כדי שנהיה בטוחים ב-100% שזה ברור!)'}
-                </h4>
-                <button type="button" id="btn-simpler-analogy" class="study-quick-assist-chip">
-                  <span>🤔 תסביר לי בעוד דרך פשוטה יותר</span>
-                </button>
+                <h4 class="study-mfa-gate-title">🎯 2 שאלות קצרות לסיכום השקופית (השלם את שתיהן כדי להמשיך)</h4>
               </div>
 
-              ${hasBeatSlideSchema ? `
-                <!-- שאלה 1 בתחתית השקופית: שאלה אמריקאית (mc_question) -->
-                <div class="study-mfa-step-box ${conceptCheck1Done ? 'step-passed' : ''}" id="concept-mfa-step1-box">
-                  <div class="study-mfa-step-badge">שאלה 1 מתוך 2 — שאלה אמריקאית</div>
+              <div class="study-dual-bottom-questions-grid">
+                <!-- שאלה 1: אמריקאית -->
+                <div class="study-bottom-q-card ${q1Done ? 'q-passed' : ''}" id="concept-q1-mc-card">
+                  <div class="study-bottom-q-badge" id="concept-q1-status-badge">
+                    ${q1Done ? '✅ שאלה 1 מתוך 2 (אמריקאית) — הושלם!' : '1️⃣ שאלה 1 מתוך 2 — שאלה אמריקאית'}
+                  </div>
                   <p class="study-mfa-question-text">${formatCoachChatHtml(mcQ.question)}</p>
                   <div class="study-mfa-options-list">
                     ${(mcQ.options || []).map((opt, oIdx) => {
-                      const isCorrectOpt = oIdx === mcQ.correct_index;
+                      const isCorrectOpt = oIdx === Number(mcQ.correct_index || 0);
                       return `
                         <button
                           type="button"
-                          class="study-mfa-option-btn step1-opt-btn ${conceptCheck1Done && isCorrectOpt ? 'correct-selected' : ''}"
+                          class="study-mfa-option-btn step1-opt-btn ${q1Done && isCorrectOpt ? 'correct-selected' : ''}"
                           data-opt-idx="${oIdx}"
                         >
                           <span class="opt-letter">${idxToHebrewLetter(oIdx)}.</span>
@@ -2490,18 +3431,16 @@ function openStudyHelpUnit(unitId) {
                       `;
                     }).join('')}
                   </div>
-                  <div id="concept-mfa-step1-feedback" class="study-mfa-feedback ${conceptCheck1Done ? 'success' : ''}" style="display:${conceptCheck1Done ? 'block' : 'none'};">
-                    ${conceptCheck1Done ? `✅ ${formatCoachChatHtml(mcQ.explanation || 'תשובה נכונה! כעת עבור לשאלה הפתוחה הקצרה למטה:')}` : ''}
+                  <div id="concept-mfa-step1-feedback" class="study-mfa-feedback ${q1Done ? 'success' : ''}" style="display:${q1Done ? 'block' : 'none'};">
+                    ${q1Done ? `✅ ${formatCoachChatHtml(mcQ.explanation || 'תשובה נכונה ומדויקת!')}` : ''}
                   </div>
                 </div>
 
-                <!-- שאלה 2 בתחתית השקופית: שאלה פתוחה (open_question) -->
-                <div
-                  class="study-mfa-step-box ${conceptMastered ? 'step-passed' : ''}"
-                  id="concept-mfa-step2-box"
-                  style="display:${conceptCheck1Done ? 'block' : 'none'};"
-                >
-                  <div class="study-mfa-step-badge">שאלה 2 מתוך 2 — שאלה פתוחה במילים שלך</div>
+                <!-- שאלה 2: פתוחה במילים שלך (נבדקת מול Groq AI) -->
+                <div class="study-bottom-q-card ${q2Done ? 'q-passed' : ''}" id="concept-q2-open-card">
+                  <div class="study-bottom-q-badge" id="concept-q2-status-badge">
+                    ${q2Done ? '✅ שאלה 2 מתוך 2 (במילים שלך) — הושלם!' : '2️⃣ שאלה 2 מתוך 2 — הסבר קצר במילים שלך'}
+                  </div>
                   <p class="study-mfa-question-text">${formatCoachChatHtml(openQ.question)}</p>
                   <div style="margin-bottom:0.55rem;">
                     <button type="button" id="btn-toggle-open-q-hint" class="study-quick-assist-chip" style="font-size:0.85rem;">
@@ -2523,118 +3462,29 @@ function openStudyHelpUnit(unitId) {
                       <span>בדוק תשובה ✨</span>
                     </button>
                   </div>
-                  <div id="concept-mfa-step2-feedback" class="study-mfa-feedback ${conceptMastered ? 'success' : ''}" style="display:${conceptMastered ? 'block' : 'none'};">
-                    ${conceptMastered ? '🌟 <strong>ברור כשמש בבוקר!</strong> פיצחת את המושג הזה ב-100% במילים שלך.' : ''}
+                  <div id="concept-mfa-step2-feedback" class="study-mfa-feedback ${q2Done ? 'success' : ''}" style="display:${q2Done ? 'block' : 'none'};">
+                    ${q2Done ? `✅ ${formatCoachChatHtml(openQ.lastAiFeedback || 'הסבר מצוין במילים שלך דניאל!')}` : ''}
                   </div>
                 </div>
-              ` : `
-                <!-- תמיכה מלאה ביחידות קיימות (2-Step MFA) -->
-                <div class="study-mfa-step-box ${conceptCheck1Done ? 'step-passed' : ''}" id="concept-mfa-step1-box">
-                  <div class="study-mfa-step-badge">בדיקה 1 מתוך 2 — זיהוי הרעיון המרכזי</div>
-                  <p class="study-mfa-question-text">${formatCoachChatHtml(activeConcept.mfa_step1_question)}</p>
-                  <div class="study-mfa-options-list">
-                    ${(activeConcept.mfa_step1_options || []).map((opt, oIdx) => {
-                      const isCorrectOpt = oIdx === activeConcept.mfa_step1_correct_index;
-                      return `
-                        <button
-                          type="button"
-                          class="study-mfa-option-btn step1-opt-btn ${conceptCheck1Done && isCorrectOpt ? 'correct-selected' : ''}"
-                          data-opt-idx="${oIdx}"
-                        >
-                          <span class="opt-letter">${idxToHebrewLetter(oIdx)}.</span>
-                          <span>${opt}</span>
-                        </button>
-                      `;
-                    }).join('')}
-                  </div>
+              </div>
 
-                  <div class="study-mfa-own-words-row">
-                    <input
-                      type="text"
-                      id="concept-own-words-input"
-                      class="styled-input study-own-words-input"
-                      placeholder="או כתוב כאן במילים שלך איך הבנת את המושג..."
-                    />
-                    <button type="button" id="btn-check-own-words" class="secondary-btn">
-                      <span>בדוק בניסוח שלי ✨</span>
-                    </button>
-                  </div>
-                  <div id="concept-mfa-step1-feedback" class="study-mfa-feedback" style="display:${conceptCheck1Done ? 'block' : 'none'};">
-                    ${conceptCheck1Done ? '✅ מעולה דניאל! עברת את בדיקה 1 בהצלחה. עכשיו בוא נאשר זאת בבדיקה הקצרה השנייה:' : ''}
-                  </div>
+              <!-- סרגל המשך לשקופית הבאה (נפתח אך ורק כששאלה 1 ושאלה 2 הושלמו!) -->
+              <div class="study-slide-next-bar ${bothSlideQuestionsDone ? 'unlocked' : 'locked'}" id="concept-slide-next-bar">
+                <div class="study-slide-next-caption" id="concept-slide-next-caption">
+                  ${bothSlideQuestionsDone
+                    ? (isLastConceptSlideInBeat
+                        ? '✅ שתי השאלות בשקופית הושלמו! בשקופית הבאה נעביר את התשובות שלך למורה הפרטי בוואטסאפ ☀️'
+                        : '✅ כל הכבוד דניאל! שתי השאלות בשקופית הזו הושלמו — אפשר להמשיך לשקופית הבאה!')
+                    : '🔒 השלם את שאלה 1 ושאלה 2 למעלה כדי לפתוח את המעבר לשקופית הבאה'}
                 </div>
-
-                <div
-                  class="study-mfa-step-box ${conceptMastered ? 'step-passed' : ''}"
-                  id="concept-mfa-step2-box"
-                  style="display:${conceptCheck1Done ? 'block' : 'none'};"
+                <button
+                  type="button"
+                  id="btn-advance-next-slide"
+                  class="primary-btn study-advance-slide-btn"
+                  ${!bothSlideQuestionsDone ? 'disabled' : ''}
                 >
-                  <div class="study-mfa-step-badge">בדיקה 2 מתוך 2 (וידוא הבנה סופי - בלי ניחושים!)</div>
-                  <p class="study-mfa-question-text">${formatCoachChatHtml(activeConcept.mfa_step2_why_question)}</p>
-                  <div class="study-mfa-options-list">
-                    ${(activeConcept.mfa_step2_options || []).map((opt, oIdx) => {
-                      const isCorrectOpt = oIdx === activeConcept.mfa_step2_correct_index;
-                      return `
-                        <button
-                          type="button"
-                          class="study-mfa-option-btn step2-opt-btn ${conceptMastered && isCorrectOpt ? 'correct-selected' : ''}"
-                          data-opt-idx="${oIdx}"
-                        >
-                          <span class="opt-letter">${idxToHebrewLetter(oIdx)}.</span>
-                          <span>${opt}</span>
-                        </button>
-                      `;
-                    }).join('')}
-                  </div>
-                  <div id="concept-mfa-step2-feedback" class="study-mfa-feedback" style="display:${conceptMastered ? 'block' : 'none'};">
-                    ${conceptMastered ? '🌟 <strong>הבנתי את המושג ב-100%!</strong> כל הכבוד דניאל, פיצחת את המושג הזה עד הסוף.' : ''}
-                  </div>
-                </div>
-              `}
-
-              <!-- שקופית מאמן / רשימת תיוג מושגי הפעימה (Tutor Slide Required Terms Checklist) -->
-              ${activeBeatObj && activeBeatObj.tutorSlide && Array.isArray(activeBeatObj.tutorSlide.required_terms_checklist) ? `
-                <div style="margin-top:1rem; padding:0.85rem 1rem; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px;">
-                  <div style="font-weight:800; color:#166534; margin-bottom:0.45rem; font-size:0.95rem;">
-                    ☀️ צ'ק-ליסט מאמן אישי לפעימה ${activeBeatIdx + 1} (חייב להיות ברור כשמש בבוקר לפני הפעימה הבאה):
-                  </div>
-                  <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
-                    ${activeBeatObj.tutorSlide.required_terms_checklist.map(chk => `
-                      <span style="display:inline-flex; align-items:center; gap:0.35rem; padding:0.3rem 0.7rem; border-radius:999px; font-size:0.88rem; font-weight:700; background:${chk.verified ? '#dcfce7' : '#ffffff'}; color:${chk.verified ? '#15803d' : '#475569'}; border:1px solid ${chk.verified ? '#86efac' : '#cbd5e1'};">
-                        <span>${chk.verified ? '✅' : '⏳'}</span>
-                        <span>${escapeHtmlAttr(chk.term_name)} (עמ' ${chk.page_number})</span>
-                      </span>
-                    `).join('')}
-                  </div>
-                </div>
-              ` : ''}
-
-              <!-- פעולת המשך למושג הבא / פעימה הבאה / פתיחת שלב 2 -->
-              <div id="concept-mastered-actions-bar" class="study-question-solved-action-box" style="display:${conceptMastered ? 'flex' : 'none'}; margin-top:1rem;">
-                ${allConceptsMastered ? (
-                  questions.length > 0 ? `
-                    <div class="study-solved-celebration-text">
-                      🎉 <strong>אלוף דניאל! פיצחת ב-100% את כל המושגים והדוגמאות של השיעור!</strong>
-                    </div>
-                    <button type="button" id="btn-unlock-stage2-questions" class="primary-btn study-finish-all-btn">
-                      <span>🔓 כל המושגים ברורים! בוא נעבור לפתרון השאלות מהספר ▶</span>
-                    </button>
-                  ` : `
-                    <div class="study-solved-celebration-text">
-                      🎉 <strong>אלוף דניאל! השלמת ב-100% את כל פעימות המושגים בקובץ זה!</strong>
-                    </div>
-                    <button type="button" id="btn-finish-concepts-only-exam" class="primary-btn study-finish-all-btn">
-                      <span>🎉 סיימתי את כל יחידת הלימוד של היום! צור לי מבחן מסכם 🏆</span>
-                    </button>
-                  `
-                ) : `
-                  <div class="study-solved-celebration-text">
-                    ✅ <strong>הבנתי את המושג ב-100%!</strong> מוכן לעבור למושג הבא בשיעור.
-                  </div>
-                  <button type="button" id="btn-next-concept-step" class="primary-btn study-next-question-btn">
-                    <span>המשך למושג הבא (${cIdx + 2} מתוך ${concepts.length}) ▶</span>
-                  </button>
-                `}
+                  <span>המשך לשקופית הבאה ▶</span>
+                </button>
               </div>
             </div>
           </div>
@@ -2642,20 +3492,49 @@ function openStudyHelpUnit(unitId) {
       </div>
     `;
 
-    // Bind Journey Bar Stage Tabs
     bindJourneyBarEvents(blocksWrapper, unit, allConceptsMastered);
 
-    // Bind Page Viewer Buttons
-    const openAllPagesBtn = blocksWrapper.querySelector('#btn-open-all-pages-viewer');
-    if (openAllPagesBtn) {
-      openAllPagesBtn.onclick = () => openLessonPageViewerModal(unit, pageNum);
-    }
+    // Bind Page Viewer Button ("👁️ הצג עמוד X מהספר")
     const viewConceptPageBtn = blocksWrapper.querySelector('#btn-view-concept-page');
     if (viewConceptPageBtn) {
-      viewConceptPageBtn.onclick = () => openLessonPageViewerModal(unit, pageNum);
+      viewConceptPageBtn.onclick = () => {
+        if (hasPageSnapshots) {
+          openLessonPageViewerModal(unit, pageNum);
+        } else if (typeof showToast === 'function') {
+          showToast(`מקור המושג: ${sourceLabel} • עמוד ${pageNum} (ביחידה מטקסט מודבק אין צילום סרוק של העמוד)`, 'info');
+        }
+      };
     }
 
-    // Bind Interactive Widget Options
+    // Helper to refresh unlock state of `#btn-advance-next-slide` live when Q1 and Q2 finish
+    const syncSlideQuestionsGateUI = () => {
+      const nowBothDone = Boolean(activeConcept.check1Passed && activeConcept.openQuestionPassed);
+      if (nowBothDone) {
+        activeConcept.slideQuestionsCompleted = true;
+      }
+      saveAppState();
+
+      const nextBar = blocksWrapper.querySelector('#concept-slide-next-bar');
+      const nextCaption = blocksWrapper.querySelector('#concept-slide-next-caption');
+      const nextBtn = blocksWrapper.querySelector('#btn-advance-next-slide');
+
+      if (nowBothDone) {
+        if (nextBar) {
+          nextBar.classList.remove('locked');
+          nextBar.classList.add('unlocked');
+        }
+        if (nextCaption) {
+          nextCaption.textContent = isLastConceptSlideInBeat
+            ? '✅ שתי השאלות בשקופית הושלמו! בשקופית הבאה נעביר את התשובות שלך למורה הפרטי בוואטסאפ ☀️'
+            : '✅ כל הכבוד דניאל! שתי השאלות בשקופית הזו הושלמו — אפשר להמשיך לשקופית הבאה!';
+        }
+        if (nextBtn) {
+          nextBtn.disabled = false;
+        }
+      }
+    };
+
+    // Bind Interactive Concept Micro-Widget
     if (widgetObj) {
       const widgetFeedbackEl = blocksWrapper.querySelector('#concept-widget-feedback');
       blocksWrapper.querySelectorAll('.widget-opt-btn').forEach(wBtn => {
@@ -2683,19 +3562,7 @@ function openStudyHelpUnit(unitId) {
       });
     }
 
-    // Bind Concept Nav Pills
-    blocksWrapper.querySelectorAll('.concept-nav-pill').forEach(pill => {
-      pill.onclick = () => {
-        const targetIdx = Number(pill.getAttribute('data-concept-idx'));
-        if (!isNaN(targetIdx) && targetIdx >= 0 && targetIdx < concepts.length) {
-          unit.currentConceptIdx = targetIdx;
-          saveAppState();
-          openStudyHelpUnit(unit.id);
-        }
-      };
-    });
-
-    // Bind "🤔 תסביר לי בעוד דרך פשוטה יותר" button (and record adaptation signal!)
+    // Bind "🤔 תסביר לי בעוד דרך פשוטה יותר" button (and log to slideInteractionLog!)
     const simplerBtn = blocksWrapper.querySelector('#btn-simpler-analogy');
     if (simplerBtn) {
       simplerBtn.onclick = async () => {
@@ -2708,12 +3575,19 @@ function openStudyHelpUnit(unitId) {
           unit.learnerAdaptationProfile.challengingTerms.push(activeConcept.term_name);
         }
         unit.learnerAdaptationProfile.dirtyForNextBeat = true;
+        appendSlideInteractionLog(unit, {
+          slideType: 'CONCEPT_SLIDE',
+          beatIndex: bIdx,
+          conceptIdx: cIdx,
+          term_name: activeConcept.term_name,
+          questionType: 'simpler_analogy',
+          passed: true
+        });
 
         try {
           const prompt = `הסבר לדניאל (בן 28) את המושג "${activeConcept.term_name}" (מתוך השיעור "${displayTitle}") בדרך פשוטה עוד יותר, עם דוגמה מוחשית מחיי היומיום (כמו קניות בסופר, ארנק או חשבון בנק אישי) ב-2 משפטים קצרים וברורים.
-הסבר נוכחי: ${activeConcept.simple_explanation}
-דוגמה מהספר: ${activeConcept.textbook_example}`;
-          const reply = await callMultiTierAI(prompt, { maxTokens: 1024 });
+הסבר נוכחי: ${(activeConcept.paragraphs || [activeConcept.simple_explanation]).join(' ')}`;
+          const reply = await invokeGroqPreferred(prompt, { maxTokens: 700 });
           activeConcept.extraSimplerAnalogy = String(reply || '').trim();
         } catch (e) {
           activeConcept.extraSimplerAnalogy = `תחשוב על "${activeConcept.term_name}" כמו בדיקה פשוטה ביומיום: קודם מסתכלים מה קיבלנו ומה נתנו, ורושמים כל צד במקום הקבוע שלו כדי שלא נתבלבל.`;
@@ -2723,33 +3597,40 @@ function openStudyHelpUnit(unitId) {
       };
     }
 
-    // Bind Question 1 / Check 1 Multiple-Choice Options
+    // Bind Question 1 (Multiple-Choice)
     const step1Feedback = blocksWrapper.querySelector('#concept-mfa-step1-feedback');
-    const step2Box = blocksWrapper.querySelector('#concept-mfa-step2-box');
-    const expectedMcIdx = hasBeatSlideSchema ? Number(mcQ.correct_index || 0) : Number(activeConcept.mfa_step1_correct_index || 0);
+    const q1Card = blocksWrapper.querySelector('#concept-q1-mc-card');
+    const q1Badge = blocksWrapper.querySelector('#concept-q1-status-badge');
+    const expectedMcIdx = Number(mcQ.correct_index || 0);
 
     blocksWrapper.querySelectorAll('.step1-opt-btn').forEach(btn => {
       btn.onclick = () => {
         const chosenIdx = Number(btn.getAttribute('data-opt-idx'));
         if (chosenIdx === expectedMcIdx) {
           activeConcept.check1Passed = true;
-          if (mcQ) mcQ.answeredCorrectly = true;
-          saveAppState();
+          mcQ.answeredCorrectly = true;
+          appendSlideInteractionLog(unit, {
+            slideType: 'CONCEPT_SLIDE',
+            beatIndex: bIdx,
+            conceptIdx: cIdx,
+            term_name: activeConcept.term_name,
+            questionType: 'mc_question',
+            userAnswer: mcQ.options?.[chosenIdx] || '',
+            passed: true
+          });
           blocksWrapper.querySelectorAll('.step1-opt-btn').forEach(b => b.classList.remove('correct-selected', 'wrong-selected'));
           btn.classList.add('correct-selected');
+          if (q1Card) q1Card.classList.add('q-passed');
+          if (q1Badge) q1Badge.textContent = '✅ שאלה 1 מתוך 2 (אמריקאית) — הושלם!';
           if (step1Feedback) {
             step1Feedback.style.display = 'block';
             step1Feedback.className = 'study-mfa-feedback success';
-            step1Feedback.innerHTML = hasBeatSlideSchema && mcQ?.explanation
-              ? `✅ ${formatCoachChatHtml(mcQ.explanation)}`
-              : '✅ מעולה דניאל! תשובה נכונה. עכשיו בוא נאשר זאת בשאלה השנייה למטה:';
+            step1Feedback.innerHTML = `✅ ${formatCoachChatHtml(mcQ.explanation || 'תשובה נכונה ומדויקת!')}`;
           }
-          if (step2Box) {
-            step2Box.style.display = 'block';
-            if (typeof step2Box.scrollIntoView === 'function') {
-              step2Box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
+          if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
+            SoundService.playSuccessSound();
           }
+          syncSlideQuestionsGateUI();
         } else {
           btn.classList.add('wrong-selected');
           unit.learnerAdaptationProfile.wrongMcAttemptsCount =
@@ -2761,6 +3642,15 @@ function openStudyHelpUnit(unitId) {
             unit.learnerAdaptationProfile.pace = 'careful_step_by_step';
             unit.learnerAdaptationProfile.dirtyForNextBeat = true;
           }
+          appendSlideInteractionLog(unit, {
+            slideType: 'CONCEPT_SLIDE',
+            beatIndex: bIdx,
+            conceptIdx: cIdx,
+            term_name: activeConcept.term_name,
+            questionType: 'mc_question',
+            userAnswer: mcQ.options?.[chosenIdx] || '',
+            passed: false
+          });
           saveAppState();
 
           if (step1Feedback) {
@@ -2772,238 +3662,416 @@ function openStudyHelpUnit(unitId) {
       };
     });
 
-    if (hasBeatSlideSchema) {
-      // Bind Open Question Hint & Submission for Beat Slides
-      const toggleHintBtn = blocksWrapper.querySelector('#btn-toggle-open-q-hint');
-      const hintBox = blocksWrapper.querySelector('#concept-open-q-hint-box');
-      if (toggleHintBtn && hintBox) {
-        toggleHintBtn.onclick = () => {
-          hintBox.style.display = hintBox.style.display === 'none' ? 'block' : 'none';
-        };
-      }
-
-      const openQInput = blocksWrapper.querySelector('#concept-open-q-input');
-      const submitOpenQBtn = blocksWrapper.querySelector('#btn-submit-open-q');
-      const openQFeedback = blocksWrapper.querySelector('#concept-mfa-step2-feedback');
-
-      if (submitOpenQBtn && openQInput) {
-        submitOpenQBtn.onclick = async () => {
-          const userWords = openQInput.value.trim();
-          if (userWords.length < 3) {
-            if (typeof showToast === 'function') {
-              showToast('כתוב משפט קצר במילים שלך ונבדוק יחד 💡', 'warning');
-            }
-            openQInput.focus();
-            return;
-          }
-
-          submitOpenQBtn.disabled = true;
-          submitOpenQBtn.innerHTML = '<span>בודק...</span>';
-          let passed = true;
-          let feedbackMsg = 'ניסוח מצוין דניאל! המושג ברור ב-100%.';
-
-          try {
-            const evalPrompt = `דניאל לומד את המושג "${activeConcept.term_name}" (עמוד ${pageNum}).
-השאלה הפתוחה: "${openQ.question}"
-הרעיון המרכזי המצופה: "${openQ.expected_core_idea}"
-תשובתו של דניאל: "${userWords}"
-בדוק בעדינות ובהעצמה האם דניאל הבין את הכיוון המרכזי. החזר JSON תקני בלבד:
-{ "passed": true או false, "feedback": "משוב חם וקצר בעברית (1-2 משפטים)" }`;
-            const raw = await callMultiTierAI(evalPrompt, { jsonMode: true, maxTokens: 512 });
-            const parsed = parseJsonFromAIResponse(raw);
-            if (parsed && typeof parsed.passed === 'boolean') {
-              passed = parsed.passed;
-              feedbackMsg = parsed.feedback || feedbackMsg;
-            }
-          } catch (err) {
-            passed = userWords.length >= 4;
-          }
-
-          submitOpenQBtn.disabled = false;
-          submitOpenQBtn.innerHTML = '<span>בדוק תשובה ✨</span>';
-          openQ.userAnswer = userWords;
-
-          if (passed) {
-            openQ.verified = true;
-            activeConcept.check1Passed = true;
-            activeConcept.mastered = true;
-            if (!unit.learnerAdaptationProfile.masteredTerms.includes(activeConcept.term_name)) {
-              unit.learnerAdaptationProfile.masteredTerms.push(activeConcept.term_name);
-            }
-            unit.learnerAdaptationProfile.recentLearnerNotes.push(userWords);
-            if (unit.learnerAdaptationProfile.recentLearnerNotes.length > 5) {
-              unit.learnerAdaptationProfile.recentLearnerNotes.shift();
-            }
-
-            if (!activeConcept.starAwarded) {
-              activeConcept.starAwarded = true;
-              awardStudyHelpStars(1, `פיצוח מושג: ${activeConcept.term_name}`);
-            } else {
-              saveAppState();
-            }
-            if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
-              SoundService.playSuccessSound();
-            }
-            openStudyHelpUnit(unit.id);
-          } else {
-            saveAppState();
-            if (openQFeedback) {
-              openQFeedback.style.display = 'block';
-              openQFeedback.className = 'study-mfa-feedback warning';
-              openQFeedback.innerHTML = `💡 ${formatCoachChatHtml(feedbackMsg)}`;
-            }
-          }
-        };
-
-        openQInput.onkeydown = (e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            submitOpenQBtn.click();
-          }
-        };
-      }
-    } else {
-      // Legacy Check 1 Own-Words Input + Check 2 Options
-      const ownWordsInput = blocksWrapper.querySelector('#concept-own-words-input');
-      const checkOwnWordsBtn = blocksWrapper.querySelector('#btn-check-own-words');
-      if (checkOwnWordsBtn && ownWordsInput) {
-        checkOwnWordsBtn.onclick = async () => {
-          const userWords = ownWordsInput.value.trim();
-          if (userWords.length < 3) {
-            if (typeof showToast === 'function') {
-              showToast('כתוב משפט קצר במילים שלך ונבדוק יחד 💡', 'warning');
-            }
-            return;
-          }
-          checkOwnWordsBtn.disabled = true;
-          checkOwnWordsBtn.innerHTML = '<span>בודק...</span>';
-          let passed = true;
-          let feedbackMsg = '✅ ניסוח נהדר דניאל! הבנת את הכיוון. עכשיו השלם את בדיקה 2 למטה:';
-          try {
-            const evalPrompt = `דניאל לומד את המושג "${activeConcept.term_name}" (${activeConcept.simple_explanation}).
-הוא הסביר אותו במילים שלו כך: "${userWords}".
-החזר JSON בלבד: { "passed": true/false, "feedback": "משוב קצר וחם בעברית" }`;
-            const raw = await callMultiTierAI(evalPrompt, { jsonMode: true, maxTokens: 512 });
-            const parsed = parseJsonFromAIResponse(raw);
-            if (parsed && typeof parsed.passed === 'boolean') {
-              passed = parsed.passed;
-              feedbackMsg = parsed.feedback || feedbackMsg;
-            }
-          } catch (err) {
-            passed = true;
-          }
-          checkOwnWordsBtn.disabled = false;
-          checkOwnWordsBtn.innerHTML = '<span>בדוק בניסוח שלי ✨</span>';
-
-          if (passed) {
-            activeConcept.check1Passed = true;
-            saveAppState();
-            if (step1Feedback) {
-              step1Feedback.style.display = 'block';
-              step1Feedback.className = 'study-mfa-feedback success';
-              step1Feedback.innerHTML = `✅ ${formatCoachChatHtml(feedbackMsg)}`;
-            }
-            if (step2Box) {
-              step2Box.style.display = 'block';
-            }
-          } else if (step1Feedback) {
-            step1Feedback.style.display = 'block';
-            step1Feedback.className = 'study-mfa-feedback warning';
-            step1Feedback.innerHTML = `💡 ${formatCoachChatHtml(feedbackMsg)}`;
-          }
-        };
-      }
-
-      const step2Feedback = blocksWrapper.querySelector('#concept-mfa-step2-feedback');
-      blocksWrapper.querySelectorAll('.step2-opt-btn').forEach(btn => {
-        btn.onclick = () => {
-          const chosenIdx = Number(btn.getAttribute('data-opt-idx'));
-          if (chosenIdx === activeConcept.mfa_step2_correct_index) {
-            activeConcept.check1Passed = true;
-            activeConcept.mastered = true;
-            if (!activeConcept.starAwarded) {
-              activeConcept.starAwarded = true;
-              awardStudyHelpStars(1, `פיצוח מושג: ${activeConcept.term_name}`);
-            } else {
-              saveAppState();
-            }
-            if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
-              SoundService.playSuccessSound();
-            }
-            openStudyHelpUnit(unit.id);
-          } else {
-            btn.classList.add('wrong-selected');
-            if (step2Feedback) {
-              step2Feedback.style.display = 'block';
-              step2Feedback.className = 'study-mfa-feedback warning';
-              step2Feedback.innerHTML = '💡 שים לב לדוגמה מהספר למעלה ובחר את הנימוק שמסביר למה זה נכון.';
-            }
-          }
-        };
-      });
-    }
-
-    // Bind Next Concept / Beat Transition (with Dynamic Adaptation when crossing Beat boundaries!)
-    const nextConceptBtn = blocksWrapper.querySelector('#btn-next-concept-step');
-    if (nextConceptBtn) {
-      nextConceptBtn.onclick = async () => {
-        const nextUnmastered = concepts.findIndex((c, i) => i > cIdx && !c.mastered);
-        const anyUnmastered = concepts.findIndex(c => !c.mastered);
-        const nextIdx = nextUnmastered >= 0
-          ? nextUnmastered
-          : (anyUnmastered >= 0 ? anyUnmastered : Math.min(cIdx + 1, concepts.length - 1));
-
-        const nextConceptObj = concepts[nextIdx];
-        const nextBeatIdx = typeof nextConceptObj?.beatIndex === 'number' ? nextConceptObj.beatIndex : -1;
-
-        unit.currentConceptIdx = nextIdx;
-        saveAppState();
-
-        // If moving into a new Beat that either isn't ready yet OR needs adaptation based on Daniel's answers in current beat:
-        if (
-          hasBeatsPipeline &&
-          nextBeatIdx >= 0 &&
-          nextBeatIdx !== activeBeatIdx &&
-          unit.conceptBeats[nextBeatIdx]
-        ) {
-          const targetBeat = unit.conceptBeats[nextBeatIdx];
-          const targetUntouched = (targetBeat.conceptIndices || []).every(idx => !concepts[idx]?.mastered && !concepts[idx]?.check1Passed);
-          const shouldReAdapt = Boolean(unit.learnerAdaptationProfile?.dirtyForNextBeat && targetUntouched);
-
-          if (targetBeat.status !== 'ready' || shouldReAdapt) {
-            await ensureBeatReadyForLearner(unit, 'concept', nextBeatIdx, shouldReAdapt);
-          }
-        }
-
-        openStudyHelpUnit(unit.id);
+    // Bind Question 2 (Open-Ended checked via `callGroqPreferredAI` / `invokeGroqPreferred`)
+    const toggleHintBtn = blocksWrapper.querySelector('#btn-toggle-open-q-hint');
+    const hintBox = blocksWrapper.querySelector('#concept-open-q-hint-box');
+    if (toggleHintBtn && hintBox) {
+      toggleHintBtn.onclick = () => {
+        hintBox.style.display = hintBox.style.display === 'none' ? 'block' : 'none';
       };
     }
 
-    const unlockStage2Btn = blocksWrapper.querySelector('#btn-unlock-stage2-questions');
-    if (unlockStage2Btn) {
-      unlockStage2Btn.onclick = async () => {
-        unit.activeStage = 'stage2';
-        saveAppState();
-        const firstHwBeatIdx = typeof questions[0]?.beatIndex === 'number' ? questions[0].beatIndex : -1;
-        if (
-          firstHwBeatIdx >= 0 &&
-          Array.isArray(unit.homeworkBeats) &&
-          unit.homeworkBeats[firstHwBeatIdx] &&
-          unit.homeworkBeats[firstHwBeatIdx].status !== 'ready'
-        ) {
-          await ensureBeatReadyForLearner(unit, 'homework', firstHwBeatIdx, false);
+    const openQInput = blocksWrapper.querySelector('#concept-open-q-input');
+    const submitOpenQBtn = blocksWrapper.querySelector('#btn-submit-open-q');
+    const openQFeedback = blocksWrapper.querySelector('#concept-mfa-step2-feedback');
+    const q2Card = blocksWrapper.querySelector('#concept-q2-open-card');
+    const q2Badge = blocksWrapper.querySelector('#concept-q2-status-badge');
+
+    if (submitOpenQBtn && openQInput) {
+      submitOpenQBtn.onclick = async () => {
+        const userWords = openQInput.value.trim();
+        if (userWords.length < 3) {
+          if (typeof showToast === 'function') {
+            showToast('כתוב משפט קצר במילים שלך ונבדוק יחד 💡', 'warning');
+          }
+          openQInput.focus();
+          return;
         }
+
+        submitOpenQBtn.disabled = true;
+        submitOpenQBtn.innerHTML = '<span>בודק...</span>';
+        let passed = true;
+        let feedbackMsg = 'ניסוח מצוין במילים שלך דניאל!';
+
+        try {
+          const evalPrompt = `דניאל לומד את המושג "${activeConcept.term_name}" (עמוד ${pageNum}).
+השאלה הפתוחה בתחתית השקופית: "${openQ.question}"
+הרעיון המרכזי המצופה: "${openQ.expected_core_idea || (activeConcept.paragraphs || []).join(' ')}"
+תשובתו של דניאל במילים שלו: "${userWords}"
+בדוק בעדינות ובהעצמה האם דניאל הבין את הכיוון המרכזי (אין צורך בניסוח אקדמי, העיקר שהרעיון נכון!). החזר JSON תקני בלבד בעברית:
+{ "passed": true או false, "feedback": "משוב חם וקצר בעברית (1-2 משפטים)" }`;
+          const raw = await invokeGroqPreferred(evalPrompt, { jsonMode: true, maxTokens: 512 });
+          const parsed = parseJsonFromAIResponse(raw);
+          if (parsed && typeof parsed.passed === 'boolean') {
+            passed = parsed.passed;
+            feedbackMsg = parsed.feedback || feedbackMsg;
+          }
+        } catch (err) {
+          passed = userWords.length >= 4;
+        }
+
+        submitOpenQBtn.disabled = false;
+        submitOpenQBtn.innerHTML = '<span>בדוק תשובה ✨</span>';
+        openQ.userAnswer = userWords;
+        openQ.lastAiFeedback = feedbackMsg;
+
+        appendSlideInteractionLog(unit, {
+          slideType: 'CONCEPT_SLIDE',
+          beatIndex: bIdx,
+          conceptIdx: cIdx,
+          term_name: activeConcept.term_name,
+          questionType: 'open_question',
+          userAnswer: userWords,
+          passed,
+          aiFeedback: feedbackMsg
+        });
+
+        if (passed) {
+          openQ.verified = true;
+          activeConcept.openQuestionPassed = true;
+          if (!unit.learnerAdaptationProfile.masteredTerms.includes(activeConcept.term_name)) {
+            unit.learnerAdaptationProfile.masteredTerms.push(activeConcept.term_name);
+          }
+          unit.learnerAdaptationProfile.recentLearnerNotes.push(userWords);
+          if (unit.learnerAdaptationProfile.recentLearnerNotes.length > 5) {
+            unit.learnerAdaptationProfile.recentLearnerNotes.shift();
+          }
+
+          if (q2Card) q2Card.classList.add('q-passed');
+          if (q2Badge) q2Badge.textContent = '✅ שאלה 2 מתוך 2 (במילים שלך) — הושלם!';
+          if (openQFeedback) {
+            openQFeedback.style.display = 'block';
+            openQFeedback.className = 'study-mfa-feedback success';
+            openQFeedback.innerHTML = `✅ ${formatCoachChatHtml(feedbackMsg)}`;
+          }
+          if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
+            SoundService.playSuccessSound();
+          }
+          syncSlideQuestionsGateUI();
+        } else {
+          if (!unit.learnerAdaptationProfile.challengingTerms.includes(activeConcept.term_name)) {
+            unit.learnerAdaptationProfile.challengingTerms.push(activeConcept.term_name);
+          }
+          unit.learnerAdaptationProfile.dirtyForNextBeat = true;
+          saveAppState();
+          if (openQFeedback) {
+            openQFeedback.style.display = 'block';
+            openQFeedback.className = 'study-mfa-feedback warning';
+            openQFeedback.innerHTML = `💡 ${formatCoachChatHtml(feedbackMsg)}`;
+          }
+        }
+      };
+
+      openQInput.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          submitOpenQBtn.click();
+        }
+      };
+    }
+
+    // Bind "המשך לשקופית הבאה ▶"
+    const advanceSlideBtn = blocksWrapper.querySelector('#btn-advance-next-slide');
+    if (advanceSlideBtn) {
+      advanceSlideBtn.onclick = async () => {
+        if (!activeConcept.check1Passed || !activeConcept.openQuestionPassed) return;
+        await UnitBeatCursor.advanceNext(unit);
+      };
+    }
+
+    return;
+  }
+
+  // ==========================================================================
+  // SLIDE TYPE 2: `PRIVATE_TUTOR_SLIDE` (Groq WhatsApp UI + Sunlight Checklist + Anti-ChatGPT Shield)
+  // ==========================================================================
+  if (activeSlide.type === 'PRIVATE_TUTOR_SLIDE') {
+    const bIdx = activeSlide.beatIndex;
+    const beat = conceptBeats[bIdx];
+    const tutorSlide = beat?.tutorSlide || { required_terms_checklist: [], chatHistory: [], all_beat_terms_mastered: false };
+    const checklist = Array.isArray(tutorSlide.required_terms_checklist) ? tutorSlide.required_terms_checklist : [];
+    const allBeatTermsMastered = Boolean(
+      tutorSlide.all_beat_terms_mastered &&
+      checklist.length > 0 &&
+      checklist.every(item => Boolean(item.verified))
+    );
+    const isLastConceptBeat = bIdx >= conceptBeats.length - 1;
+    const gateBtnLabel = !isLastConceptBeat
+      ? '🎉 הבנתי ב-100%! המשך לקבוצת המושגים הבאה ▶'
+      : (questions.length > 0
+          ? '🔓 כל המושגים ביחידה ברורים ב-100%! פתח את שקופיות שיעורי הבית ▶'
+          : '🎉 כל המושגים ביחידה ברורים ב-100%! צור לי מבחן מסכם 🏆');
+
+    const chatMessages = Array.isArray(tutorSlide.chatHistory) ? tutorSlide.chatHistory : [];
+
+    blocksWrapper.innerHTML = `
+      <div class="study-unit-player-container" dir="rtl">
+        ${journeyBarHtml}
+
+        <!-- באנר עליון: רשימת המושגים שחייבים להיות ברורים כמו שמש בבוקר -->
+        <section class="sunlight-mastery-banner" aria-label="רשימת מושגי השמש לקבוצה זו">
+          <div class="sunlight-banner-title">
+            ☀️ רשימת המושגים שחייבים להיות ברורים כמו שמש בבוקר (קבוצה ${bIdx + 1} מתוך ${conceptBeats.length})
+          </div>
+          <div class="sunlight-checklist-pills" id="sunlight-checklist-pills">
+            ${checklist.map(chk => `
+              <div
+                class="sunlight-term-pill ${chk.verified ? 'verified' : 'pending'}"
+                data-term-id="${escapeHtmlAttr(chk.term_id)}"
+              >
+                <span class="sunlight-pill-term">${escapeHtmlAttr(chk.term_name)} (עמ' ${chk.page_number})</span>
+                <span class="sunlight-pill-status">${chk.verified ? '✅ מובן ב-100%!' : '⏳ ממתין לבדיקה'}</span>
+              </div>
+            `).join('')}
+          </div>
+        </section>
+
+        <!-- ממשק שיחת וואטסאפ עם המורה הפרטי (Groq AI) -->
+        <section class="whatsapp-tutor-card" aria-label="שיחת וואטסאפ עם המורה הפרטי">
+          <header class="whatsapp-tutor-header">
+            <div class="whatsapp-tutor-avatar" aria-hidden="true">👨‍🏫</div>
+            <div class="whatsapp-tutor-header-info">
+              <div class="whatsapp-tutor-name">המורה הפרטי של דניאל</div>
+              <div class="whatsapp-tutor-status">מחובר כעת • שיחה מהירה ואישית במילים שלך 💬</div>
+            </div>
+            <span class="whatsapp-shield-badge" title="מגן למידה עצמאית פעיל">🛡️ במילים שלך מהראש</span>
+          </header>
+
+          <div class="whatsapp-tutor-feed" id="whatsapp-tutor-feed">
+            ${chatMessages.map(msg => {
+              const isUser = msg.role === 'user';
+              return isUser ? `
+                <div class="whatsapp-bubble-row outgoing-row">
+                  <div class="whatsapp-bubble outgoing">
+                    <div class="whatsapp-bubble-text">${formatCoachChatHtml(msg.text)}</div>
+                    <div class="whatsapp-meta">
+                      <span>${escapeHtmlAttr(msg.timeLabel || '')}</span>
+                      <span class="whatsapp-ticks" aria-label="נקרא">✓✓</span>
+                    </div>
+                  </div>
+                </div>
+              ` : `
+                <div class="whatsapp-bubble-row incoming-row">
+                  <div class="whatsapp-bubble incoming" data-no-copy="true">
+                    <div class="whatsapp-bubble-text">${formatCoachChatHtml(msg.text)}</div>
+                    <div class="whatsapp-meta">
+                      <span>${escapeHtmlAttr(msg.timeLabel || '')}</span>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+
+            <div class="whatsapp-typing-indicator" id="whatsapp-typing-indicator" style="display:none;">
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+              <span>המורה הפרטי מקליד...</span>
+            </div>
+          </div>
+
+          <div class="whatsapp-input-bar">
+            <input
+              type="text"
+              id="whatsapp-tutor-input"
+              class="whatsapp-tutor-input"
+              autocomplete="off"
+              placeholder="כתוב כאן במילים שלך מהראש (משפט קצר ופשוט)..."
+            />
+            <button type="button" id="btn-send-whatsapp-tutor" class="whatsapp-send-btn" aria-label="שלח הודעה למורה הפרטי">
+              <span>שלח ➤</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- שער התקדמות קשיח בתחתית שיחת המורה הפרטי -->
+        <div class="tutor-phased-gate-bar ${allBeatTermsMastered ? 'unlocked' : 'locked'}" id="tutor-phased-gate-bar">
+          <div class="tutor-phased-gate-caption" id="tutor-phased-gate-caption">
+            ${allBeatTermsMastered
+              ? '☀️ מדהים דניאל! כל המושגים בקבוצה הזו ברורים כמו שמש בבוקר — השער פתוח!'
+              : '🔒 השער נעול עד שכל המושגים ברשימה למעלה יסומנו ב-"✅ מובן ב-100%!" בשיחה עם המורה הפרטי'}
+          </div>
+          <button
+            type="button"
+            id="btn-tutor-phased-gate"
+            class="primary-btn tutor-phased-gate-btn"
+            ${!allBeatTermsMastered ? 'disabled' : ''}
+          >
+            <span>${gateBtnLabel}</span>
+          </button>
+        </div>
+      </div>
+    `;
+
+    bindJourneyBarEvents(blocksWrapper, unit, allConceptsMastered);
+
+    const waFeed = blocksWrapper.querySelector('#whatsapp-tutor-feed');
+    const waInput = blocksWrapper.querySelector('#whatsapp-tutor-input');
+    const waSendBtn = blocksWrapper.querySelector('#btn-send-whatsapp-tutor');
+    const waTyping = blocksWrapper.querySelector('#whatsapp-typing-indicator');
+    const gateBar = blocksWrapper.querySelector('#tutor-phased-gate-bar');
+    const gateCaption = blocksWrapper.querySelector('#tutor-phased-gate-caption');
+    const gateBtn = blocksWrapper.querySelector('#btn-tutor-phased-gate');
+
+    const scrollWaToBottom = () => {
+      if (waFeed) {
+        waFeed.scrollTop = waFeed.scrollHeight;
+      }
+    };
+    scrollWaToBottom();
+
+    // Anti-ChatGPT Shield 1: Block `copy` / `cut` on tutor messages
+    if (waFeed) {
+      const blockTutorCopy = (e) => {
+        e.preventDefault();
+        if (typeof showToast === 'function') {
+          showToast('כאן לא מעתיקים את שאלות המורה — עונים במילים שלך מהראש! 😊💬', 'warning');
+        }
+      };
+      waFeed.addEventListener('copy', blockTutorCopy);
+      waFeed.addEventListener('cut', blockTutorCopy);
+    }
+
+    // Anti-ChatGPT Shield 2: Block `paste` / `drop` on tutor input box with exact friendly toast!
+    if (waInput) {
+      const blockInputPaste = (e) => {
+        e.preventDefault();
+        if (typeof showToast === 'function') {
+          showToast('דניאל אלוף, כאן כותבים במילים שלך מהראש – משפט קצר ופשוט מספיק! 💬', 'warning');
+        }
+      };
+      waInput.onpaste = blockInputPaste;
+      waInput.ondrop = blockInputPaste;
+    }
+
+    let isWaitingForTutor = false;
+    const handleSendWhatsAppReply = async () => {
+      if (isWaitingForTutor || !waInput) return;
+      const val = waInput.value.trim();
+      if (!val) return;
+
+      isWaitingForTutor = true;
+      waInput.value = '';
+      if (waSendBtn) waSendBtn.disabled = true;
+
+      const nowTime = formatWhatsAppClockTime();
+      tutorSlide.chatHistory.push({
+        role: 'user',
+        text: val,
+        timeLabel: nowTime,
+        timestamp: new Date().toISOString()
+      });
+      saveAppState();
+
+      if (waFeed) {
+        const userRow = document.createElement('div');
+        userRow.className = 'whatsapp-bubble-row outgoing-row';
+        userRow.innerHTML = `
+          <div class="whatsapp-bubble outgoing">
+            <div class="whatsapp-bubble-text">${formatCoachChatHtml(val)}</div>
+            <div class="whatsapp-meta">
+              <span>${escapeHtmlAttr(nowTime)}</span>
+              <span class="whatsapp-ticks" aria-label="נקרא">✓✓</span>
+            </div>
+          </div>
+        `;
+        if (waTyping && waTyping.parentNode === waFeed) {
+          waFeed.insertBefore(userRow, waTyping);
+        } else {
+          waFeed.appendChild(userRow);
+        }
+      }
+
+      if (waTyping) {
+        waTyping.style.display = 'inline-flex';
+      }
+      scrollWaToBottom();
+
+      const evalRes = await evaluatePrivateTutorTurnWithGroq(unit, bIdx, val);
+
+      if (waTyping) {
+        waTyping.style.display = 'none';
+      }
+
+      const replyTime = formatWhatsAppClockTime();
+      tutorSlide.chatHistory.push({
+        role: 'tutor',
+        text: evalRes.tutor_whatsapp_reply,
+        timeLabel: replyTime,
+        timestamp: new Date().toISOString()
+      });
+      saveAppState();
+
+      if (waFeed) {
+        const tutorRow = document.createElement('div');
+        tutorRow.className = 'whatsapp-bubble-row incoming-row';
+        tutorRow.innerHTML = `
+          <div class="whatsapp-bubble incoming" data-no-copy="true">
+            <div class="whatsapp-bubble-text">${formatCoachChatHtml(evalRes.tutor_whatsapp_reply)}</div>
+            <div class="whatsapp-meta">
+              <span>${escapeHtmlAttr(replyTime)}</span>
+            </div>
+          </div>
+        `;
+        if (waTyping && waTyping.parentNode === waFeed) {
+          waFeed.insertBefore(tutorRow, waTyping);
+        } else {
+          waFeed.appendChild(tutorRow);
+        }
+      }
+      scrollWaToBottom();
+
+      // Update Sunlight Mastery Checklist pills live
+      checklist.forEach(chk => {
+        const pillEl = blocksWrapper.querySelector(`.sunlight-term-pill[data-term-id="${CSS && CSS.escape ? CSS.escape(chk.term_id) : chk.term_id}"]`)
+          || Array.from(blocksWrapper.querySelectorAll('.sunlight-term-pill')).find(el => el.getAttribute('data-term-id') === chk.term_id);
+        if (pillEl && chk.verified) {
+          pillEl.classList.remove('pending');
+          pillEl.classList.add('verified');
+          const stEl = pillEl.querySelector('.sunlight-pill-status');
+          if (stEl) stEl.textContent = '✅ מובן ב-100%!';
+        }
+      });
+
+      if (evalRes.all_beat_terms_mastered) {
         if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
           SoundService.playSuccessSound();
         }
-        openStudyHelpUnit(unit.id);
+        if (gateBar) {
+          gateBar.classList.remove('locked');
+          gateBar.classList.add('unlocked');
+        }
+        if (gateCaption) {
+          gateCaption.textContent = '☀️ מדהים דניאל! כל המושגים בקבוצה הזו ברורים כמו שמש בבוקר — השער פתוח!';
+        }
+        if (gateBtn) {
+          gateBtn.disabled = false;
+        }
+      }
+
+      isWaitingForTutor = false;
+      if (waSendBtn) waSendBtn.disabled = false;
+      if (waInput) waInput.focus();
+    };
+
+    if (waSendBtn && waInput) {
+      waSendBtn.onclick = handleSendWhatsAppReply;
+      waInput.onkeydown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          handleSendWhatsAppReply();
+        }
       };
     }
 
-    const finishConceptsOnlyBtn = blocksWrapper.querySelector('#btn-finish-concepts-only-exam');
-    if (finishConceptsOnlyBtn) {
-      finishConceptsOnlyBtn.onclick = async () => {
-        await completeStudyHelpUnitAndGenerateExam(unit);
+    if (gateBtn) {
+      gateBtn.onclick = async () => {
+        if (!tutorSlide.all_beat_terms_mastered) return;
+        if (!isLastConceptBeat || questions.length > 0) {
+          await UnitBeatCursor.advanceNext(unit);
+        } else {
+          await completeStudyHelpUnitAndGenerateExam(unit);
+        }
       };
     }
 
@@ -3560,15 +4628,13 @@ function openStudyHelpUnit(unitId) {
   };
   scrollToChatBottom();
 
-  // Bind question navigation pills
+  // Bind question navigation pills via `UnitBeatCursor`
   const navPills = blocksWrapper.querySelectorAll('.study-q-nav-pill[data-q-idx]');
   navPills.forEach(pill => {
-    pill.onclick = () => {
+    pill.onclick = async () => {
       const targetIdx = Number(pill.getAttribute('data-q-idx'));
       if (!isNaN(targetIdx) && targetIdx >= 0 && targetIdx < questions.length) {
-        unit.currentQuestionIdx = targetIdx;
-        saveAppState();
-        openStudyHelpUnit(unit.id);
+        await UnitBeatCursor.goToHomeworkQuestion(unit, targetIdx);
       }
     };
   });
@@ -3863,19 +4929,17 @@ function openStudyHelpUnit(unitId) {
     };
   }
 
-  // Bind Next Question / Finish Unit buttons
+  // Bind Next Question / Finish Unit buttons via `UnitBeatCursor`
   const bindSolvedBannerButtons = () => {
     const nextBtn = blocksWrapper.querySelector('#btn-next-study-question');
     if (nextBtn) {
-      nextBtn.onclick = () => {
+      nextBtn.onclick = async () => {
         let nextIdx = qIdx + 1;
         if (nextIdx >= questions.length) {
           const firstUnsolved = unit.solvedQuestions.findIndex(s => !s);
           nextIdx = firstUnsolved >= 0 ? firstUnsolved : 0;
         }
-        unit.currentQuestionIdx = nextIdx;
-        saveAppState();
-        openStudyHelpUnit(unit.id);
+        await UnitBeatCursor.goToHomeworkQuestion(unit, nextIdx);
       };
     }
 
@@ -4141,58 +5205,67 @@ function idxToHebrewLetter(idx) {
  * @param {boolean} allConceptsMastered
  */
 function bindJourneyBarEvents(blocksWrapper, unit, allConceptsMastered) {
+  const prevSlideBtn = blocksWrapper.querySelector('#btn-prev-slide-deck');
+  if (prevSlideBtn) {
+    prevSlideBtn.onclick = async () => {
+      await UnitBeatCursor.goPrev(unit);
+    };
+  }
+
+  const openAllPagesBtn = blocksWrapper.querySelector('#btn-open-all-pages-viewer');
+  if (openAllPagesBtn) {
+    openAllPagesBtn.onclick = () => {
+      const curSlide = UnitBeatCursor.getCurrentSlide(unit);
+      let pageHint = 1;
+      if (curSlide?.type === 'CONCEPT_SLIDE') {
+        pageHint = Number(unit.concepts?.[curSlide.conceptIdx]?.page_number) || 1;
+      } else if (curSlide?.type === 'HOMEWORK_SLIDE') {
+        pageHint = Number(unit.questions?.[curSlide.qIdx]?.page_number) || 1;
+      }
+      openLessonPageViewerModal(unit, pageHint);
+    };
+  }
+
   const stage1Btn = blocksWrapper.querySelector('#btn-journey-stage1');
   const stage2Btn = blocksWrapper.querySelector('#btn-journey-stage2');
 
   if (stage1Btn) {
-    stage1Btn.onclick = () => {
-      unit.activeStage = 'stage1';
-      saveAppState();
-      openStudyHelpUnit(unit.id);
+    stage1Btn.onclick = async () => {
+      const deck = UnitBeatCursor.getFlatSlideDeck(unit);
+      const stage1Slides = deck.filter(s => s.type !== 'HOMEWORK_SLIDE');
+      const nextStage1 = stage1Slides.find(s => s.isUnlocked && !s.isCompleted)
+        || stage1Slides.filter(s => s.isUnlocked).pop()
+        || stage1Slides[0];
+      if (nextStage1) {
+        await UnitBeatCursor.goToSlide(unit, nextStage1.slideIndex);
+      }
     };
   }
 
   if (stage2Btn) {
-    stage2Btn.onclick = () => {
-      if (!allConceptsMastered) {
+    stage2Btn.onclick = async () => {
+      if (!allConceptsMastered || !UnitBeatCursor.areAllConceptBeatsMastered(unit)) {
         if (typeof showToast === 'function') {
-          showToast('נשלים קודם את פיצוח המושגים בשלב 1 כדי שפתרון השאלות יהיה קל וברור ב-100%! 🌱', 'warning');
+          showToast('שקופיות שיעורי הבית ייפתחו מיד לאחר שכל קבוצות המושגים יהיו ברורים ב-100% מול המורה הפרטי! ☀️🔒', 'warning');
         }
         return;
       }
-      unit.activeStage = 'stage2';
-      saveAppState();
-      openStudyHelpUnit(unit.id);
+      if (!Array.isArray(unit.questions) || unit.questions.length === 0) {
+        if (typeof showToast === 'function') {
+          showToast('קובץ זה מכיל מושגים ודוגמאות בלבד.', 'info');
+        }
+        return;
+      }
+      await UnitBeatCursor.goToHomeworkQuestion(unit, unit.currentQuestionIdx || 0);
     };
   }
 
-  // Bind Guiding Stones Timeline clicks
-  blocksWrapper.querySelectorAll('[data-timeline-concept]').forEach(stoneBtn => {
-    stoneBtn.onclick = () => {
-      const targetIdx = Number(stoneBtn.getAttribute('data-timeline-concept'));
-      if (!isNaN(targetIdx) && Array.isArray(unit.concepts) && targetIdx >= 0 && targetIdx < unit.concepts.length) {
-        unit.activeStage = 'stage1';
-        unit.currentConceptIdx = targetIdx;
-        saveAppState();
-        openStudyHelpUnit(unit.id);
-      }
-    };
-  });
-
-  blocksWrapper.querySelectorAll('[data-timeline-question]').forEach(stoneBtn => {
-    stoneBtn.onclick = () => {
-      if (!allConceptsMastered) {
-        if (typeof showToast === 'function') {
-          showToast('נשלים קודם את פיצוח המושגים בשלב 1 כדי לפתוח את אבני השאלות! 🔓', 'warning');
-        }
-        return;
-      }
-      const targetIdx = Number(stoneBtn.getAttribute('data-timeline-question'));
-      if (!isNaN(targetIdx) && Array.isArray(unit.questions) && targetIdx >= 0 && targetIdx < unit.questions.length) {
-        unit.activeStage = 'stage2';
-        unit.currentQuestionIdx = targetIdx;
-        saveAppState();
-        openStudyHelpUnit(unit.id);
+  // Bind Guiding Stones Timeline clicks (`data-cursor-slide-idx`)
+  blocksWrapper.querySelectorAll('[data-cursor-slide-idx]').forEach(stoneBtn => {
+    stoneBtn.onclick = async () => {
+      const targetIdx = Number(stoneBtn.getAttribute('data-cursor-slide-idx'));
+      if (!isNaN(targetIdx)) {
+        await UnitBeatCursor.goToSlide(unit, targetIdx);
       }
     };
   });
@@ -4928,6 +6001,9 @@ const BeatGenerator = {
 
 if (typeof window !== 'undefined') {
   window.BeatGenerator = BeatGenerator;
+  window.UnitBeatCursor = UnitBeatCursor;
+  window.performAsyncTutorContextHandoff = performAsyncTutorContextHandoff;
+  window.evaluatePrivateTutorTurnWithGroq = evaluatePrivateTutorTurnWithGroq;
   window.extractLessonBeatBlueprint = extractLessonBeatBlueprint;
   window.generateConceptBeatContent = generateConceptBeatContent;
   window.generateHomeworkBeatContent = generateHomeworkBeatContent;
