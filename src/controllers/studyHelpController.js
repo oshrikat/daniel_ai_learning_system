@@ -1701,6 +1701,7 @@ async function generateDailyStudyUnitFromMaterial({
   pageSnapshots = [],
   rawPdfPart = null,
   sourceLabel = '',
+  sourceFileName = '',
   isFileUpload = false
 } = {}) {
   _lastUploadRetryContext = {
@@ -1709,6 +1710,7 @@ async function generateDailyStudyUnitFromMaterial({
     pageSnapshots,
     rawPdfPart,
     sourceLabel,
+    sourceFileName,
     isFileUpload
   };
 
@@ -1735,6 +1737,7 @@ async function generateDailyStudyUnitFromMaterial({
   const dateLabel = getTodayHebrewDateLabel();
   const cleanSourceLabel = String(sourceLabel || blueprint.lesson_title || `שיעור יומי (${dateLabel})`).trim();
   const lessonTitle = String(blueprint.lesson_title || cleanSourceLabel).trim();
+  const cleanSourceFileName = String(sourceFileName || cleanSourceLabel || lessonTitle).trim();
   const pagesSummary = String(
     blueprint.pages_summary ||
     'ביחידה זו נעבור פעימה אחר פעימה על כל המושגים והדוגמאות מהעמודים שהעלית, ומיד לאחר מכן נפתור יחד את כל השאלות והטבלאות!'
@@ -1807,7 +1810,7 @@ async function generateDailyStudyUnitFromMaterial({
       beatIndex: ownerHwBeatIdx >= 0 ? ownerHwBeatIdx : 0,
       isBeatReady: false,
       page_number: q.page_number,
-      source_citation: `📍 מקור: ${cleanSourceLabel} • עמוד ${q.page_number} • ${q.question_number_label}`,
+      source_citation: `📍 מקור: ${cleanSourceFileName} • עמוד ${q.page_number} • ${q.question_number_label}`,
       question_number_label: q.question_number_label,
       question_type: q.question_type,
       exact_book_text: q.exact_book_text,
@@ -1843,6 +1846,10 @@ async function generateDailyStudyUnitFromMaterial({
     createdAtLabel: dateLabel,
     dateLabel,
     sourceLabel: cleanSourceLabel,
+    sourceFileName: cleanSourceFileName,
+    isFileUpload: Boolean(isFileUpload),
+    pageCount: Math.max(1, storedSnapshots.length || 1),
+    imagesPurgedAfterCompletion: false,
     title: lessonTitle,
     lesson_title: lessonTitle,
     pages_summary: pagesSummary,
@@ -2027,7 +2034,10 @@ function ensureUnitConceptsState(unit) {
   }
 
   // Upgrade every concept so it always has `paragraphs`, `book_example`, `interactive_widget`, and `bottom_questions`
-  const sourceLabel = unit.sourceLabel || 'קובץ השיעור';
+  if (!unit.sourceFileName && (unit.sourceLabel || unit.title)) {
+    unit.sourceFileName = unit.sourceLabel || unit.title;
+  }
+  const sourceLabel = unit.sourceFileName || unit.sourceLabel || 'קובץ השיעור';
   unit.concepts.forEach((c, idx) => {
     if (!c.id) c.id = `${unit.id}_c${idx + 1}`;
     c.page_number = Math.max(1, Number(c.page_number) || 1);
@@ -3094,7 +3104,8 @@ function openStudyHelpUnit(unitId) {
 
   const dateLabel = unit.createdAtLabel || unit.dateLabel || getTodayHebrewDateLabel();
   const displayTitle = unit.lesson_title || unit.title;
-  const sourceLabel = unit.sourceLabel || 'קובץ השיעור';
+  const sourceFileDisplay = unit.sourceFileName || unit.title || 'קובץ השיעור';
+  const sourceLabel = unit.sourceFileName || unit.sourceLabel || displayTitle || 'קובץ השיעור';
   if (viewTitleEl) viewTitleEl.textContent = `📚 עזרה בלימודים • ${displayTitle}`;
   if (badgeEl) badgeEl.textContent = `📅 ${dateLabel}`;
   if (mainTitleEl) mainTitleEl.textContent = displayTitle;
@@ -3105,6 +3116,7 @@ function openStudyHelpUnit(unitId) {
   const isStage1Active = activeSlide.type !== 'HOMEWORK_SLIDE';
   const solvedQuestionsCount = Array.isArray(unit.solvedQuestions) ? unit.solvedQuestions.filter(Boolean).length : 0;
   const hasPageSnapshots = Array.isArray(unit.pageSnapshots) && unit.pageSnapshots.length > 0;
+  const isImagesPurged = !hasPageSnapshots && Boolean(unit.imagesPurgedAfterCompletion || unit.imagesPurged || unit.completed || unit.isCompleted);
   const totalBeatsCount = conceptBeats.length + (unit.homeworkBeats?.length || 0);
   const readyBeatsCount =
     conceptBeats.filter(b => b && b.status === 'ready').length +
@@ -3352,9 +3364,19 @@ function openStudyHelpUnit(unitId) {
                 <button type="button" id="btn-simpler-analogy" class="study-quick-assist-chip">
                   <span>🤔 תסביר לי בעוד דרך פשוטה יותר</span>
                 </button>
-                <button type="button" id="btn-view-concept-page" class="secondary-btn study-view-page-btn" data-page-num="${pageNum}">
-                  <span>👁️ הצג עמוד ${pageNum} מהספר</span>
-                </button>
+                ${hasPageSnapshots ? `
+                  <button type="button" id="btn-view-concept-page" class="secondary-btn study-view-page-btn" data-page-num="${pageNum}">
+                    <span>👁️ הצג עמוד ${pageNum} מהספר</span>
+                  </button>
+                ` : (isImagesPurged ? `
+                  <span class="badge-tag study-purged-images-badge" style="background:#f8fafc;color:#334155;border:1.5px solid #cbd5e1;font-weight:700;padding:0.42rem 0.8rem;border-radius:10px;">
+                    📂 התמונות פונו לחיסכון במקום — עיין בקובץ '${escapeHtmlAttr(sourceFileDisplay)}' בעמוד ${pageNum} בתיקייה על שולחן העבודה שלך
+                  </span>
+                ` : `
+                  <button type="button" id="btn-view-concept-page" class="secondary-btn study-view-page-btn" data-page-num="${pageNum}">
+                    <span>👁️ הצג עמוד ${pageNum} מהספר</span>
+                  </button>
+                `)}
               </div>
             </div>
 
@@ -4079,9 +4101,15 @@ function openStudyHelpUnit(unitId) {
   }
 
   // ==========================================================================
-  // STAGE 2: GROUNDED HOMEWORK & TABLE SOLVER (ON-SCREEN + NOTEBOOK SUPPORT,
-  //          SELECT OR FREE WRITE, 2-STEP MFA, & INLINE PAGE SNAPSHOT VIEWER)
+  // STAGE 4 (`HOMEWORK_SLIDE` in `UnitBeatCursor`): GROUNDED HOMEWORK & TABLE SOLVER
+  // Unlocked ONLY after all `conceptBeats` and their Private Tutor slides are 100% completed!
   // ==========================================================================
+  if (!UnitBeatCursor.areAllConceptBeatsMastered(unit)) {
+    unit.currentSlideIdx = 0;
+    openStudyHelpUnit(unit.id);
+    return;
+  }
+
   const currentQ = questions[qIdx] || {
     exact_book_text: 'שאלה לתרגול',
     original_question: 'שאלה לתרגול',
@@ -4097,6 +4125,8 @@ function openStudyHelpUnit(unitId) {
   const allSolved = questions.length > 0 && solvedCount === questions.length;
   const activeMessages = unit.chatHistory[qIdx] || [];
   const qPageNumber = Number(currentQ.page_number) || 1;
+  const qLabel = currentQ.question_number_label || `שאלה ${qIdx + 1}`;
+  const hwSourceRefBadge = `📍 מקור: ${unit.sourceFileName || unit.title} • עמוד ${qPageNumber} • ${qLabel}`;
 
   // Find matching page snapshot (or fallback to first snapshot)
   const matchingSnapshot = hasPageSnapshots
@@ -4167,20 +4197,20 @@ function openStudyHelpUnit(unitId) {
           }).join('')}
         </div>
 
-        <!-- 1. כותרת מיקום מעוגנת בספר + כפתור הצגה/הסתרה של צילום העמוד -->
+        <!-- 1. תגית מקור מדויקת + כפתור הצגת עמוד מהספר (או תגית פינוי תמונות לחיסכון במקום לאחר סיום) -->
         <div class="study-grounded-location-banner">
-          <div class="study-grounded-location-text">
-            <span class="study-location-pin-badge">📍 דניאל, תסתכל בעמוד ${qPageNumber} בקובץ השיעור • ${currentQ.question_number_label || ('שאלה ' + (qIdx + 1))}</span>
+          <div class="study-grounded-location-text" style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+            <span class="study-source-ref-badge">${escapeHtmlAttr(hwSourceRefBadge)}</span>
             ${isCurrentSolved ? `<span class="badge-completed-card">הושלם ב-100% ✅</span>` : ''}
           </div>
-          <div class="study-grounded-location-actions">
+          <div class="study-grounded-location-actions" style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
             ${hasPageSnapshots ? `
               <button
                 type="button"
                 id="btn-toggle-inline-page-snapshot"
                 class="secondary-btn study-view-page-btn ${isInlinePageOpen ? 'active-toggle' : ''}"
               >
-                <span>👁️ הצג / הסתר את צילום עמוד ${qPageNumber} מהספר</span>
+                <span>👁️ הצג עמוד ${qPageNumber} מהספר</span>
               </button>
               <button
                 type="button"
@@ -4190,7 +4220,15 @@ function openStudyHelpUnit(unitId) {
               >
                 <span>🔍 הגדל עמוד</span>
               </button>
-            ` : ''}
+            ` : (isImagesPurged ? `
+              <span
+                id="study-purged-images-notice"
+                class="badge-tag study-purged-images-badge"
+                style="background:#f8fafc;color:#334155;border:1.5px solid #cbd5e1;font-weight:700;padding:0.45rem 0.9rem;border-radius:10px;display:inline-flex;align-items:center;gap:0.4rem;"
+              >
+                📂 התמונות פונו לחיסכון במקום — עיין בקובץ '${escapeHtmlAttr(unit.sourceFileName || unit.title)}' בעמוד ${qPageNumber} בתיקייה על שולחן העבודה שלך
+              </span>
+            ` : '')}
           </div>
         </div>
 
@@ -4403,6 +4441,26 @@ function openStudyHelpUnit(unitId) {
           </div>
         ` : ''}
 
+        <!-- Mode C (Inline): Free-Text Writing Checked by AI -->
+        <div class="study-guided-options-card" id="study-inline-free-write-section" style="margin-top:0.85rem; background:#f8fafc; border:1.5px solid #cbd5e1;">
+          <div class="study-solver-mode-badge" style="background:#e0f2fe; color:#0369a1; font-weight:800;">
+            <span>✍️ ${hasTableMode ? 'אפשרות ג׳' : 'אפשרות ב׳'}: כתיבה חופשית של התשובה במילים שלך (נבדק ע"י AI)</span>
+          </div>
+          <div class="study-mfa-own-words-row" style="margin-top:0.55rem;">
+            <input
+              type="text"
+              id="study-inline-free-answer-input"
+              class="styled-input study-own-words-input"
+              placeholder="כתוב כאן חופשי את הפתרון או הסכומים (למשל: חובה קניות 1,000, זכות בנק 1,000)..."
+              value="${escapeHtmlAttr(currentQ.inlineFreeTextAnswer || '')}"
+            />
+            <button type="button" id="btn-check-inline-free-answer" class="primary-btn" style="padding:0.62rem 1.15rem;">
+              <span>בדוק כתיבה חופשית ✨</span>
+            </button>
+          </div>
+          <div id="study-inline-free-feedback" class="study-mfa-feedback" style="display:none;"></div>
+        </div>
+
         <!-- 4. Step 2: Gentle Two-Step Verification ("MFA for Understanding") -->
         ${hasMfaVerification ? `
           <div
@@ -4440,7 +4498,7 @@ function openStudyHelpUnit(unitId) {
           </div>
         ` : ''}
 
-        <!-- 5. "✍️ מוכן להעתקה למחברת / לדף העבודה שלך" Card (נפתח מיד עם אישור ה-MFA) -->
+        <!-- 5. "✍️ מוכן להעתקה למחברת שלך" Card (נפתח מיד עם אישור ה-MFA) -->
         <div
           id="study-notebook-copy-card"
           class="study-notebook-copy-card"
@@ -4448,7 +4506,7 @@ function openStudyHelpUnit(unitId) {
         >
           <div class="study-notebook-copy-header">
             <div>
-              <span class="study-notebook-badge">✍️ מוכן להעתקה למחברת / לדף העבודה שלך</span>
+              <span class="study-notebook-badge">✍️ מוכן להעתקה למחברת שלך</span>
               <h4 class="study-notebook-title">
                 הפתרון המלא והמסודר עבור עמוד ${qPageNumber} • ${currentQ.question_number_label || `שאלה ${qIdx + 1}`}
               </h4>
@@ -4671,21 +4729,6 @@ function openStudyHelpUnit(unitId) {
       awardStudyHelpStars(2, `פתרון ${currentQ.question_number_label || `שאלה ${qIdx + 1}`} ווידוא הבנה`);
     }
 
-    const updatedSolvedCount = unit.solvedQuestions.filter(Boolean).length;
-    const nowAllSolved = questions.length > 0 && updatedSolvedCount === questions.length;
-    if (nowAllSolved) {
-      unit.completed = true;
-      unit.isCompleted = true;
-      if (!unit.bonusStarsAwarded) {
-        unit.bonusStarsAwarded = true;
-        const stats = ensureStudyHelpStats();
-        stats.lessonsCompleted = Math.max(
-          (Number(stats.lessonsCompleted) || 0) + 1,
-          (appState.studyHelpUnits || []).filter(u => Boolean(u && (u.completed || u.isCompleted))).length
-        );
-        awardStudyHelpStars(5, 'סיום יחידת שיעור מלאה 🏆');
-      }
-    }
     saveAppState();
 
     if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
@@ -4699,6 +4742,56 @@ function openStudyHelpUnit(unitId) {
       }
     }, 120);
   };
+
+  // Bind Mode C (Inline): Free-Text Answer Input Checked by AI
+  const inlineFreeInput = blocksWrapper.querySelector('#study-inline-free-answer-input');
+  const inlineFreeBtn = blocksWrapper.querySelector('#btn-check-inline-free-answer');
+  const inlineFreeFeedback = blocksWrapper.querySelector('#study-inline-free-feedback');
+  if (inlineFreeBtn && inlineFreeInput) {
+    inlineFreeBtn.onclick = async () => {
+      const userFreeText = inlineFreeInput.value.trim();
+      if (userFreeText.length < 2) {
+        if (typeof showToast === 'function') {
+          showToast('כתוב את הפתרון שלך בתיבה ונבדוק אותו יחד ✨', 'warning');
+        }
+        inlineFreeInput.focus();
+        return;
+      }
+
+      currentQ.inlineFreeTextAnswer = userFreeText;
+      inlineFreeBtn.disabled = true;
+      inlineFreeBtn.innerHTML = '<span>⏳ בודק...</span>';
+
+      const aiRes = await evaluateStudyHelpTurnWithAI({
+        unit,
+        qIdx,
+        userText: userFreeText,
+        assistMode: null
+      });
+
+      inlineFreeBtn.disabled = false;
+      inlineFreeBtn.innerHTML = '<span>בדוק כתיבה חופשית ✨</span>';
+
+      if (inlineFreeFeedback) {
+        inlineFreeFeedback.style.display = 'block';
+        inlineFreeFeedback.className = `study-mfa-feedback ${aiRes.is_question_solved ? 'success' : 'warning'}`;
+        inlineFreeFeedback.innerHTML = formatCoachChatHtml(aiRes.coach_reply);
+      }
+
+      if (aiRes.is_question_solved) {
+        triggerStep1SuccessAndMfaGate();
+      } else {
+        saveAppState();
+      }
+    };
+
+    inlineFreeInput.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        inlineFreeBtn.click();
+      }
+    };
+  }
 
   // Bind Mode A: Interactive Table Inputs, Totals Calculator, Add/Clear Row, & Check Button
   if (hasTableMode) {
@@ -5472,6 +5565,7 @@ function renderStudyHelpRoadmap(container) {
 
       showStudyHelpLoadingOverlay('קורא וסורק את עמודי קובץ השיעור...');
       try {
+        const sourceFileName = files.map(f => f.name).join(', ');
         const sourceLabel = files.map(f => f.name.replace(/\.[^.]+$/, '')).join(', ');
         let extracted = {
           extractedText: '',
@@ -5493,6 +5587,7 @@ function renderStudyHelpRoadmap(container) {
           pageSnapshots: extracted.pageSnapshots,
           rawPdfPart: extracted.rawPdfPart,
           sourceLabel,
+          sourceFileName,
           isFileUpload: true
         });
       } catch (err) {
@@ -5807,9 +5902,10 @@ function showExamReadyCelebrationModal(unit, examUnit) {
 }
 
 /**
- * Marks `unit` as completed, generates a brand-new Practical Summary Exam unit in the
- * Dynamic Block Engine schema (`blocks` array) via `callMultiTierAI` (with fallback),
- * pushes it to `appState.accountingSummaryExams`, and opens the Festive Celebration Modal.
+ * Marks `unit` as completed, immediately auto-purges heavy base64 page images via `DatabaseManager.purgeUnitImages`,
+ * gathers all concepts across all `unit.conceptBeats` and all questions across `unit.questions` to generate
+ * a comprehensive Practical Summary Exam in `appState.accountingSummaryExams`, syncs via `DatabaseManager`,
+ * and opens the Festive Celebration Modal.
  * @param {object} unit
  * @returns {Promise<object>}
  */
@@ -5840,12 +5936,30 @@ async function completeStudyHelpUnitAndGenerateExam(unit) {
     appState.accountingSummaryExams = [];
   }
 
+  // Immediately auto-purge 100% of heavy base64 images upon completion while keeping all text, tables, and page references intact!
+  const retainedPageCount = Number(unit.pageCount) || (Array.isArray(unit.pageSnapshots) ? unit.pageSnapshots.length : 0) || 1;
+  unit.pageCount = retainedPageCount;
+  if (typeof window !== 'undefined' && window.DatabaseManager && typeof window.DatabaseManager.purgeUnitImages === 'function') {
+    await window.DatabaseManager.purgeUnitImages(unit.id);
+  }
+  unit.pageSnapshots = [];
+  unit.inlineImages = [];
+  if ('rawPdfPart' in unit) delete unit.rawPdfPart;
+  if ('rawPdfBase64' in unit) delete unit.rawPdfBase64;
+  unit.imagesPurged = true;
+  unit.imagesPurgedAfterCompletion = true;
+
   let existingExam = unit.summaryExamId
     ? appState.accountingSummaryExams.find(e => e && (e.unit_id === unit.summaryExamId || e.id === unit.summaryExamId))
     : appState.accountingSummaryExams.find(e => e && e.sourceStudyUnitId === unit.id);
 
   if (existingExam) {
     saveAppState();
+    if (typeof window !== 'undefined' && window.DatabaseManager && typeof window.DatabaseManager.saveFullState === 'function') {
+      try {
+        await window.DatabaseManager.saveFullState(appState, { immediateCloud: false });
+      } catch (_syncErr) {}
+    }
     if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
       SoundService.playSuccessSound();
     }
@@ -5854,39 +5968,89 @@ async function completeStudyHelpUnitAndGenerateExam(unit) {
   }
 
   showStudyHelpLoadingOverlay(
-    'כל הכבוד דניאל! המאמן מנתח את כל מה שלמדת היום ומכין עבורך מבחן מסכם מעשי חדש בחלונית הנהלת חשבונות...'
+    'כל הכבוד דניאל! מפנה תמונות כבדות לחיסכון במקום ובונה עבורך מבחן מסכם מעשי מכל פעימות השיעור...'
   );
 
   const examUnitId = 'acc_exam_' + Date.now();
   const dateLabel = unit.createdAtLabel || unit.dateLabel || getTodayHebrewDateLabel();
 
-  const practicedConceptsSummary = (unit.concepts || [])
-    .map((c, idx) => `מושג ${idx + 1} (עמוד ${c.page_number || 1}): "${c.term_name}" — הסבר: ${c.simple_explanation} | דוגמה מהספר: ${c.textbook_example || ''}`)
+  // Gather ALL concepts across all `unit.conceptBeats` (plus any remaining entries in `unit.concepts`)
+  const gatheredConcepts = [];
+  const seenConceptKeys = new Set();
+  const conceptBeatsArr = Array.isArray(unit.conceptBeats) ? unit.conceptBeats : [];
+  const conceptsArr = Array.isArray(unit.concepts) ? unit.concepts : [];
+
+  conceptBeatsArr.forEach((beat, bIdx) => {
+    if (!beat) return;
+    const indices = Array.isArray(beat.conceptIndices) ? beat.conceptIndices : [];
+    if (indices.length > 0) {
+      indices.forEach((gIdx, localIdx) => {
+        const cObj = conceptsArr[gIdx] || beat.slides?.[localIdx] || beat.conceptOutlines?.[localIdx];
+        if (!cObj) return;
+        const key = String(cObj.id || `${bIdx}_${cObj.term_name || gIdx}`);
+        if (seenConceptKeys.has(key)) return;
+        seenConceptKeys.add(key);
+        gatheredConcepts.push({ beatNumber: bIdx + 1, concept: cObj });
+      });
+    } else if (Array.isArray(beat.slides) && beat.slides.length > 0) {
+      beat.slides.forEach((cObj, localIdx) => {
+        if (!cObj) return;
+        const key = String(cObj.id || `${bIdx}_slide_${localIdx}`);
+        if (seenConceptKeys.has(key)) return;
+        seenConceptKeys.add(key);
+        gatheredConcepts.push({ beatNumber: bIdx + 1, concept: cObj });
+      });
+    }
+  });
+
+  conceptsArr.forEach((cObj, idx) => {
+    if (!cObj) return;
+    const key = String(cObj.id || `${cObj.beatIndex ?? 0}_${cObj.term_name || idx}`);
+    if (seenConceptKeys.has(key)) return;
+    seenConceptKeys.add(key);
+    gatheredConcepts.push({ beatNumber: (Number(cObj.beatIndex) || 0) + 1, concept: cObj });
+  });
+
+  const practicedConceptsSummary = gatheredConcepts
+    .map(({ beatNumber, concept: c }, idx) => {
+      const explainText = Array.isArray(c.paragraphs) && c.paragraphs.length > 0
+        ? c.paragraphs.join(' ')
+        : (c.simple_explanation || c.raw_book_excerpt || '');
+      const exampleText = (c.book_example && c.book_example.exact_excerpt)
+        ? `${c.book_example.exact_excerpt}${Array.isArray(c.book_example.steps) ? ' (' + c.book_example.steps.join(' -> ') + ')' : ''}`
+        : (c.textbook_example || '');
+      return `מושג ${idx + 1} [קבוצת מושגים ${beatNumber} • עמוד ${c.page_number || 1}]: "${c.term_name}" — הסבר: ${explainText} | דוגמה מהספר: ${exampleText}`;
+    })
     .join('\n');
 
-  const practicedQuestionsSummary = (unit.questions || [])
+  // Gather ALL questions across `unit.questions`
+  const practicedQuestionsSummary = (Array.isArray(unit.questions) ? unit.questions : [])
     .map((q, idx) => {
       const tableRowsStr = (q.table_schema && Array.isArray(q.table_schema.expected_rows) && q.table_schema.expected_rows.length > 0)
         ? ` | מבנה טבלה (${(q.table_schema.columns || []).join(' / ')}): ` +
           q.table_schema.expected_rows.map(r => `[חובה: ${r.debit || 0}, זכות: ${r.credit || 0}, פרטים: ${r.details || ''}]`).join(', ')
         : '';
-      return `שאלה ${idx + 1} (עמוד ${q.page_number || 1}): ${q.exact_book_text || q.original_question || q.questionText || ''} | פתרון מצופה: ${q.notebook_copy_summary || q.expected_answer_summary || ''}${tableRowsStr}`;
+      return `${q.question_number_label || `שאלה ${idx + 1}`} (עמוד ${q.page_number || 1}): ${q.exact_book_text || q.original_question || q.questionText || ''} | תרגום צעד-אחר-צעד: ${q.friendly_translation || ''} | פתרון מצופה: ${q.notebook_copy_summary || q.expected_answer_summary || ''}${tableRowsStr}`;
     })
     .join('\n');
+
+  const challengingFocus = Array.isArray(unit.learnerAdaptationProfile?.challengingTerms) && unit.learnerAdaptationProfile.challengingTerms.length > 0
+    ? `\nמושגים שכדאי לחזק במיוחד במבחן: ${unit.learnerAdaptationProfile.challengingTerms.join(', ')}`
+    : '';
 
   const systemInstruction = `אתה מומחה לפיתוח מבחנים מעשיים בהנהלת חשבונות עבור דניאל.
 עליך לייצר יחידת מבחן מסכם מעשית בפורמט Dynamic Block Engine (JSON תקני בלבד בעברית, ללא טקסט חופשי מחוץ ל-JSON).`;
 
-  const prompt = `דניאל סיים בהצלחה את יחידת התרגול היומית: "${unit.lesson_title || unit.title}".
-סיכום הנושא והעמודים: ${unit.pages_summary || unit.topic_summary || unit.introText || ''}
+  const prompt = `דניאל סיים בהצלחה את יחידת התרגול היומית: "${unit.lesson_title || unit.title}" (מקור: "${unit.sourceFileName || unit.title}").
+סיכום הנושא והעמודים: ${unit.pages_summary || unit.topic_summary || unit.introText || ''}${challengingFocus}
 
-המושגים ודוגמאות הספר שנלמדו בשלב 1:
+כל המושגים ודוגמאות הספר שנלמדו לאורך כל ${conceptBeatsArr.length || 1} קבוצות המושגים ביחידה:
 ${practicedConceptsSummary}
 
-השאלות, הטבלאות והמספרים שדניאל פתר בשלב 2:
+כל שאלות שיעורי הבית, הטבלאות והמספרים שדניאל פתר ביחידה:
 ${practicedQuestionsSummary}
 
-צור מבחן מסכם מעשי חדש הבוחן בדיוק את אותם מושגים, כללים ומבני טבלאות מתוך השיעור הזה עם **מספרים חדשים, תרחישים עסקיים חדשים ושאלות הבנה חדשות**.
+צור מבחן מסכם מעשי מקיף חדש הבוחן בדיוק את כל המושגים, הכללים ומבני הטבלאות מתוך כל קבוצות הלימוד של השיעור הזה עם **מספרים חדשים, תרחישים עסקיים חדשים ושאלות הבנה חדשות**.
 החזר אובייקט JSON תקני בלבד עם מערך "blocks" הכולל בדיוק את הבלוקים הבאים:
 1. בלוק "text" ("style": "lead", "content": "פתיחה מעודדת למבחן המסכם")
 2. בלוק "callout" ("style": "rule", "title": "...", "text": "תזכורת לכלל החשבונאי המרכזי")
@@ -5960,6 +6124,7 @@ ${practicedQuestionsSummary}
         title: `🏆 מבחן מסכם: ${unit.lesson_title || unit.title}`,
         createdAtLabel: dateLabel,
         sourceStudyUnitId: unit.id,
+        sourceFileName: unit.sourceFileName || unit.title,
         isSummaryExam: true,
         isNewExam: true,
         isCompleted: false,
@@ -5978,6 +6143,20 @@ ${practicedQuestionsSummary}
   appState.accountingSummaryExams.push(examUnit);
   unit.summaryExamId = examUnit.unit_id;
   saveAppState();
+
+  // Sync updated completed/purged unit + new Summary Exam via `DatabaseManager`
+  if (typeof window !== 'undefined' && window.DatabaseManager) {
+    try {
+      if (typeof window.DatabaseManager.add === 'function') {
+        await window.DatabaseManager.add('accountingSummaryExams', examUnit);
+      }
+      if (typeof window.DatabaseManager.saveFullState === 'function') {
+        await window.DatabaseManager.saveFullState(appState, { immediateCloud: false });
+      }
+    } catch (syncErr) {
+      console.warn('[StudyHelp] DatabaseManager summary exam sync warning:', syncErr);
+    }
+  }
 
   hideStudyHelpLoadingOverlay();
 
