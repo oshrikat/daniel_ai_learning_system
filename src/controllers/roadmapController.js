@@ -251,7 +251,9 @@ function renderStudyHelpWorkspace(container) {
                     </span>
                   </div>
                 </div>
-                <div class="day-action-box">
+                <div class="day-action-box" style="display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center;">
+                  <button type="button" class="secondary-btn edit-daily-card-btn" data-card-id="${card.id}" title="ערוך יחידה" style="padding: 0.4rem 0.7rem; font-size: 0.85rem; min-height: 36px;">✏️ ערוך</button>
+                  <button type="button" class="secondary-btn delete-daily-card-btn" data-card-id="${card.id}" title="מחק יחידה" style="padding: 0.4rem 0.7rem; font-size: 0.85rem; min-height: 36px; color: #dc2626;">🗑️ מחק</button>
                   <button type="button" class="primary-btn enter-daily-card-btn" data-card-id="${card.id}">
                     <span>היכנס ליחידת התרגול ▶</span>
                   </button>
@@ -354,6 +356,26 @@ function renderStudyHelpWorkspace(container) {
       }
     };
   });
+
+  container.querySelectorAll('.edit-daily-card-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const cardId = btn.getAttribute('data-card-id');
+      if (cardId && typeof openUniversalUnitQuickEditor === 'function') {
+        openUniversalUnitQuickEditor('study_help', cardId);
+      }
+    };
+  });
+
+  container.querySelectorAll('.delete-daily-card-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const cardId = btn.getAttribute('data-card-id');
+      if (cardId && typeof deleteUnitFromAnyTrack === 'function') {
+        deleteUnitFromAnyTrack('study_help', cardId);
+      }
+    };
+  });
 }
 
 function renderRoadmap() {
@@ -397,7 +419,7 @@ function renderRoadmap() {
     const subEl = document.querySelector('.roadmap-subtitle');
     if (subEl) subEl.textContent = 'מיומנויות AI מעשיות לחיים ולעבודה • צעד אחר צעד • מבחן שלב כל 2 יחידות';
 
-    const units = appState.curriculumUnits;
+    const units = getTrackUnits(activeTrack);
     let completedCount = 0;
     let currentClusterId = null;
 
@@ -470,14 +492,35 @@ function renderRoadmap() {
             <span class="unit-skills-preview">${unit.goal}</span>
           </div>
         </div>
-        <div class="day-action-box">
+        <div class="day-action-box" style="display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center;">
           <span class="badge-tag">${statusBadgeText}</span>
+          <button type="button" class="secondary-btn unit-quick-edit-btn" title="ערוך יחידה" style="padding: 0.4rem 0.7rem; font-size: 0.85rem; min-height: 36px;">✏️ ערוך</button>
+          <button type="button" class="secondary-btn unit-quick-delete-btn" title="מחק יחידה" style="padding: 0.4rem 0.7rem; font-size: 0.85rem; min-height: 36px; color: #dc2626;">🗑️ מחק</button>
           ${isUnlocked ? `<button class="primary-btn" style="padding: 0.6rem 1.2rem; font-size: 1rem; min-height: 44px;">
             <span>היכנס ליחידה</span>
             <span>▶</span>
           </button>` : ''}
         </div>
       `;
+
+      const editGenBtn = card.querySelector('.unit-quick-edit-btn');
+      if (editGenBtn) {
+        editGenBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (typeof openUniversalUnitQuickEditor === 'function') {
+            openUniversalUnitQuickEditor('general', unit.id);
+          }
+        };
+      }
+      const delGenBtn = card.querySelector('.unit-quick-delete-btn');
+      if (delGenBtn) {
+        delGenBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (typeof deleteUnitFromAnyTrack === 'function') {
+            deleteUnitFromAnyTrack('general', unit.id);
+          }
+        };
+      }
 
       if (isUnlocked) {
         card.onclick = () => {
@@ -691,11 +734,13 @@ function renderRoadmap() {
                     </div>
                     <h4 class="checkpoint-title">${exam.title || `🏆 מבחן מסכם #${eIdx + 1}`}</h4>
                     <span class="checkpoint-desc">
-                      מבחן מעשי הכולל חישוב נתונים, רישום פקודת יומן, 5 שאלות אמריקאיות ושאלת הבנה פתוחה.
+                      ${exam.description || 'מבחן מעשי הכולל חישוב נתונים, רישום פקודת יומן, 5 שאלות אמריקאיות ושאלת הבנה פתוחה.'}
                     </span>
                   </div>
                 </div>
-                <div class="day-action-box">
+                <div class="day-action-box" style="display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center;">
+                  <button type="button" class="secondary-btn edit-summary-exam-unit-btn" data-summary-exam-id="${examId}" title="ערוך מבחן מסכם" style="padding: 0.4rem 0.7rem; font-size: 0.85rem; min-height: 36px;">✏️ ערוך</button>
+                  <button type="button" class="secondary-btn delete-summary-exam-unit-btn" data-summary-exam-id="${examId}" title="מחק מבחן מסכם" style="padding: 0.4rem 0.7rem; font-size: 0.85rem; min-height: 36px; color: #dc2626;">🗑️ מחק</button>
                   <button type="button" class="primary-btn start-summary-exam-unit-btn" data-summary-exam-id="${examId}">
                     <span>${isCompletedExam ? 'תרגל מבחן שוב 🔄' : 'התחל מבחן מסכם ▶'}</span>
                   </button>
@@ -731,6 +776,26 @@ function renderRoadmap() {
         };
       });
 
+      zoneEl.querySelectorAll('.edit-summary-exam-unit-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const examId = btn.getAttribute('data-summary-exam-id');
+          if (examId && typeof openUniversalUnitQuickEditor === 'function') {
+            openUniversalUnitQuickEditor('summary_exam', examId);
+          }
+        };
+      });
+
+      zoneEl.querySelectorAll('.delete-summary-exam-unit-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const examId = btn.getAttribute('data-summary-exam-id');
+          if (examId && typeof deleteUnitFromAnyTrack === 'function') {
+            deleteUnitFromAnyTrack('summary_exam', examId);
+          }
+        };
+      });
+
       return zoneEl;
     };
 
@@ -761,7 +826,7 @@ function renderRoadmap() {
       }
 
       const firstText = (unit.blocks || []).find(b => b.type === 'text');
-      const previewDesc = firstText ? firstText.content : 'יחידת לימוד מעשית מבוססת בלוקים ומשימות';
+      const previewDesc = unit.description || unit.pages_summary || (firstText ? firstText.content : 'יחידת לימוד מעשית מבוססת בלוקים ומשימות');
 
       card.className = `unit-card ${statusClass}`;
       card.innerHTML = `
@@ -776,14 +841,35 @@ function renderRoadmap() {
             <span class="unit-skills-preview">${previewDesc}</span>
           </div>
         </div>
-        <div class="day-action-box">
+        <div class="day-action-box" style="display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center;">
           <span class="badge-tag">${statusBadgeText}</span>
+          <button type="button" class="secondary-btn acc-unit-edit-btn" title="ערוך יחידה" style="padding: 0.4rem 0.7rem; font-size: 0.85rem; min-height: 36px;">✏️ ערוך</button>
+          <button type="button" class="secondary-btn acc-unit-delete-btn" title="מחק יחידה" style="padding: 0.4rem 0.7rem; font-size: 0.85rem; min-height: 36px; color: #dc2626;">🗑️ מחק</button>
           ${isUnlocked ? `<button class="primary-btn" style="padding: 0.6rem 1.2rem; font-size: 1rem; min-height: 44px;">
             <span>${unit.isCompleted ? 'צפה שוב' : 'היכנס ליחידה'}</span>
             <span>▶</span>
           </button>` : ''}
         </div>
       `;
+
+      const editAccBtn = card.querySelector('.acc-unit-edit-btn');
+      if (editAccBtn) {
+        editAccBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (typeof openUniversalUnitQuickEditor === 'function') {
+            openUniversalUnitQuickEditor('accounting', unit.id);
+          }
+        };
+      }
+      const delAccBtn = card.querySelector('.acc-unit-delete-btn');
+      if (delAccBtn) {
+        delAccBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (typeof deleteUnitFromAnyTrack === 'function') {
+            deleteUnitFromAnyTrack('accounting', unit.id);
+          }
+        };
+      }
 
       if (isUnlocked) {
         card.onclick = () => {

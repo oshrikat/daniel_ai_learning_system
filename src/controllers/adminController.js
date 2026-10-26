@@ -375,37 +375,247 @@ function renderAdminOverview() {
   }
 }
 
+let activeAdminCurriculumFilter = 'general';
+
+function escapeAdmHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+window.setAdminCurriculumFilter = function(filterId) {
+  activeAdminCurriculumFilter = filterId || 'general';
+  renderAdminCurriculum();
+};
+
 function renderAdminCurriculum() {
   const container = document.getElementById('mgr-curriculum-list');
   if (!container) return;
   container.innerHTML = '';
 
-  appState.curriculumUnits.forEach((unit, idx) => {
-    const item = document.createElement('div');
-    item.className = 'card';
-    item.style.cssText = 'padding: 1.1rem 1.4rem; margin-bottom: 0.9rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem;';
-    item.innerHTML = `
-      <div style="flex: 1 1 300px;">
-        <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem;">
-          <span style="font-weight: 800; color: #2563eb;">#${idx + 1}</span>
-          <span class="badge-tag">${unit.category || 'מיומנות'}</span>
-          <span>${unit.trafficLight === 'red' ? '🔴' : unit.trafficLight === 'yellow' ? '🟡' : '🟢'}</span>
-          <span style="font-size: 0.85rem; color: ${unit.isCompleted ? '#059669' : '#d97706'}; font-weight: 700;">
-            ${unit.isCompleted ? '✓ הושלם' : 'ממתין לביצוע'}
-          </span>
-        </div>
-        <h4 style="margin: 0 0 0.3rem 0; font-size: 1.15rem;">${unit.title}</h4>
-        <p style="margin: 0; font-size: 0.95rem; color: var(--text-secondary);">${unit.goal || ''}</p>
-      </div>
-      <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
-        <button class="primary-btn" style="padding: 0.4rem 0.85rem; font-size: 0.85rem;" onclick="openUnitEditor('${unit.id}')">✏️ ערוך יחידה</button>
-        <button class="secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem;" onclick="moveUnit(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
-        <button class="secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem;" onclick="moveUnit(${idx}, 1)" ${idx === appState.curriculumUnits.length - 1 ? 'disabled' : ''}>▼</button>
-        <button class="secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem; color: #dc2626;" onclick="deleteUnit(${idx})">🗑️ מחק</button>
-      </div>
-    `;
-    container.appendChild(item);
+  const generalTrack = (typeof TRACKS !== 'undefined' ? TRACKS : []).find(t => t.id === 'general') || { id: 'general' };
+  const generalUnits = typeof getTrackUnits === 'function' ? getTrackUnits(generalTrack) : (appState.curriculumUnits || []);
+  const accountingTrack = (typeof TRACKS !== 'undefined' ? TRACKS : []).find(t => t.id === 'accounting') || { id: 'accounting' };
+  const accountingUnits = typeof getTrackUnits === 'function' ? getTrackUnits(accountingTrack) : [];
+  const summaryExams = Array.isArray(appState.accountingSummaryExams) ? appState.accountingSummaryExams : [];
+  const studyHelpUnits = Array.isArray(appState.studyHelpUnits) ? appState.studyHelpUnits : [];
+  const deletedCount = Array.isArray(appState.deletedUnitIds) ? appState.deletedUnitIds.length : 0;
+
+  // סרגל סינון מסלולים + כפתור שחזור יחידות בסיס שנמחקו
+  const toolbarEl = document.createElement('div');
+  toolbarEl.style.cssText = 'display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:1.25rem; padding:0.85rem 1rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;';
+
+  const filterDefs = [
+    { id: 'general', label: `מסלול 1: כללי ו-AI (${generalUnits.length})` },
+    { id: 'accounting', label: `מסלול 2: הנהלת חשבונות (${accountingUnits.length})` },
+    { id: 'summary_exam', label: `מבחנים מסכמים (${summaryExams.length})` },
+    { id: 'study_help', label: `מסלול 3: עזרה בלימודים (${studyHelpUnits.length})` }
+  ];
+
+  const filterButtonsHtml = filterDefs.map(f => {
+    const isActive = activeAdminCurriculumFilter === f.id;
+    const btnStyle = isActive
+      ? 'padding:0.5rem 0.95rem; font-size:0.9rem; font-weight:700; border-radius:8px; border:1px solid #2563eb; background:#2563eb; color:#ffffff; cursor:pointer;'
+      : 'padding:0.5rem 0.95rem; font-size:0.9rem; font-weight:600; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; color:#1e293b; cursor:pointer;';
+    return `<button type="button" data-adm-track-filter="${f.id}" style="${btnStyle}">${escapeAdmHtml(f.label)}</button>`;
+  }).join('');
+
+  const restoreBtnHtml = deletedCount > 0
+    ? `<button type="button" id="adm-restore-deleted-base-btn" class="secondary-btn" style="padding:0.5rem 0.95rem; font-size:0.88rem; font-weight:700; color:#047857; border-color:#6ee7b7; background:#ecfdf5;">♻️ שחזר יחידות בסיס שנמחקו (${deletedCount})</button>`
+    : '';
+
+  toolbarEl.innerHTML = `
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+      ${filterButtonsHtml}
+    </div>
+    ${restoreBtnHtml ? `<div>${restoreBtnHtml}</div>` : ''}
+  `;
+  container.appendChild(toolbarEl);
+
+  toolbarEl.querySelectorAll('[data-adm-track-filter]').forEach(btn => {
+    btn.onclick = () => {
+      activeAdminCurriculumFilter = btn.getAttribute('data-adm-track-filter') || 'general';
+      renderAdminCurriculum();
+    };
   });
+
+  const restoreBtn = toolbarEl.querySelector('#adm-restore-deleted-base-btn');
+  if (restoreBtn) {
+    restoreBtn.onclick = () => {
+      if (typeof window.restoreDeletedBaseUnits === 'function') {
+        window.restoreDeletedBaseUnits();
+      }
+    };
+  }
+
+  // הצגת כרטיסי המסלול הפעיל
+  if (activeAdminCurriculumFilter === 'general') {
+    if (generalUnits.length === 0) {
+      const emptyEl = document.createElement('div');
+      emptyEl.className = 'card';
+      emptyEl.style.cssText = 'padding:1.4rem; text-align:center; color:#64748b;';
+      emptyEl.textContent = 'אין כרגע יחידות פעילות במסלול 1.';
+      container.appendChild(emptyEl);
+    } else {
+      generalUnits.forEach((unit, idx) => {
+        const uid = String(unit.id || unit.unit_id || '');
+        const rawIdx = (appState.curriculumUnits || []).findIndex(u => String(u.id || u.unit_id) === uid);
+        const item = document.createElement('div');
+        item.className = 'card';
+        item.style.cssText = 'padding: 1.1rem 1.4rem; margin-bottom: 0.9rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem;';
+        item.innerHTML = `
+          <div style="flex: 1 1 300px;">
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem;">
+              <span style="font-weight: 800; color: #2563eb;">#${idx + 1}</span>
+              <span class="badge-tag">${escapeAdmHtml(unit.category || 'מיומנות')}</span>
+              <span>${unit.trafficLight === 'red' ? '🔴' : unit.trafficLight === 'yellow' ? '🟡' : '🟢'}</span>
+              <span style="font-size: 0.85rem; color: ${unit.isCompleted ? '#059669' : '#d97706'}; font-weight: 700;">
+                ${unit.isCompleted ? '✓ הושלם' : 'ממתין לביצוע'}
+              </span>
+            </div>
+            <h4 style="margin: 0 0 0.3rem 0; font-size: 1.15rem;">${escapeAdmHtml(unit.title)}</h4>
+            <p style="margin: 0; font-size: 0.95rem; color: var(--text-secondary);">${escapeAdmHtml(unit.goal || '')}</p>
+          </div>
+          <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+            <button type="button" class="primary-btn adm-quick-edit-btn" style="padding: 0.4rem 0.85rem; font-size: 0.85rem;">✏️ ערוך</button>
+            <button type="button" class="secondary-btn adm-full-edit-btn" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;" title="עורך שלבים מלא">🛠️ שלבים</button>
+            <button type="button" class="secondary-btn adm-move-up-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem;" ${rawIdx <= 0 ? 'disabled' : ''}>▲</button>
+            <button type="button" class="secondary-btn adm-move-down-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem;" ${(rawIdx === -1 || rawIdx >= appState.curriculumUnits.length - 1) ? 'disabled' : ''}>▼</button>
+            <button type="button" class="secondary-btn adm-delete-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem; color: #dc2626;">🗑️ מחק</button>
+          </div>
+        `;
+        item.querySelector('.adm-quick-edit-btn').onclick = () => window.openUniversalUnitQuickEditor('general', uid);
+        item.querySelector('.adm-full-edit-btn').onclick = () => openUnitEditor(uid);
+        item.querySelector('.adm-move-up-btn').onclick = () => { if (rawIdx > 0) moveUnit(rawIdx, -1); };
+        item.querySelector('.adm-move-down-btn').onclick = () => { if (rawIdx !== -1 && rawIdx < appState.curriculumUnits.length - 1) moveUnit(rawIdx, 1); };
+        item.querySelector('.adm-delete-btn').onclick = () => window.deleteUnitFromAnyTrack('general', uid);
+        container.appendChild(item);
+      });
+    }
+  } else if (activeAdminCurriculumFilter === 'accounting') {
+    if (accountingUnits.length === 0) {
+      const emptyEl = document.createElement('div');
+      emptyEl.className = 'card';
+      emptyEl.style.cssText = 'padding:1.4rem; text-align:center; color:#64748b;';
+      emptyEl.textContent = 'אין כרגע יחידות פעילות במסלול הנהלת חשבונות.';
+      container.appendChild(emptyEl);
+    } else {
+      const completedAcc = Array.isArray(appState.trackProgress?.accounting) ? appState.trackProgress.accounting : [];
+      accountingUnits.forEach((unit, idx) => {
+        const uid = String(unit.id || unit.unit_id || '');
+        const isDone = Boolean(unit.isCompleted || completedAcc.includes(uid));
+        const leadText = unit.description || unit.goal || ((Array.isArray(unit.blocks) ? unit.blocks.find(b => b && b.type === 'text') : null)?.content || '');
+        const shortDesc = String(leadText).replace(/<[^>]*>/g, '').slice(0, 140);
+
+        const item = document.createElement('div');
+        item.className = 'card';
+        item.style.cssText = 'padding: 1rem 1.3rem; margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; background: #f8fafc;';
+        item.innerHTML = `
+          <div style="flex: 1 1 280px;">
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem;">
+              <span style="font-weight: 800; color: #0369a1;">#${idx + 1}</span>
+              <span class="badge-tag">הנהלת חשבונות</span>
+              <span style="font-size: 0.85rem; color: ${isDone ? '#059669' : '#64748b'}; font-weight: 700;">
+                ${isDone ? '✓ הושלם' : 'פעיל במסלול'}
+              </span>
+            </div>
+            <h4 style="margin: 0 0 0.25rem 0; font-size: 1.08rem;">${escapeAdmHtml(unit.title)}</h4>
+            ${shortDesc ? `<p style="margin:0; font-size:0.9rem; color:#64748b;">${escapeAdmHtml(shortDesc)}</p>` : ''}
+          </div>
+          <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+            <button type="button" class="primary-btn adm-acc-edit-btn" style="padding: 0.4rem 0.85rem; font-size: 0.85rem;">✏️ ערוך</button>
+            <button type="button" class="secondary-btn adm-acc-del-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem; color: #dc2626;">🗑️ מחק</button>
+          </div>
+        `;
+        item.querySelector('.adm-acc-edit-btn').onclick = () => window.openUniversalUnitQuickEditor('accounting', uid);
+        item.querySelector('.adm-acc-del-btn').onclick = () => window.deleteUnitFromAnyTrack('accounting', uid);
+        container.appendChild(item);
+      });
+    }
+  } else if (activeAdminCurriculumFilter === 'summary_exam') {
+    if (summaryExams.length === 0) {
+      const emptyEl = document.createElement('div');
+      emptyEl.className = 'card';
+      emptyEl.style.cssText = 'padding:1.4rem; text-align:center; color:#64748b;';
+      emptyEl.textContent = 'אין כרגע מבחנים מסכמים שמורים. מבחנים נוצרים אוטומטית בסיום יחידת לימוד במסלול 3!';
+      container.appendChild(emptyEl);
+    } else {
+      summaryExams.forEach((exam, idx) => {
+        const examId = String(exam.id || exam.unit_id || '');
+        const qBlocksCount = Array.isArray(exam.blocks)
+          ? exam.blocks.filter(b => b && ['exercise', 'journal_entry', 'ai_eval_qa'].includes(b.type)).length
+          : 0;
+        const item = document.createElement('div');
+        item.className = 'card';
+        item.style.cssText = 'padding: 1rem 1.3rem; margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; background: #fffbeb; border-color: #fde68a;';
+        item.innerHTML = `
+          <div style="flex: 1 1 280px;">
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem; flex-wrap: wrap;">
+              <span style="font-weight: 800; color: #b45309;">#${idx + 1}</span>
+              <span class="badge-tag">📝 מבחן מסכם</span>
+              ${exam.createdAtLabel ? `<span style="font-size:0.82rem; color:#92400e;">📅 ${escapeAdmHtml(exam.createdAtLabel)}</span>` : ''}
+              <span style="font-size:0.82rem; color:#475569;">${qBlocksCount} שאלות תרגול</span>
+              <span style="font-size: 0.85rem; color: ${exam.isCompleted ? '#059669' : '#b45309'}; font-weight: 700;">
+                ${exam.isCompleted ? '✓ הושלם' : 'פתוח לתרגול'}
+              </span>
+            </div>
+            <h4 style="margin: 0 0 0.25rem 0; font-size: 1.08rem;">${escapeAdmHtml(exam.title)}</h4>
+            <p style="margin: 0; font-size: 0.9rem; color: #78350f;">${escapeAdmHtml(exam.description || '')}</p>
+          </div>
+          <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+            <button type="button" class="primary-btn adm-exam-edit-btn" style="padding: 0.4rem 0.85rem; font-size: 0.85rem;">✏️ ערוך</button>
+            <button type="button" class="secondary-btn adm-exam-del-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem; color: #dc2626;">🗑️ מחק</button>
+          </div>
+        `;
+        item.querySelector('.adm-exam-edit-btn').onclick = () => window.openUniversalUnitQuickEditor('summary_exam', examId);
+        item.querySelector('.adm-exam-del-btn').onclick = () => window.deleteUnitFromAnyTrack('summary_exam', examId);
+        container.appendChild(item);
+      });
+    }
+  } else if (activeAdminCurriculumFilter === 'study_help') {
+    if (studyHelpUnits.length === 0) {
+      const emptyEl = document.createElement('div');
+      emptyEl.className = 'card';
+      emptyEl.style.cssText = 'padding:1.4rem; text-align:center; color:#64748b;';
+      emptyEl.textContent = 'אין כרגע יחידות לימוד יומיות במסלול 3 (עזרה בלימודים).';
+      container.appendChild(emptyEl);
+    } else {
+      studyHelpUnits.forEach((unit, idx) => {
+        const uid = String(unit.id || unit.unit_id || '');
+        const conceptsCount = Array.isArray(unit.concepts) ? unit.concepts.length : 0;
+        const questionsCount = Array.isArray(unit.questions) ? unit.questions.length : 0;
+        const summaryText = unit.pages_summary || unit.topic_summary || '';
+        const item = document.createElement('div');
+        item.className = 'card';
+        item.style.cssText = 'padding: 1rem 1.3rem; margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; background: #f0fdf4; border-color: #bbf7d0;';
+        item.innerHTML = `
+          <div style="flex: 1 1 280px;">
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem; flex-wrap: wrap;">
+              <span style="font-weight: 800; color: #047857;">#${idx + 1}</span>
+              <span class="badge-tag">📚 עזרה בלימודים</span>
+              ${unit.createdAtLabel ? `<span style="font-size:0.82rem; color:#065f46;">📅 ${escapeAdmHtml(unit.createdAtLabel)}</span>` : ''}
+              <span style="font-size:0.82rem; color:#475569;">💡 ${conceptsCount} מושגים • 📝 ${questionsCount} שאלות</span>
+              <span style="font-size: 0.85rem; color: ${unit.completed ? '#059669' : '#0284c7'}; font-weight: 700;">
+                ${unit.completed ? '✓ הושלם' : 'בתהליך למידה'}
+              </span>
+            </div>
+            <h4 style="margin: 0 0 0.25rem 0; font-size: 1.08rem;">${escapeAdmHtml(unit.title)}</h4>
+            <p style="margin: 0; font-size: 0.9rem; color: #334155;">${escapeAdmHtml(summaryText)}</p>
+          </div>
+          <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+            <button type="button" class="primary-btn adm-sh-edit-btn" style="padding: 0.4rem 0.85rem; font-size: 0.85rem;">✏️ ערוך</button>
+            <button type="button" class="secondary-btn adm-sh-del-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem; color: #dc2626;">🗑️ מחק</button>
+          </div>
+        `;
+        item.querySelector('.adm-sh-edit-btn').onclick = () => window.openUniversalUnitQuickEditor('study_help', uid);
+        item.querySelector('.adm-sh-del-btn').onclick = () => window.deleteUnitFromAnyTrack('study_help', uid);
+        container.appendChild(item);
+      });
+    }
+  }
 
   const addManualBtn = document.getElementById('add-manual-unit-btn');
   if (addManualBtn) {
@@ -419,41 +629,9 @@ function renderAdminCurriculum() {
       if (assistantTab) assistantTab.click();
     };
   }
-
-  // מסלול 2: יחידות הנהלת חשבונות (עריכת כותרת ומחיקה קבועה בין רענונים)
-  const accountingTrack = (typeof TRACKS !== 'undefined' ? TRACKS : []).find(t => t.id === 'accounting');
-  const accountingUnits = (accountingTrack && typeof getTrackUnits === 'function') ? getTrackUnits(accountingTrack) : [];
-  if (accountingUnits.length > 0) {
-    const accHeader = document.createElement('div');
-    accHeader.style.cssText = 'margin: 1.8rem 0 0.8rem 0; padding-top: 1.2rem; border-top: 2px dashed #cbd5e1;';
-    accHeader.innerHTML = `<h4 style="margin: 0; font-size: 1.15rem; color: #1e3a8a;">💼 מסלול 2: יחידות יסודות הנהלת חשבונות (${accountingUnits.length} יחידות פעילות)</h4>`;
-    container.appendChild(accHeader);
-
-    accountingUnits.forEach((unit, idx) => {
-      const uid = unit.id || unit.unit_id;
-      const item = document.createElement('div');
-      item.className = 'card';
-      item.style.cssText = 'padding: 1rem 1.3rem; margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; background: #f8fafc;';
-      item.innerHTML = `
-        <div style="flex: 1 1 280px;">
-          <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem;">
-            <span style="font-weight: 800; color: #0369a1;">#${idx + 1}</span>
-            <span class="badge-tag">הנהלת חשבונות</span>
-            <span style="font-size: 0.85rem; color: ${unit.isCompleted ? '#059669' : '#64748b'}; font-weight: 700;">
-              ${unit.isCompleted ? '✓ הושלם' : 'פעיל במסלול'}
-            </span>
-          </div>
-          <h4 style="margin: 0; font-size: 1.08rem;">${unit.title}</h4>
-        </div>
-        <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
-          <button class="secondary-btn" style="padding: 0.4rem 0.85rem; font-size: 0.85rem;" onclick="editAccountingUnitTitle('${uid}')">✏️ שנה כותרת</button>
-          <button class="secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem; color: #dc2626;" onclick="deleteAccountingUnit('${uid}')">🗑️ מחק</button>
-        </div>
-      `;
-      container.appendChild(item);
-    });
-  }
 }
+
+window.renderAdminCurriculum = renderAdminCurriculum;
 
 window.openUnitEditor = function(unitId) {
   const modal = document.getElementById('unit-editor-modal');
@@ -534,71 +712,23 @@ window.moveUnit = function(index, direction) {
 };
 
 window.deleteUnit = function(index) {
-  if (appState.curriculumUnits.length <= 1) {
-    alert('לא ניתן למחוק את היחידה האחרונה במסלול.');
-    return;
-  }
   const targetUnit = appState.curriculumUnits[index];
   if (!targetUnit) return;
-  if (confirm(`האם אתה בטוח שברצונך למחוק את יחידה "${targetUnit.title}"?`)) {
-    const uid = String(targetUnit.id || targetUnit.unit_id || '');
-    if (uid) {
-      if (!Array.isArray(appState.deletedUnitIds)) appState.deletedUnitIds = [];
-      if (!appState.deletedUnitIds.includes(uid)) {
-        appState.deletedUnitIds.push(uid);
-      }
-    }
-    appState.curriculumUnits.splice(index, 1);
-    saveAppState();
-    renderAdminCurriculum();
-    renderRoadmap();
-    showToast(`היחידה "${targetUnit.title}" הוסרה מהמסלול ונשמרה כמחוקה. 🗑️`);
+  const uid = String(targetUnit.id || targetUnit.unit_id || '');
+  if (typeof window.deleteUnitFromAnyTrack === 'function') {
+    window.deleteUnitFromAnyTrack('general', uid);
   }
 };
 
 window.editAccountingUnitTitle = function(unitId) {
-  const accountingTrack = (typeof TRACKS !== 'undefined' ? TRACKS : []).find(t => t.id === 'accounting');
-  const units = (accountingTrack && typeof getTrackUnits === 'function') ? getTrackUnits(accountingTrack) : [];
-  const target = units.find(u => String(u.id || u.unit_id) === String(unitId));
-  if (!target) return;
-
-  const updatedTitle = prompt('הזן כותרת חדשה ליחידה בהנהלת חשבונות:', target.title || '');
-  if (!updatedTitle || !updatedTitle.trim()) return;
-
-  if (!appState.unitOverrides || typeof appState.unitOverrides !== 'object') {
-    appState.unitOverrides = {};
+  if (typeof window.openUniversalUnitQuickEditor === 'function') {
+    window.openUniversalUnitQuickEditor('accounting', unitId);
   }
-  appState.unitOverrides[unitId] = {
-    ...(appState.unitOverrides[unitId] || {}),
-    title: updatedTitle.trim()
-  };
-  performSmartMergeAndMigration({ skipCloudSync: false });
-  saveAppState();
-  renderAdminCurriculum();
-  renderRoadmap();
-  showToast('כותרת היחידה עודכנה ונשמרה בקביעות! ✏️');
 };
 
 window.deleteAccountingUnit = function(unitId) {
-  const accountingTrack = (typeof TRACKS !== 'undefined' ? TRACKS : []).find(t => t.id === 'accounting');
-  const units = (accountingTrack && typeof getTrackUnits === 'function') ? getTrackUnits(accountingTrack) : [];
-  if (units.length <= 1) {
-    alert('לא ניתן למחוק את היחידה האחרונה במסלול.');
-    return;
-  }
-  const target = units.find(u => String(u.id || u.unit_id) === String(unitId));
-  if (!target) return;
-
-  if (confirm(`האם אתה בטוח שברצונך למחוק לצמיתות את יחידה "${target.title}"?`)) {
-    if (!Array.isArray(appState.deletedUnitIds)) appState.deletedUnitIds = [];
-    if (!appState.deletedUnitIds.includes(String(unitId))) {
-      appState.deletedUnitIds.push(String(unitId));
-    }
-    performSmartMergeAndMigration({ skipCloudSync: false });
-    saveAppState();
-    renderAdminCurriculum();
-    renderRoadmap();
-    showToast(`היחידה "${target.title}" הוסרה מהמסלול ונשמרה כמחוקה. 🗑️`);
+  if (typeof window.deleteUnitFromAnyTrack === 'function') {
+    window.deleteUnitFromAnyTrack('accounting', unitId);
   }
 };
 

@@ -2967,7 +2967,9 @@ function renderStudyHelpRoadmap(container) {
                     </div>
                   </div>
                 </div>
-                <div class="day-action-box">
+                <div class="day-action-box" style="display:flex; flex-wrap:wrap; gap:0.45rem; align-items:center;">
+                  <button type="button" class="secondary-btn edit-study-unit-btn" data-study-unit-id="${unit.id}" title="ערוך יחידת לימוד" style="padding:0.4rem 0.7rem; font-size:0.85rem; min-height:36px;">✏️ ערוך</button>
+                  <button type="button" class="secondary-btn delete-study-unit-btn" data-study-unit-id="${unit.id}" title="מחק יחידת לימוד" style="padding:0.4rem 0.7rem; font-size:0.85rem; min-height:36px; color:#dc2626;">🗑️ מחק</button>
                   <button type="button" class="primary-btn open-study-unit-btn" data-study-unit-id="${unit.id}">
                     <span>${isDone ? 'צפה בתרגול' : (solvedQ > 0 ? 'המשך תרגול' : 'התחל בשיעור')}</span>
                     <span>▶</span>
@@ -3078,9 +3080,40 @@ function renderStudyHelpRoadmap(container) {
       openStudyHelpUnit(uid);
     };
     cardEl.onkeydown = (e) => {
+      if (e.target && e.target !== cardEl && typeof e.target.closest === 'function' && e.target.closest('button')) {
+        return;
+      }
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         openStudyHelpUnit(uid);
+      }
+    };
+  });
+
+  target.querySelectorAll('.open-study-unit-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const uid = btn.getAttribute('data-study-unit-id');
+      if (uid) openStudyHelpUnit(uid);
+    };
+  });
+
+  target.querySelectorAll('.edit-study-unit-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const uid = btn.getAttribute('data-study-unit-id');
+      if (uid && typeof openUniversalUnitQuickEditor === 'function') {
+        openUniversalUnitQuickEditor('study_help', uid);
+      }
+    };
+  });
+
+  target.querySelectorAll('.delete-study-unit-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const uid = btn.getAttribute('data-study-unit-id');
+      if (uid && typeof deleteUnitFromAnyTrack === 'function') {
+        deleteUnitFromAnyTrack('study_help', uid);
       }
     };
   });

@@ -122,7 +122,18 @@ function applyUnitDeletionsAndOverrides(unitsList) {
       const uid = String(u.id || u.unit_id || '');
       const patch = uid ? overrides[uid] : null;
       if (patch && typeof patch === 'object') {
-        return { ...u, ...patch, id: u.id || uid };
+        const merged = { ...u, ...patch, id: u.id || uid };
+        if (patch.description && Array.isArray(u.blocks)) {
+          let updatedFirstLead = false;
+          merged.blocks = u.blocks.map(b => {
+            if (!updatedFirstLead && b && b.type === 'text') {
+              updatedFirstLead = true;
+              return { ...b, content: patch.description };
+            }
+            return b;
+          });
+        }
+        return merged;
       }
       return u;
     });
@@ -1007,6 +1018,663 @@ function saveHomeworkSummaryExam(examObj) {
   appState.accountingExam.homeworkExams.push(examObj);
   saveAppState();
   return examObj;
+}
+
+// ============================================================================
+// 2c. מחיקה ועריכה אוניברסלית של יחידות בכל המסלולים (CRUD Across All Tracks)
+// ============================================================================
+
+function escapeStoreHtml(val) {
+  return String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function findUnitAcrossTracks(trackId, unitId) {
+  const normTrack = String(trackId || 'general').trim();
+  const uid = String(unitId || '').trim();
+  if (!uid) return null;
+
+  if (normTrack === 'general') {
+    const generalTrack = TRACKS.find(t => t.id === 'general') || TRACKS[0];
+    return (appState.curriculumUnits || []).find(u => String(u.id || u.unit_id) === uid) ||
+      getTrackUnits(generalTrack).find(u => String(u.id || u.unit_id) === uid) ||
+      null;
+  }
+
+  if (normTrack === 'accounting') {
+    const accTrack = TRACKS.find(t => t.id === 'accounting') || TRACKS[1];
+    return getTrackUnits(accTrack).find(u => String(u.id || u.unit_id) === uid) || null;
+  }
+
+  if (normTrack === 'study_help') {
+    return (appState.studyHelpUnits || []).find(u => String(u.id || u.unit_id) === uid) ||
+      (appState.studyHelp?.dailyCards || []).find(c => String(c.id || c.unit_id) === uid) ||
+      null;
+  }
+
+  if (normTrack === 'summary_exam') {
+    return (appState.accountingSummaryExams || []).find(e => String(e.unit_id || e.id) === uid) ||
+      (appState.accountingExam?.homeworkExams || []).find(e => String(e.unit_id || e.id) === uid) ||
+      null;
+  }
+
+  return null;
+}
+
+/**
+ * מוחק יחידה מכל מסלול (general, accounting, study_help, summary_exam) עם אישור ברור,
+ * שמירה קבועה ב-deletedUnitIds ליחידות בסיס, וסנכרון מלא מול DatabaseManager.
+ * @param {string} trackId
+ * @param {string} unitId
+ * @returns {boolean}
+ */
+function deleteUnitFromAnyTrack(trackId, unitId) {
+  const normTrack = String(trackId || 'general').trim();
+  const uid = String(unitId || '').trim();
+  if (!uid) return false;
+
+  const found = findUnitAcrossTracks(normTrack, uid);
+  const unitTitle = (found && (found.lesson_title || found.title)) || uid;
+
+  if (typeof confirm === 'function') {
+    const approved = confirm(`האם אתה בטוח שברצונך למחוק את היחידה "${unitTitle}"?`);
+    if (!approved) return false;
+  }
+
+  if (normTrack === 'general' || normTrack === 'accounting') {
+    if (!Array.isArray(appState.deletedUnitIds)) {
+      appState.deletedUnitIds = [];
+    }
+    if (!appState.deletedUnitIds.includes(uid)) {
+      appState.deletedUnitIds.push(uid);
+    }
+    if (normTrack === 'general' && Array.isArray(appState.curriculumUnits)) {
+      appState.curriculumUnits = appState.curriculumUnits.filter(
+        u => String(u.id || u.unit_id) !== uid
+      );
+    }
+    if (normTrack === 'accounting' && typeof window !== 'undefined' && Array.isArray(window._RAW_ACCOUNTING_CURRICULUM)) {
+      window.ACCOUNTING_CURRICULUM = applyUnitDeletionsAndOverrides(window._RAW_ACCOUNTING_CURRICULUM);
+    }
+  } else if (normTrack === 'study_help') {
+    if (Array.isArray(appState.studyHelpUnits)) {
+      appState.studyHelpUnits = appState.studyHelpUnits.filter(
+        u => String(u.id || u.unit_id) !== uid
+      );
+    }
+    if (appState.studyHelp && Array.isArray(appState.studyHelp.dailyCards)) {
+      appState.studyHelp.dailyCards = appState.studyHelp.dailyCards.filter(
+        c => String(c.id || c.unit_id) !== uid
+      );
+    }
+    if (appState.trackProgress && Array.isArray(appState.trackProgress.study_help)) {
+      appState.trackProgress.study_help = appState.trackProgress.study_help.filter(
+        id => String(id) !== uid
+      );
+    }
+  } else if (normTrack === 'summary_exam') {
+    if (Array.isArray(appState.accountingSummaryExams)) {
+      appState.accountingSummaryExams = appState.accountingSummaryExams.filter(
+        e => String(e.unit_id || e.id) !== uid
+      );
+    }
+    if (appState.accountingExam && Array.isArray(appState.accountingExam.homeworkExams)) {
+      appState.accountingExam.homeworkExams = appState.accountingExam.homeworkExams.filter(
+        e => String(e.unit_id || e.id) !== uid
+      );
+    }
+    if (Array.isArray(appState.studyHelpUnits)) {
+      appState.studyHelpUnits.forEach(u => {
+        if (u && String(u.summaryExamId) === uid) {
+          u.summaryExamId = null;
+        }
+      });
+    }
+  }
+
+  saveAppState();
+
+  const dm = bridgeDatabaseManager();
+  if (dm && typeof dm.delete === 'function') {
+    dm.delete(normTrack, uid).catch(err => {
+      console.warn('[Store] DatabaseManager.delete warning:', err);
+    });
+  }
+
+  if (typeof renderRoadmap === 'function') renderRoadmap();
+  if (typeof renderAdminCurriculum === 'function') renderAdminCurriculum();
+  if (typeof renderAdminOverview === 'function') renderAdminOverview();
+
+  if (typeof showToast === 'function') {
+    showToast(`היחידה "${unitTitle}" נמחקה בהצלחה 🗑️`, 'success');
+  }
+
+  return true;
+}
+
+/**
+ * משחזר בלחיצה אחת את כל יחידות הבסיס שנמחקו (ממסלול 1 וממסלול 2).
+ * @returns {number} מספר היחידות ששוחזרו
+ */
+function restoreDeletedBaseUnits() {
+  const restoredCount = Array.isArray(appState.deletedUnitIds) ? appState.deletedUnitIds.length : 0;
+  appState.deletedUnitIds = [];
+  saveAppState({ skipCloudSync: true });
+  performSmartMergeAndMigration({ skipCloudSync: false });
+  saveAppState();
+
+  if (typeof renderRoadmap === 'function') renderRoadmap();
+  if (typeof renderAdminCurriculum === 'function') renderAdminCurriculum();
+  if (typeof renderAdminOverview === 'function') renderAdminOverview();
+
+  if (typeof showToast === 'function') {
+    showToast(
+      restoredCount > 0
+        ? `שוחזרו בהצלחה ${restoredCount} יחידות בסיס למסלולים! ♻️`
+        : 'כל יחידות הבסיס כבר פעילות במסלולים ♻️',
+      'success'
+    );
+  }
+  return restoredCount;
+}
+
+/**
+ * פותח חלון עריכה אוניברסלי מהיר ונוח ליחידה מכל מסלול:
+ * - עריכת כותרת ותקציר/מטרה/תיאור לכל המסלולים (נשמר ב-unitOverrides ליחידות בסיס).
+ * - במסלול 3 (study_help): עריכה או מחיקה פרטנית של מושגים ושאלות בתוך היחידה.
+ * - במבחנים מסכמים (summary_exam): עריכה או הסרה של שאלות ומשימות בתוך המבחן.
+ * @param {string} trackId
+ * @param {string} unitId
+ */
+function openUniversalUnitQuickEditor(trackId, unitId) {
+  if (typeof document === 'undefined' || !document.body) return;
+
+  const normTrack = String(trackId || 'general').trim();
+  const uid = String(unitId || '').trim();
+  const unit = findUnitAcrossTracks(normTrack, uid);
+
+  if (!unit) {
+    if (typeof showToast === 'function') {
+      showToast('לא נמצאה היחידה המבוקשת לעריכה.', 'warning');
+    }
+    return;
+  }
+
+  const existingModal = document.getElementById('universal-unit-quick-editor-modal');
+  if (existingModal) existingModal.remove();
+
+  const trackLabelMap = {
+    general: '🤖 מסלול 1: כללי ו-AI',
+    accounting: '📊 מסלול 2: הנהלת חשבונות',
+    study_help: '📚 מסלול 3: עזרה בלימודים',
+    summary_exam: '🏆 מבחן מסכם בהנהלת חשבונות'
+  };
+
+  const summaryFieldLabelMap = {
+    general: 'מטרת היחידה (Goal):',
+    accounting: 'תיאור / תקציר פתיחה ליחידה:',
+    study_help: 'תקציר עמודי השיעור וההקדמה (Pages Summary):',
+    summary_exam: 'תיאור והנחיית פתיחה למבחן:'
+  };
+
+  const leadBlock = Array.isArray(unit.blocks) ? unit.blocks.find(b => b && b.type === 'text') : null;
+  let draftTitle = String(unit.lesson_title || unit.title || '').trim();
+  let draftSummary = String(
+    (normTrack === 'general' ? unit.goal : '') ||
+    unit.pages_summary ||
+    unit.description ||
+    unit.topic_summary ||
+    unit.introText ||
+    (leadBlock ? leadBlock.content : '') ||
+    unit.goal ||
+    ''
+  ).trim();
+  let draftCategory = String(unit.category || '').trim();
+
+  // Working copies for Track 3 concepts & questions
+  let draftConcepts = normTrack === 'study_help' && Array.isArray(unit.concepts)
+    ? unit.concepts.map(c => ({ ...c }))
+    : [];
+
+  let draftQuestions = normTrack === 'study_help' && Array.isArray(unit.questions)
+    ? unit.questions.map((q, origIdx) => ({
+        ...q,
+        _origIdx: origIdx
+      }))
+    : [];
+
+  // Working copy for Summary Exam blocks
+  let draftBlocks = normTrack === 'summary_exam' && Array.isArray(unit.blocks)
+    ? unit.blocks.map(b => ({ ...b }))
+    : [];
+
+  const modal = document.createElement('div');
+  modal.id = 'universal-unit-quick-editor-modal';
+  modal.className = 'modal-overlay active';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.style.cssText = 'display: flex; z-index: 9999; padding: 1rem;';
+
+  const syncTopFieldsFromDom = () => {
+    const tEl = modal.querySelector('#uqe-title-input');
+    const sEl = modal.querySelector('#uqe-summary-input');
+    const cEl = modal.querySelector('#uqe-category-input');
+    if (tEl) draftTitle = tEl.value;
+    if (sEl) draftSummary = sEl.value;
+    if (cEl) draftCategory = cEl.value;
+
+    if (normTrack === 'study_help') {
+      modal.querySelectorAll('.uqe-concept-row').forEach(row => {
+        const idx = Number(row.getAttribute('data-c-idx'));
+        if (draftConcepts[idx]) {
+          const nameInp = row.querySelector('.uqe-concept-name');
+          const expInp = row.querySelector('.uqe-concept-exp');
+          if (nameInp) draftConcepts[idx].term_name = nameInp.value;
+          if (expInp) draftConcepts[idx].simple_explanation = expInp.value;
+        }
+      });
+
+      modal.querySelectorAll('.uqe-question-row').forEach(row => {
+        const idx = Number(row.getAttribute('data-q-idx'));
+        if (draftQuestions[idx]) {
+          const lblInp = row.querySelector('.uqe-q-label');
+          const txtInp = row.querySelector('.uqe-q-text');
+          const transInp = row.querySelector('.uqe-q-trans');
+          if (lblInp) draftQuestions[idx].question_number_label = lblInp.value;
+          if (txtInp) {
+            draftQuestions[idx].exact_book_text = txtInp.value;
+            draftQuestions[idx].original_question = txtInp.value;
+            draftQuestions[idx].questionText = txtInp.value;
+          }
+          if (transInp) {
+            draftQuestions[idx].friendly_translation = transInp.value;
+            draftQuestions[idx].topic_focus = transInp.value;
+            draftQuestions[idx].topic = transInp.value;
+          }
+        }
+      });
+    }
+
+    if (normTrack === 'summary_exam') {
+      modal.querySelectorAll('.uqe-exam-block-row').forEach(row => {
+        const bIdx = Number(row.getAttribute('data-b-idx'));
+        const blk = draftBlocks[bIdx];
+        const inp = row.querySelector('.uqe-exam-block-prompt');
+        if (blk && inp) {
+          const val = inp.value;
+          if (blk.type === 'exercise' || blk.type === 'ai_eval_qa') {
+            blk.question = val;
+          } else if (blk.type === 'spreadsheet_task') {
+            blk.action_prompt = val;
+          } else if (blk.type === 'journal_grid') {
+            blk.scenario = val;
+          }
+        }
+      });
+    }
+  };
+
+  const renderModalContent = () => {
+    const conceptsSectionHtml = normTrack === 'study_help' ? `
+      <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1.5px solid #e2e8f0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.65rem;">
+          <strong style="color: #166534; font-size: 1rem;">💡 מושגים בשלב 1 (${draftConcepts.length}):</strong>
+          <button type="button" id="uqe-add-concept-btn" class="secondary-btn" style="padding: 0.3rem 0.75rem; font-size: 0.85rem;">➕ הוסף מושג</button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.65rem;">
+          ${draftConcepts.length === 0 ? `<p style="margin:0; color:#64748b; font-size:0.9rem;">אין מושגים ביחידה זו.</p>` : draftConcepts.map((c, idx) => `
+            <div class="uqe-concept-row" data-c-idx="${idx}" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.7rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.45rem;">
+                <input type="text" class="styled-input uqe-concept-name" value="${escapeStoreHtml(c.term_name || '')}" placeholder="שם המושג" style="font-weight: 700; flex: 1;">
+                <button type="button" class="secondary-btn uqe-del-concept-btn" data-c-idx="${idx}" style="padding: 0.35rem 0.65rem; font-size: 0.82rem; color: #dc2626;">🗑️ הסר</button>
+              </div>
+              <textarea class="styled-textarea uqe-concept-exp" rows="2" placeholder="הסבר פשוט בגובה העיניים...">${escapeStoreHtml(c.simple_explanation || '')}</textarea>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : '';
+
+    const questionsSectionHtml = normTrack === 'study_help' ? `
+      <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1.5px solid #e2e8f0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.65rem;">
+          <strong style="color: #1e40af; font-size: 1rem;">📝 שאלות התרגול בשלב 2 (${draftQuestions.length}):</strong>
+          <button type="button" id="uqe-add-question-btn" class="secondary-btn" style="padding: 0.3rem 0.75rem; font-size: 0.85rem;">➕ הוסף שאלה</button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          ${draftQuestions.length === 0 ? `<p style="margin:0; color:#64748b; font-size:0.9rem;">אין שאלות ביחידה זו.</p>` : draftQuestions.map((q, idx) => `
+            <div class="uqe-question-row" data-q-idx="${idx}" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.75rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.45rem;">
+                <input type="text" class="styled-input uqe-q-label" value="${escapeStoreHtml(q.question_number_label || `שאלה ${idx + 1}`)}" placeholder="תווית שאלה" style="max-width: 220px; font-weight: 700;">
+                <button type="button" class="secondary-btn uqe-del-question-btn" data-q-idx="${idx}" style="padding: 0.35rem 0.65rem; font-size: 0.82rem; color: #dc2626;">🗑️ מחק שאלה</button>
+              </div>
+              <textarea class="styled-textarea uqe-q-text" rows="2" placeholder="נוסח השאלה המלא..." style="margin-bottom: 0.4rem;">${escapeStoreHtml(q.exact_book_text || q.original_question || q.questionText || '')}</textarea>
+              <input type="text" class="styled-input uqe-q-trans" value="${escapeStoreHtml(q.friendly_translation || '')}" placeholder="תרגום / הסבר מונגש לדניאל (אופציונלי)">
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : '';
+
+    const examBlocksSectionHtml = normTrack === 'summary_exam' ? (() => {
+      const editableTypes = ['spreadsheet_task', 'journal_grid', 'exercise', 'ai_eval_qa'];
+      const typeBadges = {
+        spreadsheet_task: '🧮 משימת חישוב וטבלה',
+        journal_grid: '📒 פקודת יומן',
+        exercise: '☑️ שאלה אמריקאית',
+        ai_eval_qa: '💬 שאלת הבנה פתוחה'
+      };
+      const itemsHtml = draftBlocks
+        .map((blk, bIdx) => ({ blk, bIdx }))
+        .filter(({ blk }) => blk && editableTypes.includes(blk.type))
+        .map(({ blk, bIdx }, displayIdx) => {
+          const promptVal = blk.type === 'spreadsheet_task'
+            ? (blk.action_prompt || blk.instructions || '')
+            : blk.type === 'journal_grid'
+              ? (blk.scenario || blk.title || '')
+              : (blk.question || '');
+          return `
+            <div class="uqe-exam-block-row" data-b-idx="${bIdx}" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.75rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.45rem;">
+                <span class="badge-tag" style="background: #fef3c7; color: #b45309; font-weight: 700;">#${displayIdx + 1} • ${typeBadges[blk.type] || blk.type}</span>
+                <button type="button" class="secondary-btn uqe-del-exam-block-btn" data-b-idx="${bIdx}" style="padding: 0.3rem 0.65rem; font-size: 0.82rem; color: #dc2626;">🗑️ הסר שאלה</button>
+              </div>
+              <textarea class="styled-textarea uqe-exam-block-prompt" rows="2">${escapeStoreHtml(promptVal)}</textarea>
+            </div>
+          `;
+        })
+        .join('');
+
+      return `
+        <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1.5px solid #e2e8f0;">
+          <strong style="display: block; color: #92400e; font-size: 1rem; margin-bottom: 0.65rem;">🏆 שאלות ומשימות במבחן המסכם:</strong>
+          <div style="display: flex; flex-direction: column; gap: 0.65rem;">
+            ${itemsHtml || '<p style="margin:0; color:#64748b; font-size:0.9rem;">אין שאלות לעריכה במבחן זה.</p>'}
+          </div>
+        </div>
+      `;
+    })() : '';
+
+    modal.innerHTML = `
+      <div class="modal-card" dir="rtl" style="max-width: 760px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; text-align: right;">
+        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;">
+          <div>
+            <span class="badge-tag" style="margin-bottom: 0.25rem; display: inline-block;">${trackLabelMap[normTrack] || normTrack}</span>
+            <h3 class="modal-title" style="margin: 0;">✏️ עריכת יחידה: ${escapeStoreHtml(draftTitle)}</h3>
+          </div>
+          <button type="button" id="uqe-close-btn" class="modal-close-btn" aria-label="סגור">✕</button>
+        </div>
+
+        <div class="modal-body" style="overflow-y: auto; padding: 1.1rem 1.25rem; flex: 1;">
+          <div style="display: flex; flex-direction: column; gap: 0.85rem;">
+            <div>
+              <label for="uqe-title-input" style="display: block; font-weight: 700; margin-bottom: 0.3rem;">כותרת היחידה:</label>
+              <input type="text" id="uqe-title-input" class="styled-input" style="width: 100%; font-weight: 700;" value="${escapeStoreHtml(draftTitle)}">
+            </div>
+
+            ${normTrack === 'general' ? `
+              <div>
+                <label for="uqe-category-input" style="display: block; font-weight: 700; margin-bottom: 0.3rem;">קטגוריה:</label>
+                <input type="text" id="uqe-category-input" class="styled-input" style="width: 100%;" value="${escapeStoreHtml(draftCategory)}">
+              </div>
+            ` : ''}
+
+            <div>
+              <label for="uqe-summary-input" style="display: block; font-weight: 700; margin-bottom: 0.3rem;">${summaryFieldLabelMap[normTrack] || 'תקציר היחידה:'}</label>
+              <textarea id="uqe-summary-input" class="styled-textarea" rows="3" style="width: 100%;">${escapeStoreHtml(draftSummary)}</textarea>
+            </div>
+          </div>
+
+          ${conceptsSectionHtml}
+          ${questionsSectionHtml}
+          ${examBlocksSectionHtml}
+        </div>
+
+        <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding-top: 0.9rem;">
+          <button type="button" id="uqe-cancel-btn" class="secondary-btn">ביטול</button>
+          <button type="button" id="uqe-save-btn" class="primary-btn">💾 שמור שינויים ביחידה</button>
+        </div>
+      </div>
+    `;
+
+    const closeModal = () => modal.remove();
+    const closeBtn = modal.querySelector('#uqe-close-btn');
+    const cancelBtn = modal.querySelector('#uqe-cancel-btn');
+    if (closeBtn) closeBtn.onclick = closeModal;
+    if (cancelBtn) cancelBtn.onclick = closeModal;
+
+    const addConceptBtn = modal.querySelector('#uqe-add-concept-btn');
+    if (addConceptBtn) {
+      addConceptBtn.onclick = () => {
+        syncTopFieldsFromDom();
+        const nextNum = draftConcepts.length + 1;
+        draftConcepts.push({
+          id: `${uid}_c_${Date.now()}`,
+          index: nextNum,
+          term_name: `מושג חדש ${nextNum}`,
+          page_number: 1,
+          simple_explanation: '',
+          textbook_example: '',
+          mfa_step1_question: 'מה הרעיון המרכזי במושג זה?',
+          mfa_step1_options: ['יישום הכלל לפי ההסבר בשיעור', 'ניחוש ללא בדיקה'],
+          mfa_step1_correct_index: 0,
+          mfa_step2_why_question: 'למה חשוב להקפיד על כלל זה?',
+          mfa_step2_options: ['כדי להבטיח פתרון מדויק ונכון', 'אין צורך להקפיד'],
+          mfa_step2_correct_index: 0,
+          check1Passed: false,
+          mastered: false
+        });
+        renderModalContent();
+      };
+    }
+
+    modal.querySelectorAll('.uqe-del-concept-btn').forEach(btn => {
+      btn.onclick = () => {
+        syncTopFieldsFromDom();
+        const cIdx = Number(btn.getAttribute('data-c-idx'));
+        draftConcepts.splice(cIdx, 1);
+        renderModalContent();
+      };
+    });
+
+    const addQuestionBtn = modal.querySelector('#uqe-add-question-btn');
+    if (addQuestionBtn) {
+      addQuestionBtn.onclick = () => {
+        syncTopFieldsFromDom();
+        const nextNum = draftQuestions.length + 1;
+        draftQuestions.push({
+          id: `${uid}_q_${Date.now()}`,
+          index: nextNum,
+          page_number: 1,
+          question_number_label: `שאלה ${nextNum}`,
+          question_type: 'open_question',
+          exact_book_text: '',
+          original_question: '',
+          questionText: '',
+          friendly_translation: '',
+          step_by_step_guide: ['קריאת נתוני השאלה', 'רישום הפתרון ובדיקתו'],
+          hint: 'היעזר בכללים משלב 1.',
+          expected_answer_summary: '',
+          isCompleted: false,
+          chatHistory: [],
+          _origIdx: -1
+        });
+        renderModalContent();
+      };
+    }
+
+    modal.querySelectorAll('.uqe-del-question-btn').forEach(btn => {
+      btn.onclick = () => {
+        syncTopFieldsFromDom();
+        const qIdx = Number(btn.getAttribute('data-q-idx'));
+        draftQuestions.splice(qIdx, 1);
+        renderModalContent();
+      };
+    });
+
+    modal.querySelectorAll('.uqe-del-exam-block-btn').forEach(btn => {
+      btn.onclick = () => {
+        syncTopFieldsFromDom();
+        const bIdx = Number(btn.getAttribute('data-b-idx'));
+        draftBlocks.splice(bIdx, 1);
+        renderModalContent();
+      };
+    });
+
+    const saveBtn = modal.querySelector('#uqe-save-btn');
+    if (saveBtn) {
+      saveBtn.onclick = () => {
+        syncTopFieldsFromDom();
+        const cleanTitle = String(draftTitle || '').trim();
+        if (!cleanTitle) {
+          if (typeof showToast === 'function') showToast('נא להזין כותרת ליחידה.', 'warning');
+          return;
+        }
+        const cleanSummary = String(draftSummary || '').trim();
+        const cleanCat = String(draftCategory || '').trim();
+
+        if (!appState.unitOverrides || typeof appState.unitOverrides !== 'object') {
+          appState.unitOverrides = {};
+        }
+
+        if (normTrack === 'general') {
+          const patch = {
+            title: cleanTitle,
+            goal: cleanSummary,
+            ...(cleanCat ? { category: cleanCat } : {})
+          };
+          appState.unitOverrides[uid] = {
+            ...(appState.unitOverrides[uid] || {}),
+            ...patch
+          };
+          if (Array.isArray(appState.curriculumUnits)) {
+            const idx = appState.curriculumUnits.findIndex(u => String(u.id || u.unit_id) === uid);
+            if (idx !== -1) {
+              appState.curriculumUnits[idx] = { ...appState.curriculumUnits[idx], ...patch };
+            }
+          }
+        } else if (normTrack === 'accounting') {
+          const patch = {
+            title: cleanTitle,
+            description: cleanSummary,
+            pages_summary: cleanSummary
+          };
+          appState.unitOverrides[uid] = {
+            ...(appState.unitOverrides[uid] || {}),
+            ...patch
+          };
+          if (typeof window !== 'undefined' && Array.isArray(window._RAW_ACCOUNTING_CURRICULUM)) {
+            window.ACCOUNTING_CURRICULUM = applyUnitDeletionsAndOverrides(window._RAW_ACCOUNTING_CURRICULUM);
+          }
+        } else if (normTrack === 'study_help') {
+          const applyStudyHelpEdits = (targetObj) => {
+            if (!targetObj) return;
+            const prevSolved = Array.isArray(targetObj.solvedQuestions) ? targetObj.solvedQuestions : [];
+            const prevChats = Array.isArray(targetObj.chatHistory) ? targetObj.chatHistory : [];
+
+            const nextConcepts = draftConcepts.map((c, idx) => ({
+              ...c,
+              index: idx + 1,
+              term_name: String(c.term_name || `מושג ${idx + 1}`).trim(),
+              simple_explanation: String(c.simple_explanation || '').trim()
+            }));
+
+            const nextSolved = [];
+            const nextChats = [];
+            const nextQuestions = draftQuestions.map((q, idx) => {
+              const origIdx = typeof q._origIdx === 'number' ? q._origIdx : -1;
+              nextSolved.push(origIdx >= 0 ? Boolean(prevSolved[origIdx]) : Boolean(q.isCompleted));
+              nextChats.push(origIdx >= 0 && Array.isArray(prevChats[origIdx]) ? prevChats[origIdx] : []);
+              const copy = { ...q, index: idx + 1 };
+              delete copy._origIdx;
+              return copy;
+            });
+
+            targetObj.title = cleanTitle;
+            targetObj.lesson_title = cleanTitle;
+            targetObj.pages_summary = cleanSummary;
+            targetObj.introText = cleanSummary;
+            targetObj.topic_summary = cleanSummary;
+            targetObj.concepts = nextConcepts;
+            targetObj.questions = nextQuestions;
+            targetObj.solvedQuestions = nextSolved;
+            targetObj.chatHistory = nextChats;
+            targetObj.currentConceptIdx = Math.min(
+              Math.max(0, Number(targetObj.currentConceptIdx) || 0),
+              Math.max(0, nextConcepts.length - 1)
+            );
+            targetObj.currentQuestionIdx = Math.min(
+              Math.max(0, Number(targetObj.currentQuestionIdx) || 0),
+              Math.max(0, nextQuestions.length - 1)
+            );
+          };
+
+          const shUnit = (appState.studyHelpUnits || []).find(u => String(u.id || u.unit_id) === uid);
+          const dailyCard = (appState.studyHelp?.dailyCards || []).find(c => String(c.id || c.unit_id) === uid);
+          applyStudyHelpEdits(shUnit);
+          if (dailyCard && dailyCard !== shUnit) {
+            applyStudyHelpEdits(dailyCard);
+          }
+        } else if (normTrack === 'summary_exam') {
+          const applyExamEdits = (examObj) => {
+            if (!examObj) return;
+            examObj.title = cleanTitle;
+            examObj.description = cleanSummary;
+            let updatedLead = false;
+            examObj.blocks = draftBlocks.map(b => {
+              if (!updatedLead && b && b.type === 'text' && cleanSummary) {
+                updatedLead = true;
+                return { ...b, content: cleanSummary };
+              }
+              return b;
+            });
+          };
+
+          const ex1 = (appState.accountingSummaryExams || []).find(e => String(e.unit_id || e.id) === uid);
+          const ex2 = (appState.accountingExam?.homeworkExams || []).find(e => String(e.unit_id || e.id) === uid);
+          applyExamEdits(ex1);
+          if (ex2 && ex2 !== ex1) applyExamEdits(ex2);
+        }
+
+        saveAppState();
+        closeModal();
+
+        if (typeof renderRoadmap === 'function') renderRoadmap();
+        if (typeof renderAdminCurriculum === 'function') renderAdminCurriculum();
+        if (typeof renderAdminOverview === 'function') renderAdminOverview();
+        if (appState.currentView === 'unit' && String(appState.activeUnitId) === uid) {
+          if (normTrack === 'study_help' && typeof openStudyHelpUnit === 'function') {
+            openStudyHelpUnit(uid);
+          } else if (typeof renderUnitPlayer === 'function') {
+            renderUnitPlayer(uid);
+          }
+        }
+
+        if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
+          SoundService.playSuccessSound();
+        }
+        if (typeof showToast === 'function') {
+          showToast(`השינויים ביחידה "${cleanTitle}" נשמרו בהצלחה! ✏️`, 'success');
+        }
+      };
+    }
+  };
+
+  renderModalContent();
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.remove();
+  };
+  document.body.appendChild(modal);
+}
+
+if (typeof window !== 'undefined') {
+  window.deleteUnitFromAnyTrack = deleteUnitFromAnyTrack;
+  window.openUniversalUnitQuickEditor = openUniversalUnitQuickEditor;
+  window.restoreDeletedBaseUnits = restoreDeletedBaseUnits;
 }
 
 
