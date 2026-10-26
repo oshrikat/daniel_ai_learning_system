@@ -98,26 +98,59 @@ function getActiveTrack() {
 }
 
 /**
- * שליפת יחידות הלימוד עבור מסלול מסוים (כולל סטטוס השלמה)
+ * מסנן יחידות שנמחקו (deletedUnitIds) ומחיל עריכות מלווה שמורות (unitOverrides)
+ * על יחידות מסלול 1 ומסלול 2 באופן קבוע בין רענונים.
+ * @param {Array} unitsList
+ * @returns {Array}
+ */
+function applyUnitDeletionsAndOverrides(unitsList) {
+  if (!Array.isArray(unitsList)) return [];
+  const deletedSet = new Set(
+    Array.isArray(appState?.deletedUnitIds) ? appState.deletedUnitIds.filter(Boolean).map(String) : []
+  );
+  const overrides = (appState?.unitOverrides && typeof appState.unitOverrides === 'object')
+    ? appState.unitOverrides
+    : {};
+
+  return unitsList
+    .filter(u => {
+      if (!u) return false;
+      const uid = String(u.id || u.unit_id || '');
+      return !uid || !deletedSet.has(uid);
+    })
+    .map(u => {
+      const uid = String(u.id || u.unit_id || '');
+      const patch = uid ? overrides[uid] : null;
+      if (patch && typeof patch === 'object') {
+        return { ...u, ...patch, id: u.id || uid };
+      }
+      return u;
+    });
+}
+
+/**
+ * שליפת יחידות הלימוד עבור מסלול מסוים (כולל סטטוס השלמה, מחיקות ועריכות שמורות)
  * @param {object} [track]
  * @returns {Array}
  */
 function getTrackUnits(track) {
   if (!track) track = getActiveTrack();
   if (track.engine === 'legacy') {
-    return appState.curriculumUnits || [];
+    return applyUnitDeletionsAndOverrides(appState.curriculumUnits || []);
   }
   if (!track.dataVar) {
     return [];
   }
   let raw = [];
-  if (typeof window !== 'undefined' && window[track.dataVar]) {
+  if (track.dataVar === 'ACCOUNTING_CURRICULUM' && typeof window !== 'undefined' && Array.isArray(window._RAW_ACCOUNTING_CURRICULUM)) {
+    raw = window._RAW_ACCOUNTING_CURRICULUM;
+  } else if (typeof window !== 'undefined' && window[track.dataVar]) {
     raw = window[track.dataVar];
   } else if (track.dataVar === 'ACCOUNTING_CURRICULUM' && typeof ACCOUNTING_CURRICULUM !== 'undefined') {
     raw = ACCOUNTING_CURRICULUM;
   }
   const completedList = (appState.trackProgress && appState.trackProgress[track.id]) || [];
-  return raw.map(u => {
+  const hydrated = raw.map(u => {
     const uid = u.unit_id || u.id;
     return {
       ...u,
@@ -125,10 +158,12 @@ function getTrackUnits(track) {
       isCompleted: completedList.includes(uid)
     };
   });
+  return applyUnitDeletionsAndOverrides(hydrated);
 }
 
 let appState = {
   version: 3,
+  _updatedAt: null,
   currentView: 'roadmap',
   activeTrackId: 'general',
   activeUnitId: 'unit_1',
@@ -139,6 +174,8 @@ let appState = {
   clusters: getBaseClusters(),
   curriculumUnits: getBaseCurriculum(),
   checkpoints: getBaseCheckpoints(),
+  deletedUnitIds: [],
+  unitOverrides: {},
   trackProgress: {
     general: [],
     accounting: [],
@@ -175,6 +212,16 @@ let appState = {
       text: 'דניאל מתקדם בצורה נפלאה, עצמאית ובטוחה. המערכת מותאמת בדיוק לצרכים שלו עם חיזוקים חיוביים ומבחני שלב.'
     }
   ],
+  dbConfig: {
+    activeProvider: 'local',
+    githubToken: '',
+    githubGistId: '',
+    firebaseUrl: '',
+    firebaseSecret: '',
+    customEndpointUrl: '',
+    customApiKey: '',
+    lastSyncedAt: null
+  },
   apiConfig: {
     geminiKey: '',
     groqKey: '',
@@ -237,22 +284,208 @@ async function syncEnvKeysFromServer() {
 }
 
 // ============================================================================
+// 1b. גישור שכבת מסד הנתונים התלת-שכבתית (DatabaseManager Bridge & Cloud Sync)
+// ============================================================================
+
+function normalizeDbConfig(rawCfg) {
+  const base = {
+    activeProvider: 'local',
+    githubToken: '',
+    githubGistId: '',
+    firebaseUrl: '',
+    firebaseSecret: '',
+    customEndpointUrl: '',
+    customApiKey: '',
+    lastSyncedAt: null
+  };
+
+  let savedMgr = null;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const rawMgr = localStorage.getItem('DANIEL_AI_DB_CONFIG_V1');
+      if (rawMgr) savedMgr = JSON.parse(rawMgr);
+    }
+  } catch (_e) {}
+
+  const src = (rawCfg && typeof rawCfg === 'object') ? rawCfg : {};
+  const mgrConfigs = src.providerConfigs || savedMgr?.providerConfigs || {};
+
+  const candidateProvider = src.activeProvider || src.activeProviderType || savedMgr?.activeProviderType || 'local';
+  base.activeProvider = ['local', 'github', 'firebase', 'custom'].includes(candidateProvider)
+    ? candidateProvider
+    : 'local';
+
+  base.githubToken = cleanApiKey(src.githubToken || mgrConfigs.github?.token || '');
+  base.githubGistId = cleanApiKey(src.githubGistId || mgrConfigs.github?.gistId || '');
+  base.firebaseUrl = String(src.firebaseUrl || mgrConfigs.firebase?.databaseUrl || '').trim();
+  base.firebaseSecret = cleanApiKey(src.firebaseSecret || mgrConfigs.firebase?.authSecret || '');
+  base.customEndpointUrl = String(src.customEndpointUrl || mgrConfigs.custom?.endpointUrl || '').trim();
+  base.customApiKey = cleanApiKey(src.customApiKey || mgrConfigs.custom?.apiKey || '');
+  base.lastSyncedAt = src.lastSyncedAt || null;
+
+  return base;
+}
+
+function toDatabaseManagerInitOptions(dbCfg) {
+  const normalized = normalizeDbConfig(dbCfg);
+  return {
+    activeProviderType: normalized.activeProvider,
+    providerConfigs: {
+      local: {},
+      github: {
+        token: normalized.githubToken,
+        gistId: normalized.githubGistId,
+        filename: 'daniel_ai_cloud_state.json'
+      },
+      firebase: {
+        databaseUrl: normalized.firebaseUrl,
+        authSecret: normalized.firebaseSecret
+      },
+      custom: {
+        endpointUrl: normalized.customEndpointUrl,
+        apiKey: normalized.customApiKey,
+        saveMethod: 'POST'
+      }
+    }
+  };
+}
+
+function bridgeDatabaseManager() {
+  const dm = (typeof window !== 'undefined' && window.DatabaseManager)
+    ? window.DatabaseManager
+    : (typeof DatabaseManager !== 'undefined' ? DatabaseManager : null);
+  if (!dm) return null;
+  if (dm._storeBridged) return dm;
+
+  const origPersist = typeof dm._persistDbConfig === 'function' ? dm._persistDbConfig.bind(dm) : null;
+  dm._persistDbConfig = function() {
+    const prevLastSynced = (typeof appState !== 'undefined' && appState?.dbConfig?.lastSyncedAt) || null;
+    if (origPersist) origPersist();
+    if (typeof appState !== 'undefined' && appState && typeof appState === 'object') {
+      appState.dbConfig = {
+        activeProvider: this.activeProviderType || 'local',
+        githubToken: cleanApiKey(this.providerConfigs?.github?.token || ''),
+        githubGistId: cleanApiKey(this.providerConfigs?.github?.gistId || ''),
+        firebaseUrl: String(this.providerConfigs?.firebase?.databaseUrl || '').trim(),
+        firebaseSecret: cleanApiKey(this.providerConfigs?.firebase?.authSecret || ''),
+        customEndpointUrl: String(this.providerConfigs?.custom?.endpointUrl || '').trim(),
+        customApiKey: cleanApiKey(this.providerConfigs?.custom?.apiKey || ''),
+        lastSyncedAt: this.syncStatus?.lastSyncedAt || prevLastSynced
+      };
+    }
+  };
+
+  if (typeof dm.saveState !== 'function') {
+    dm.saveState = async function(state, options = {}) {
+      if (state && state.dbConfig) {
+        const mapped = toDatabaseManagerInitOptions(state.dbConfig);
+        this.activeProviderType = mapped.activeProviderType;
+        this.providerConfigs = {
+          local: { ...(this.providerConfigs?.local || {}), ...mapped.providerConfigs.local },
+          github: { ...(this.providerConfigs?.github || {}), ...mapped.providerConfigs.github },
+          firebase: { ...(this.providerConfigs?.firebase || {}), ...mapped.providerConfigs.firebase },
+          custom: { ...(this.providerConfigs?.custom || {}), ...mapped.providerConfigs.custom }
+        };
+      }
+      return this.saveFullState(state, options);
+    };
+  }
+
+  if (typeof dm.onStatusChange === 'function') {
+    dm.onStatusChange((statusObj) => {
+      if (statusObj && statusObj.lastSyncedAt && typeof appState !== 'undefined' && appState?.dbConfig) {
+        appState.dbConfig.lastSyncedAt = statusObj.lastSyncedAt;
+      }
+    });
+  }
+
+  dm._storeBridged = true;
+  return dm;
+}
+
+bridgeDatabaseManager();
+
+/**
+ * ניקוי אוטומטי של תמונות Base64 כבדות (pageSnapshots / inlineImages)
+ * מיחידות לימוד שהושלמו, תוך שימור מראה המקום המדויק (sourceReferenceLabel & pageCount).
+ */
+function purgeCompletedUnitHeavyImages(stateObj) {
+  if (!stateObj || typeof stateObj !== 'object') return 0;
+  let purgedCount = 0;
+
+  const stripUnit = (unit) => {
+    if (!unit || typeof unit !== 'object') return;
+    if (!(unit.completed === true || unit.isCompleted === true)) return;
+
+    const hadSnapshots = Array.isArray(unit.pageSnapshots) && unit.pageSnapshots.length > 0;
+    const hadInline = Array.isArray(unit.inlineImages) && unit.inlineImages.length > 0;
+    const hadRawPdf = Boolean(unit.rawPdfPart || unit.rawPdfBase64);
+
+    if (hadSnapshots || hadInline || hadRawPdf) {
+      const pageCount = Number(unit.pageCount) ||
+        (hadSnapshots ? unit.pageSnapshots.length : 0) ||
+        (hadInline ? unit.inlineImages.length : 0) ||
+        1;
+      const fileTitle = unit.sourceFileName || unit.lesson_title || unit.title || 'שיעור יומי';
+      unit.pageCount = pageCount;
+      if (!unit.sourceReferenceLabel) {
+        unit.sourceReferenceLabel = `📍 מקור בתיקייה שלך: קובץ '${fileTitle}' • עמודים 1-${pageCount}`;
+      }
+      unit.imagesPurged = true;
+      unit.imagesPurgedAt = unit.imagesPurgedAt || new Date().toISOString();
+      purgedCount++;
+    }
+
+    if (Array.isArray(unit.pageSnapshots) && unit.pageSnapshots.length > 0) {
+      unit.pageSnapshots = [];
+    }
+    if (Array.isArray(unit.inlineImages) && unit.inlineImages.length > 0) {
+      unit.inlineImages = [];
+    }
+    if ('rawPdfPart' in unit) delete unit.rawPdfPart;
+    if ('rawPdfBase64' in unit) delete unit.rawPdfBase64;
+  };
+
+  if (Array.isArray(stateObj.studyHelpUnits)) {
+    stateObj.studyHelpUnits.forEach(stripUnit);
+  }
+  if (stateObj.studyHelp && Array.isArray(stateObj.studyHelp.dailyCards)) {
+    stateObj.studyHelp.dailyCards.forEach(stripUnit);
+  }
+  return purgedCount;
+}
+
+// ============================================================================
 // 2. מנגנון Preserve & Merge חכם (סנכרון Git ללא דריסת היסטוריה מקומית)
 // ============================================================================
 
-function performSmartMergeAndMigration() {
+function performSmartMergeAndMigration(options = {}) {
   try {
     const rawV3 = localStorage.getItem(STORAGE_KEY);
     const baseUnits = getBaseCurriculum();
     const baseCPs = getBaseCheckpoints();
     const baseClusters = getBaseClusters();
 
+    if (typeof window !== 'undefined' && Array.isArray(window.ACCOUNTING_CURRICULUM) && !Array.isArray(window._RAW_ACCOUNTING_CURRICULUM)) {
+      window._RAW_ACCOUNTING_CURRICULUM = JSON.parse(JSON.stringify(window.ACCOUNTING_CURRICULUM));
+    }
+
     appState.clusters = baseClusters;
 
     if (rawV3) {
       const parsed = JSON.parse(rawV3);
       if (parsed && typeof parsed === 'object') {
+        if (parsed._updatedAt) appState._updatedAt = parsed._updatedAt;
         if (parsed.activeTrackId) appState.activeTrackId = parsed.activeTrackId;
+
+        appState.dbConfig = normalizeDbConfig(parsed.dbConfig || appState.dbConfig);
+        appState.deletedUnitIds = Array.isArray(parsed.deletedUnitIds)
+          ? Array.from(new Set(parsed.deletedUnitIds.filter(Boolean).map(String)))
+          : [];
+        appState.unitOverrides = (parsed.unitOverrides && typeof parsed.unitOverrides === 'object' && !Array.isArray(parsed.unitOverrides))
+          ? { ...parsed.unitOverrides }
+          : {};
+
         if (parsed.trackProgress && typeof parsed.trackProgress === 'object') {
           appState.trackProgress = {
             general: Array.isArray(parsed.trackProgress.general) ? parsed.trackProgress.general : [],
@@ -326,8 +559,8 @@ function performSmartMergeAndMigration() {
         }
 
         appState.curriculumUnits = baseUnits.map(unit => {
-          if (completedMap.has(unit.id)) {
-            const saved = completedMap.get(unit.id);
+          if (completedMap.has(unit.id) || appState.trackProgress.general.includes(unit.id)) {
+            const saved = completedMap.get(unit.id) || {};
             return { ...unit, isCompleted: true, feedback: saved.feedback };
           }
           return unit;
@@ -341,6 +574,12 @@ function performSmartMergeAndMigration() {
               appState.curriculumUnits.push(cu);
             }
           });
+        }
+
+        // החלת מחיקות ועריכות שמורות (deletedUnitIds & unitOverrides) על מסלול 1 ומסלול 2
+        appState.curriculumUnits = applyUnitDeletionsAndOverrides(appState.curriculumUnits);
+        if (typeof window !== 'undefined' && Array.isArray(window._RAW_ACCOUNTING_CURRICULUM)) {
+          window.ACCOUNTING_CURRICULUM = applyUnitDeletionsAndOverrides(window._RAW_ACCOUNTING_CURRICULUM);
         }
 
         // מיזוג מבחני שלב
@@ -359,7 +598,10 @@ function performSmartMergeAndMigration() {
           return cp;
         });
 
-        saveAppState();
+        saveAppState({
+          skipTimestampBump: true,
+          skipCloudSync: options.skipCloudSync !== false
+        });
         return;
       }
     }
@@ -395,6 +637,9 @@ function performSmartMergeAndMigration() {
         }
       }
     }
+    appState.dbConfig = normalizeDbConfig(appState.dbConfig);
+    appState.deletedUnitIds = Array.isArray(appState.deletedUnitIds) ? appState.deletedUnitIds : [];
+    appState.unitOverrides = (appState.unitOverrides && typeof appState.unitOverrides === 'object') ? appState.unitOverrides : {};
     appState.trackProgress = appState.trackProgress || { general: [], accounting: [], study_help: [] };
     appState.trackProgress.study_help = appState.trackProgress.study_help || [];
     appState.studyHelpUnits = Array.isArray(appState.studyHelpUnits) ? appState.studyHelpUnits : [];
@@ -404,11 +649,201 @@ function performSmartMergeAndMigration() {
   }
 }
 
-function saveAppState() {
+let _isSavingAppState = false;
+
+function saveAppState(options = {}) {
+  if (_isSavingAppState) return;
+  _isSavingAppState = true;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
-  } catch (e) {
-    console.warn('LocalStorage save failed:', e);
+    // 1. Auto-Purge heavy base64 snapshots/images on any completed Study Help unit
+    purgeCompletedUnitHeavyImages(appState);
+
+    // 2. Update modification timestamp unless hydrating on initial boot
+    if (!options.skipTimestampBump) {
+      appState._updatedAt = new Date().toISOString();
+    }
+
+    // 3. Instant 0ms synchronous write to localStorage
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+    } catch (e) {
+      console.warn('LocalStorage save failed:', e);
+    }
+
+    // 4. Delegate to DatabaseManager (write-through local server + debounced cloud sync)
+    if (!options.skipCloudSync) {
+      const dm = bridgeDatabaseManager();
+      if (dm && typeof dm.saveState === 'function') {
+        dm.saveState(appState).catch(err => {
+          console.warn('[Store] DatabaseManager.saveState background warning:', err);
+        });
+      }
+    }
+  } finally {
+    _isSavingAppState = false;
+  }
+}
+
+/**
+ * מסנכרן אוטומטית נתונים מהענן (GitHub Secret Gist / Firebase / Custom REST) בעליית האפליקציה
+ * או בלחיצה יזומה על "משוך נתונים מהענן עכשיו" בממשק הניהול.
+ * @param {object} [options] - `{ forcePull?: boolean, targetProvider?: string }`
+ * @returns {Promise<{ synced: boolean, provider: string, source?: string, message?: string }>}
+ */
+async function syncCloudDatabaseOnStartup(options = {}) {
+  try {
+    const dm = bridgeDatabaseManager();
+    if (!dm) {
+      return { synced: false, provider: 'local', message: 'שכבת DatabaseManager אינה זמינה.' };
+    }
+
+    appState.dbConfig = normalizeDbConfig(appState.dbConfig);
+    const provider = options.targetProvider || appState.dbConfig.activeProvider || 'local';
+
+    await dm.init({
+      ...toDatabaseManagerInitOptions(appState.dbConfig),
+      activeProviderType: provider
+    });
+
+    if (!['github', 'firebase', 'custom'].includes(provider)) {
+      return {
+        synced: false,
+        provider: 'local',
+        message: 'המערכת פועלת במצב שמירה מקומית בלבד (local).'
+      };
+    }
+
+    const hasCredentials =
+      (provider === 'github' && Boolean(appState.dbConfig.githubToken)) ||
+      (provider === 'firebase' && Boolean(appState.dbConfig.firebaseUrl)) ||
+      (provider === 'custom' && Boolean(appState.dbConfig.customEndpointUrl));
+
+    if (!hasCredentials) {
+      return {
+        synced: false,
+        provider,
+        message: `טרם הוגדרו פרטי חיבור עבור הספק '${provider}'.`
+      };
+    }
+
+    const activeRepo = dm.providers[provider] || dm.getActiveRepo();
+    if (!activeRepo || typeof activeRepo.loadFullState !== 'function') {
+      return { synced: false, provider, message: 'ספק הענן המבוקש לא נמצא.' };
+    }
+
+    await activeRepo.init(dm.providerConfigs[provider] || {});
+    const cloudRes = await activeRepo.loadFullState();
+
+    // Update auto-discovered Gist ID if GithubRepo found one
+    if (provider === 'github' && activeRepo.config?.gistId) {
+      appState.dbConfig.githubGistId = activeRepo.config.gistId;
+      dm.providerConfigs.github.gistId = activeRepo.config.gistId;
+      dm._persistDbConfig();
+    }
+
+    if (!cloudRes || !cloudRes.state || typeof cloudRes.state !== 'object') {
+      return {
+        synced: false,
+        provider,
+        message: 'חיבור הענן תקין, אך עדיין אין נתונים שמורים בענן זה.'
+      };
+    }
+
+    const localTs = Date.parse(appState._updatedAt || '') || 0;
+    const cloudTs = Date.parse(cloudRes.state._updatedAt || cloudRes.updatedAt || '') || 0;
+    const shouldApply = Boolean(options.forcePull) || !localTs || cloudTs > localTs;
+
+    if (!shouldApply) {
+      appState.dbConfig.lastSyncedAt = new Date().toISOString();
+      return {
+        synced: false,
+        provider,
+        source: cloudRes.source,
+        message: 'הנתונים המקומיים כבר מעודכנים לגרסה האחרונה.'
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    const preservedApiConfig = {
+      ...(appState.apiConfig || {}),
+      ...(cloudRes.state.apiConfig || {}),
+      groqKey: cleanApiKey(cloudRes.state.apiConfig?.groqKey || appState.apiConfig?.groqKey || ''),
+      geminiKey: cleanApiKey(cloudRes.state.apiConfig?.geminiKey || appState.apiConfig?.geminiKey || ''),
+      openrouterKey: cleanApiKey(cloudRes.state.apiConfig?.openrouterKey || appState.apiConfig?.openrouterKey || '')
+    };
+
+    const remoteDbNorm = normalizeDbConfig(cloudRes.state.dbConfig);
+    const preservedDbConfig = {
+      ...remoteDbNorm,
+      ...appState.dbConfig,
+      activeProvider: provider,
+      githubToken: cleanApiKey(appState.dbConfig.githubToken || remoteDbNorm.githubToken || ''),
+      githubGistId: cleanApiKey(appState.dbConfig.githubGistId || remoteDbNorm.githubGistId || ''),
+      firebaseUrl: String(appState.dbConfig.firebaseUrl || remoteDbNorm.firebaseUrl || '').trim(),
+      firebaseSecret: cleanApiKey(appState.dbConfig.firebaseSecret || remoteDbNorm.firebaseSecret || ''),
+      customEndpointUrl: String(appState.dbConfig.customEndpointUrl || remoteDbNorm.customEndpointUrl || '').trim(),
+      customApiKey: cleanApiKey(appState.dbConfig.customApiKey || remoteDbNorm.customApiKey || ''),
+      lastSyncedAt: nowIso
+    };
+
+    const mergedPayload = {
+      ...cloudRes.state,
+      apiConfig: preservedApiConfig,
+      dbConfig: preservedDbConfig
+    };
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedPayload));
+    performSmartMergeAndMigration({ skipCloudSync: true });
+    appState.dbConfig.lastSyncedAt = nowIso;
+    saveAppState({ skipTimestampBump: true, skipCloudSync: true });
+
+    // Re-render active UI views
+    if (typeof renderTrackTabs === 'function') renderTrackTabs();
+    if (appState.currentView === 'admin') {
+      if (typeof renderAdminOverview === 'function') renderAdminOverview();
+      if (typeof renderAdminCurriculum === 'function') renderAdminCurriculum();
+      if (typeof renderAdminNotes === 'function') renderAdminNotes();
+      if (typeof renderAdminSettings === 'function') renderAdminSettings();
+    } else if (appState.currentView === 'unit') {
+      if (appState.activeTrackId === 'study_help' && typeof openStudyHelpUnit === 'function' && appState.activeStudyHelpUnitId) {
+        openStudyHelpUnit(appState.activeStudyHelpUnitId);
+      } else if (typeof renderUnitPlayer === 'function' && appState.activeUnitId) {
+        renderUnitPlayer(appState.activeUnitId);
+      }
+      if (typeof renderRoadmap === 'function') renderRoadmap();
+    } else {
+      if (typeof renderRoadmap === 'function') renderRoadmap();
+    }
+
+    return {
+      synced: true,
+      provider,
+      source: cloudRes.source || provider,
+      message: `הנתונים סונכרנו בהצלחה מהענן (${cloudRes.source || provider})!`
+    };
+  } catch (err) {
+    console.warn('[Store] Cloud startup sync skipped/failed:', err);
+    return {
+      synced: false,
+      provider: appState?.dbConfig?.activeProvider || 'local',
+      message: err?.message || String(err)
+    };
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.syncCloudDatabaseOnStartup = syncCloudDatabaseOnStartup;
+  window.normalizeDbConfig = normalizeDbConfig;
+  window.toDatabaseManagerInitOptions = toDatabaseManagerInitOptions;
+}
+
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(() => { syncCloudDatabaseOnStartup().catch(() => {}); }, 25);
+  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => { syncCloudDatabaseOnStartup().catch(() => {}); }, 25);
+    });
   }
 }
 

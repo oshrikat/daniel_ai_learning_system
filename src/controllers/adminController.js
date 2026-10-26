@@ -283,14 +283,25 @@ function initAdminPortal() {
       };
 
       if (unitId) {
+        if (!appState.unitOverrides || typeof appState.unitOverrides !== 'object') {
+          appState.unitOverrides = {};
+        }
+        appState.unitOverrides[unitId] = {
+          ...(appState.unitOverrides[unitId] || {}),
+          ...newUnitData
+        };
+        if (Array.isArray(appState.deletedUnitIds)) {
+          appState.deletedUnitIds = appState.deletedUnitIds.filter(id => String(id) !== String(unitId));
+        }
+
         const existingIdx = appState.curriculumUnits.findIndex(u => u.id === unitId);
         if (existingIdx !== -1) {
           appState.curriculumUnits[existingIdx] = {
             ...appState.curriculumUnits[existingIdx],
             ...newUnitData
           };
-          showToast(`היחידה "${newUnitData.title}" עודכנה בהצלחה! ✏️`);
         }
+        showToast(`היחידה "${newUnitData.title}" עודכנה ונשמרה בקביעות! ✏️`);
       } else {
         const newId = `unit_custom_${Date.now()}`;
         const newUnit = {
@@ -408,6 +419,40 @@ function renderAdminCurriculum() {
       if (assistantTab) assistantTab.click();
     };
   }
+
+  // מסלול 2: יחידות הנהלת חשבונות (עריכת כותרת ומחיקה קבועה בין רענונים)
+  const accountingTrack = (typeof TRACKS !== 'undefined' ? TRACKS : []).find(t => t.id === 'accounting');
+  const accountingUnits = (accountingTrack && typeof getTrackUnits === 'function') ? getTrackUnits(accountingTrack) : [];
+  if (accountingUnits.length > 0) {
+    const accHeader = document.createElement('div');
+    accHeader.style.cssText = 'margin: 1.8rem 0 0.8rem 0; padding-top: 1.2rem; border-top: 2px dashed #cbd5e1;';
+    accHeader.innerHTML = `<h4 style="margin: 0; font-size: 1.15rem; color: #1e3a8a;">💼 מסלול 2: יחידות יסודות הנהלת חשבונות (${accountingUnits.length} יחידות פעילות)</h4>`;
+    container.appendChild(accHeader);
+
+    accountingUnits.forEach((unit, idx) => {
+      const uid = unit.id || unit.unit_id;
+      const item = document.createElement('div');
+      item.className = 'card';
+      item.style.cssText = 'padding: 1rem 1.3rem; margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; background: #f8fafc;';
+      item.innerHTML = `
+        <div style="flex: 1 1 280px;">
+          <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem;">
+            <span style="font-weight: 800; color: #0369a1;">#${idx + 1}</span>
+            <span class="badge-tag">הנהלת חשבונות</span>
+            <span style="font-size: 0.85rem; color: ${unit.isCompleted ? '#059669' : '#64748b'}; font-weight: 700;">
+              ${unit.isCompleted ? '✓ הושלם' : 'פעיל במסלול'}
+            </span>
+          </div>
+          <h4 style="margin: 0; font-size: 1.08rem;">${unit.title}</h4>
+        </div>
+        <div style="display: flex; gap: 0.45rem; flex-wrap: wrap;">
+          <button class="secondary-btn" style="padding: 0.4rem 0.85rem; font-size: 0.85rem;" onclick="editAccountingUnitTitle('${uid}')">✏️ שנה כותרת</button>
+          <button class="secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem; color: #dc2626;" onclick="deleteAccountingUnit('${uid}')">🗑️ מחק</button>
+        </div>
+      `;
+      container.appendChild(item);
+    });
+  }
 }
 
 window.openUnitEditor = function(unitId) {
@@ -493,11 +538,67 @@ window.deleteUnit = function(index) {
     alert('לא ניתן למחוק את היחידה האחרונה במסלול.');
     return;
   }
-  if (confirm(`האם אתה בטוח שברצונך למחוק את יחידה "${appState.curriculumUnits[index].title}"?`)) {
+  const targetUnit = appState.curriculumUnits[index];
+  if (!targetUnit) return;
+  if (confirm(`האם אתה בטוח שברצונך למחוק את יחידה "${targetUnit.title}"?`)) {
+    const uid = String(targetUnit.id || targetUnit.unit_id || '');
+    if (uid) {
+      if (!Array.isArray(appState.deletedUnitIds)) appState.deletedUnitIds = [];
+      if (!appState.deletedUnitIds.includes(uid)) {
+        appState.deletedUnitIds.push(uid);
+      }
+    }
     appState.curriculumUnits.splice(index, 1);
     saveAppState();
     renderAdminCurriculum();
     renderRoadmap();
+    showToast(`היחידה "${targetUnit.title}" הוסרה מהמסלול ונשמרה כמחוקה. 🗑️`);
+  }
+};
+
+window.editAccountingUnitTitle = function(unitId) {
+  const accountingTrack = (typeof TRACKS !== 'undefined' ? TRACKS : []).find(t => t.id === 'accounting');
+  const units = (accountingTrack && typeof getTrackUnits === 'function') ? getTrackUnits(accountingTrack) : [];
+  const target = units.find(u => String(u.id || u.unit_id) === String(unitId));
+  if (!target) return;
+
+  const updatedTitle = prompt('הזן כותרת חדשה ליחידה בהנהלת חשבונות:', target.title || '');
+  if (!updatedTitle || !updatedTitle.trim()) return;
+
+  if (!appState.unitOverrides || typeof appState.unitOverrides !== 'object') {
+    appState.unitOverrides = {};
+  }
+  appState.unitOverrides[unitId] = {
+    ...(appState.unitOverrides[unitId] || {}),
+    title: updatedTitle.trim()
+  };
+  performSmartMergeAndMigration({ skipCloudSync: false });
+  saveAppState();
+  renderAdminCurriculum();
+  renderRoadmap();
+  showToast('כותרת היחידה עודכנה ונשמרה בקביעות! ✏️');
+};
+
+window.deleteAccountingUnit = function(unitId) {
+  const accountingTrack = (typeof TRACKS !== 'undefined' ? TRACKS : []).find(t => t.id === 'accounting');
+  const units = (accountingTrack && typeof getTrackUnits === 'function') ? getTrackUnits(accountingTrack) : [];
+  if (units.length <= 1) {
+    alert('לא ניתן למחוק את היחידה האחרונה במסלול.');
+    return;
+  }
+  const target = units.find(u => String(u.id || u.unit_id) === String(unitId));
+  if (!target) return;
+
+  if (confirm(`האם אתה בטוח שברצונך למחוק לצמיתות את יחידה "${target.title}"?`)) {
+    if (!Array.isArray(appState.deletedUnitIds)) appState.deletedUnitIds = [];
+    if (!appState.deletedUnitIds.includes(String(unitId))) {
+      appState.deletedUnitIds.push(String(unitId));
+    }
+    performSmartMergeAndMigration({ skipCloudSync: false });
+    saveAppState();
+    renderAdminCurriculum();
+    renderRoadmap();
+    showToast(`היחידה "${target.title}" הוסרה מהמסלול ונשמרה כמחוקה. 🗑️`);
   }
 };
 
@@ -550,6 +651,337 @@ window.deleteNote = function(index) {
   saveAppState();
   renderAdminNotes();
 };
+
+const DB_PROVIDER_LABELS = {
+  github: '☁️ GitHub Secret Gist',
+  firebase: '🔥 Firebase Realtime DB',
+  custom: '🌐 שרת REST מותאם אישית',
+  local: '💻 שמירה מקומית בלבד'
+};
+
+const DB_PROVIDER_INSTRUCTIONS_HTML = {
+  github: `
+    <div style="font-weight: 800; color: #1e3a8a; margin-bottom: 0.4rem;">☁️ הגדרה ב-3 צעדים פשוטים (מומלץ — חינמי ופרטי לחלוטין על חשבון ה-GitHub שלך):</div>
+    <ul style="margin: 0; padding-right: 1.25rem;">
+      <li><strong>צעד 1:</strong> היכנס לחשבון ה-GitHub שלך: <code>Settings → Developer settings → Personal access tokens → Tokens (classic)</code> ולחץ <strong>Generate new token</strong>.</li>
+      <li><strong>צעד 2:</strong> תן לטוקן שם כלשהו, סמן <strong>אך ורק את תיבת <code>gist</code></strong>, והעתק את הטוקן שנוצר (מתחיל ב-<code>ghp_</code>).</li>
+      <li><strong>צעד 3:</strong> הדבק את הטוקן למטה ולחץ על <strong>"☁️ שמור והעבר את כל הנתונים לספק זה עכשיו"</strong> — המערכת תיצור Gist סודי אוטומטית ותמלא עבורך את ה-Gist ID!</li>
+    </ul>
+  `,
+  firebase: `
+    <div style="font-weight: 800; color: #b45309; margin-bottom: 0.4rem;">🔥 חיבור מהיר ל-Google Firebase Realtime Database (Spark Plan חינמי):</div>
+    <ul style="margin: 0; padding-right: 1.25rem;">
+      <li><strong>צעד 1:</strong> פתח פרויקט ב-<code>console.firebase.google.com</code> ובחר בתפריט <strong>Build → Realtime Database → Create Database</strong>.</li>
+      <li><strong>צעד 2:</strong> העתק את כתובת מסד הנתונים הראשית (למשל <code>https://your-project-default-rtdb.firebaseio.com</code>) והדבק בשדה למטה.</li>
+      <li><strong>צעד 3:</strong> אם הגדרת Database Secret, הדבק אותו בשדה הסוד (אופציונלי), ולחץ על <strong>"☁️ שמור והעבר את כל הנתונים לספק זה עכשיו"</strong>.</li>
+    </ul>
+  `,
+  custom: `
+    <div style="font-weight: 800; color: #0f766e; margin-bottom: 0.4rem;">🌐 החלפה ב-5 דקות לכל שרת REST / ענן עתידי (Zero Vendor Lock-in):</div>
+    <ul style="margin: 0; padding-right: 1.25rem;">
+      <li><strong>צעד 1:</strong> הדבק כתובת URL של כל שרת התומך בבקשת <code>GET</code> לשליפת JSON ובבקשת <code>POST</code> או <code>PUT</code> לשמירת JSON (כגון Cloudflare Worker, Supabase, FastAPI, או Node).</li>
+      <li><strong>צעד 2:</strong> אם השרת דורש אימות, הדבק מפתח בשדה ה-API Key (נשלח אוטומטית בכותרת <code>Authorization: Bearer</code>).</li>
+      <li><strong>צעד 3:</strong> לחץ על <strong>"🧪 בדוק חיבור"</strong> או על <strong>"☁️ שמור והעבר את כל הנתונים לספק זה עכשיו"</strong> להעברה מיידית בלחיצה אחת!</li>
+    </ul>
+  `,
+  local: `
+    <div style="font-weight: 800; color: #334155; margin-bottom: 0.4rem;">💻 מצב שמירה מקומית (ללא ענן חיצוני):</div>
+    <ul style="margin: 0; padding-right: 1.25rem;">
+      <li>כל ההתקדמות נשמרת באופן מיידי (0ms) בדפדפן הנוכחי (<code>localStorage</code>).</li>
+      <li>כאשר השרת המקומי פעיל (<code>python server/server.py</code>), נשמר אוטומטית גיבוי מלא גם לקובץ <code>data/daniel_state.json</code>.</li>
+      <li>לסנכרון אוטומטי בין מחשבים שונים או דרך GitHub Pages, בחר למעלה ב-<strong>GitHub Secret Gist</strong>.</li>
+    </ul>
+  `
+};
+
+/**
+ * מוודא שאזור החלפת מסד הנתונים קיים ב-#adm-settings ומחבר את כל הכפתורים והשדות הדינמיים.
+ */
+function renderDatabaseSwitcherSettings() {
+  const settingsPanel = document.getElementById('adm-settings');
+  if (!settingsPanel) return;
+
+  let dbSection = document.getElementById('adm-db-switcher-section');
+  if (!dbSection) {
+    dbSection = document.createElement('div');
+    dbSection.id = 'adm-db-switcher-section';
+    dbSection.className = 'cg-section';
+    dbSection.style.marginTop = '2rem';
+    dbSection.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.75rem;">
+        <h4 style="margin: 0;">🗄️ ניהול מסד נתונים וסנכרון ענן (3-Tier Database Switcher)</h4>
+        <span id="cfg-db-active-badge" class="badge-tag" style="background-color: #eff6ff; color: #1d4ed8; font-weight: 700;">ספק פעיל: שמירה מקומית 💻</span>
+      </div>
+      <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 0.85rem;">
+        <select id="cfg-db-provider" class="styled-input" style="width: 100%; font-weight: 600;">
+          <option value="github">☁️ GitHub Secret Gist (מומלץ - חינמי לחלוטין על חשבון ה-GitHub שלך)</option>
+          <option value="firebase">🔥 Google Firebase Realtime Database (חינמי - Spark Plan)</option>
+          <option value="custom">🌐 שרת REST / Endpoint מותאם אישית (החלפה ב-5 דקות לכל שירות עתידי)</option>
+          <option value="local">💻 שמירה מקומית בלבד (שרת מקומי server.py + דפדפן)</option>
+        </select>
+        <div id="cfg-db-instructions" style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-right: 4px solid #2563eb; border-radius: 10px; padding: 0.9rem 1.1rem; font-size: 0.94rem; line-height: 1.6;"></div>
+        <div id="cfg-db-github-fields" style="display: none; flex-direction: column; gap: 0.75rem;">
+          <input type="password" id="cfg-db-github-token" class="styled-input" placeholder="הדבק כאן GitHub Token (ghp_...)">
+          <input type="text" id="cfg-db-github-gist-id" class="styled-input" placeholder="Gist ID (מתמלא אוטומטית בסנכרון הראשון)">
+        </div>
+        <div id="cfg-db-firebase-fields" style="display: none; flex-direction: column; gap: 0.75rem;">
+          <input type="url" id="cfg-db-firebase-url" class="styled-input" placeholder="https://your-project-default-rtdb.firebaseio.com">
+          <input type="password" id="cfg-db-firebase-secret" class="styled-input" placeholder="Database Secret (אופציונלי)">
+        </div>
+        <div id="cfg-db-custom-fields" style="display: none; flex-direction: column; gap: 0.75rem;">
+          <input type="url" id="cfg-db-custom-url" class="styled-input" placeholder="https://api.example.com/daniel-state">
+          <input type="password" id="cfg-db-custom-key" class="styled-input" placeholder="API Key (אופציונלי)">
+        </div>
+        <div id="cfg-db-status" style="display: none; padding: 0.7rem 0.95rem; border-radius: 8px; font-size: 0.92rem; line-height: 1.5;"></div>
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+          <button type="button" id="btn-db-test" class="secondary-btn">🧪 בדוק חיבור למסד הנתונים</button>
+          <button type="button" id="btn-db-migrate" class="primary-btn" style="background-color: var(--success);">☁️ שמור והעבר את כל הנתונים לספק זה עכשיו</button>
+          <button type="button" id="btn-db-pull" class="secondary-btn">📥 משוך נתונים מהענן עכשיו</button>
+        </div>
+      </div>
+    `;
+    settingsPanel.appendChild(dbSection);
+  }
+
+  const normalizedCfg = typeof normalizeDbConfig === 'function'
+    ? normalizeDbConfig(appState.dbConfig)
+    : (appState.dbConfig || { activeProvider: 'local' });
+  appState.dbConfig = normalizedCfg;
+
+  const providerSelect = document.getElementById('cfg-db-provider');
+  const instructionsBox = document.getElementById('cfg-db-instructions');
+  const activeBadge = document.getElementById('cfg-db-active-badge');
+  const statusBox = document.getElementById('cfg-db-status');
+
+  const githubFields = document.getElementById('cfg-db-github-fields');
+  const firebaseFields = document.getElementById('cfg-db-firebase-fields');
+  const customFields = document.getElementById('cfg-db-custom-fields');
+
+  const githubTokenInput = document.getElementById('cfg-db-github-token');
+  const githubGistIdInput = document.getElementById('cfg-db-github-gist-id');
+  const firebaseUrlInput = document.getElementById('cfg-db-firebase-url');
+  const firebaseSecretInput = document.getElementById('cfg-db-firebase-secret');
+  const customUrlInput = document.getElementById('cfg-db-custom-url');
+  const customKeyInput = document.getElementById('cfg-db-custom-key');
+
+  const btnDbTest = document.getElementById('btn-db-test');
+  const btnDbMigrate = document.getElementById('btn-db-migrate');
+  const btnDbPull = document.getElementById('btn-db-pull');
+
+  if (providerSelect) providerSelect.value = normalizedCfg.activeProvider || 'local';
+  if (githubTokenInput) githubTokenInput.value = normalizedCfg.githubToken || '';
+  if (githubGistIdInput) githubGistIdInput.value = normalizedCfg.githubGistId || '';
+  if (firebaseUrlInput) firebaseUrlInput.value = normalizedCfg.firebaseUrl || '';
+  if (firebaseSecretInput) firebaseSecretInput.value = normalizedCfg.firebaseSecret || '';
+  if (customUrlInput) customUrlInput.value = normalizedCfg.customEndpointUrl || '';
+  if (customKeyInput) customKeyInput.value = normalizedCfg.customApiKey || '';
+
+  const updateActiveBadgeUI = () => {
+    if (!activeBadge) return;
+    const activeProv = appState.dbConfig?.activeProvider || 'local';
+    const label = DB_PROVIDER_LABELS[activeProv] || DB_PROVIDER_LABELS.local;
+    const syncTime = appState.dbConfig?.lastSyncedAt
+      ? ` • סונכרן: ${new Date(appState.dbConfig.lastSyncedAt).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`
+      : '';
+    activeBadge.textContent = `ספק פעיל: ${label}${syncTime}`;
+    activeBadge.style.backgroundColor = activeProv === 'local' ? '#f1f5f9' : '#ecfdf5';
+    activeBadge.style.color = activeProv === 'local' ? '#334155' : '#065f46';
+  };
+
+  const showDbStatus = (type, html) => {
+    if (!statusBox) return;
+    statusBox.style.display = 'block';
+    if (type === 'loading') {
+      statusBox.style.backgroundColor = '#eff6ff';
+      statusBox.style.color = '#1e40af';
+      statusBox.style.border = '1px solid #bfdbfe';
+    } else if (type === 'success') {
+      statusBox.style.backgroundColor = '#ecfdf5';
+      statusBox.style.color = '#065f46';
+      statusBox.style.border = '1px solid #a7f3d0';
+    } else {
+      statusBox.style.backgroundColor = '#fef2f2';
+      statusBox.style.color = '#991b1b';
+      statusBox.style.border = '1px solid #fecaca';
+    }
+    statusBox.innerHTML = html;
+  };
+
+  const refreshProviderDynamicView = () => {
+    const selected = providerSelect ? providerSelect.value : 'local';
+    if (instructionsBox) {
+      instructionsBox.innerHTML = DB_PROVIDER_INSTRUCTIONS_HTML[selected] || DB_PROVIDER_INSTRUCTIONS_HTML.local;
+    }
+    if (githubFields) githubFields.style.display = selected === 'github' ? 'flex' : 'none';
+    if (firebaseFields) firebaseFields.style.display = selected === 'firebase' ? 'flex' : 'none';
+    if (customFields) customFields.style.display = selected === 'custom' ? 'flex' : 'none';
+  };
+
+  const collectFormDbConfig = () => {
+    const selectedProvider = providerSelect ? providerSelect.value : 'local';
+    const ghToken = githubTokenInput ? cleanApiKey(githubTokenInput.value) : '';
+    const ghGistId = githubGistIdInput ? cleanApiKey(githubGistIdInput.value) : '';
+    const fbUrl = firebaseUrlInput ? String(firebaseUrlInput.value || '').trim() : '';
+    const fbSecret = firebaseSecretInput ? cleanApiKey(firebaseSecretInput.value) : '';
+    const custUrl = customUrlInput ? String(customUrlInput.value || '').trim() : '';
+    const custKey = customKeyInput ? cleanApiKey(customKeyInput.value) : '';
+
+    if (githubTokenInput) githubTokenInput.value = ghToken;
+    if (githubGistIdInput) githubGistIdInput.value = ghGistId;
+    if (firebaseUrlInput) firebaseUrlInput.value = fbUrl;
+    if (firebaseSecretInput) firebaseSecretInput.value = fbSecret;
+    if (customUrlInput) customUrlInput.value = custUrl;
+    if (customKeyInput) customKeyInput.value = custKey;
+
+    const flatDbConfig = {
+      activeProvider: selectedProvider,
+      githubToken: ghToken,
+      githubGistId: ghGistId,
+      firebaseUrl: fbUrl,
+      firebaseSecret: fbSecret,
+      customEndpointUrl: custUrl,
+      customApiKey: custKey,
+      lastSyncedAt: appState.dbConfig?.lastSyncedAt || null
+    };
+
+    const providerSpecificMap = {
+      local: {},
+      github: { token: ghToken, gistId: ghGistId, filename: 'daniel_ai_cloud_state.json' },
+      firebase: { databaseUrl: fbUrl, authSecret: fbSecret },
+      custom: { endpointUrl: custUrl, apiKey: custKey, saveMethod: 'POST' }
+    };
+
+    return {
+      selectedProvider,
+      flatDbConfig,
+      providerSpecificConfig: providerSpecificMap[selectedProvider] || {}
+    };
+  };
+
+  if (providerSelect) {
+    providerSelect.onchange = () => {
+      refreshProviderDynamicView();
+      if (statusBox) statusBox.style.display = 'none';
+    };
+  }
+
+  updateActiveBadgeUI();
+  refreshProviderDynamicView();
+
+  // 1. בדיקת חיבור למסד הנתונים
+  if (btnDbTest) {
+    btnDbTest.onclick = async () => {
+      if (typeof DatabaseManager === 'undefined') {
+        showDbStatus('error', '🔴 שכבת DatabaseManager אינה טעונה.');
+        return;
+      }
+      const { selectedProvider, flatDbConfig, providerSpecificConfig } = collectFormDbConfig();
+      btnDbTest.disabled = true;
+      showDbStatus('loading', '<span class="loading-spinner"></span> <span>בודק חיבור והרשאות מול ספק הנתונים...</span>');
+
+      try {
+        const res = await DatabaseManager.testConnection(selectedProvider, providerSpecificConfig);
+        if (res.ok) {
+          if (res.metadata && res.metadata.gistId) {
+            if (githubGistIdInput) githubGistIdInput.value = res.metadata.gistId;
+            flatDbConfig.githubGistId = res.metadata.gistId;
+          }
+          appState.dbConfig = { ...appState.dbConfig, ...flatDbConfig, activeProvider: appState.dbConfig?.activeProvider || 'local' };
+          showDbStatus(
+            'success',
+            `🟢 <strong>החיבור תקין!</strong> (${res.latencyMs}ms) — ${res.message}`
+          );
+          SoundService.playSuccessSound();
+        } else {
+          showDbStatus('error', `🔴 <strong>בדיקת החיבור נכשלה:</strong> ${res.message}`);
+        }
+      } catch (err) {
+        showDbStatus('error', `🔴 <strong>שגיאה בבדיקת החיבור:</strong> ${err.message}`);
+      } finally {
+        btnDbTest.disabled = false;
+      }
+    };
+  }
+
+  // 2. שמור והעבר את כל הנתונים לספק זה עכשיו (One-Click Migration)
+  if (btnDbMigrate) {
+    btnDbMigrate.onclick = async () => {
+      if (typeof DatabaseManager === 'undefined') {
+        showDbStatus('error', '🔴 שכבת DatabaseManager אינה טעונה.');
+        return;
+      }
+      const { selectedProvider, flatDbConfig, providerSpecificConfig } = collectFormDbConfig();
+      btnDbMigrate.disabled = true;
+      showDbStatus('loading', '<span class="loading-spinner"></span> <span>מאמת חיבור ומעביר 100% מהנתונים של דניאל לספק שנבחר...</span>');
+
+      try {
+        appState.dbConfig = { ...appState.dbConfig, ...flatDbConfig };
+        const res = await DatabaseManager.migrateToProvider(selectedProvider, providerSpecificConfig);
+        if (res.ok) {
+          const discoveredGistId = res.metadata?.gistId || DatabaseManager.providerConfigs?.github?.gistId || flatDbConfig.githubGistId;
+          if (discoveredGistId && githubGistIdInput) {
+            githubGistIdInput.value = discoveredGistId;
+          }
+          appState.dbConfig = {
+            ...flatDbConfig,
+            activeProvider: selectedProvider,
+            githubGistId: discoveredGistId || '',
+            lastSyncedAt: res.updatedAt || new Date().toISOString()
+          };
+          saveAppState({ skipCloudSync: true });
+          updateActiveBadgeUI();
+          showDbStatus(
+            'success',
+            `🟢 <strong>${res.message}</strong>${discoveredGistId && selectedProvider === 'github' ? ` (Gist ID נשמר אוטומטית: <code>${discoveredGistId}</code>)` : ''}`
+          );
+          SoundService.playSuccessSound();
+          showToast('כל הנתונים נשמרו והועברו בהצלחה לספק הנבחר! ☁️');
+        } else {
+          showDbStatus('error', `🔴 <strong>העברת הנתונים לא הושלמה:</strong> ${res.message}`);
+          showToast(res.message, 'error');
+        }
+      } catch (err) {
+        showDbStatus('error', `🔴 <strong>שגיאה בהעברת הנתונים:</strong> ${err.message}`);
+      } finally {
+        btnDbMigrate.disabled = false;
+      }
+    };
+  }
+
+  // 3. משוך נתונים מהענן עכשיו
+  if (btnDbPull) {
+    btnDbPull.onclick = async () => {
+      const { selectedProvider, flatDbConfig } = collectFormDbConfig();
+      btnDbPull.disabled = true;
+      showDbStatus('loading', '<span class="loading-spinner"></span> <span>מושך את הנתונים העדכניים ביותר וממזג בבטחה...</span>');
+
+      try {
+        appState.dbConfig = { ...appState.dbConfig, ...flatDbConfig, activeProvider: selectedProvider };
+        if (typeof syncCloudDatabaseOnStartup === 'function') {
+          const pullRes = await syncCloudDatabaseOnStartup({
+            forcePull: true,
+            targetProvider: selectedProvider
+          });
+          if (appState.dbConfig?.githubGistId && githubGistIdInput) {
+            githubGistIdInput.value = appState.dbConfig.githubGistId;
+          }
+          updateActiveBadgeUI();
+          if (pullRes.synced) {
+            showDbStatus('success', `🟢 <strong>${pullRes.message}</strong>`);
+            SoundService.playSuccessSound();
+            showToast('הנתונים נמשכו מהענן ומוזגו בהצלחה! 📥');
+          } else {
+            showDbStatus('error', `ℹ️ ${pullRes.message}`);
+          }
+        }
+      } catch (err) {
+        showDbStatus('error', `🔴 <strong>שגיאה במשיכת הנתונים:</strong> ${err.message}`);
+      } finally {
+        btnDbPull.disabled = false;
+      }
+    };
+  }
+}
 
 function renderAdminSettings() {
   const groqInput = document.getElementById('cfg-groq-key');
@@ -753,6 +1185,9 @@ function renderAdminSettings() {
     };
   }
 
+  // 3-Tier Database Switcher Section
+  renderDatabaseSwitcherSettings();
+
   const exportBtn = document.getElementById('adm-export-btn');
   if (exportBtn) {
     exportBtn.onclick = () => {
@@ -779,9 +1214,11 @@ function renderAdminSettings() {
         try {
           const parsed = JSON.parse(evt.target.result);
           if (parsed && typeof parsed === 'object') {
-            appState = parsed;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+            performSmartMergeAndMigration({ skipCloudSync: false });
             saveAppState();
             renderAdminOverview();
+            renderAdminSettings();
             renderRoadmap();
             showToast('הנתונים שוחזרו בהצלחה מהקובץ! 📥');
           }
@@ -798,9 +1235,9 @@ function renderAdminSettings() {
     resetBtn.onclick = () => {
       if (confirm('אזהרה: פעולה זו תאפס את כל התקדמות הלמידה של דניאל. האם להמשיך?')) {
         localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem('DANIEL_AI_DB_CONFIG_V1');
         location.reload();
       }
     };
   }
 }
-

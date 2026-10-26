@@ -655,6 +655,75 @@
             </form>
           </div>
 
+          <!-- 3-Tier Database Switcher -->
+          <div id="adm-db-switcher-section" class="cg-section" style="margin-top: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.75rem;">
+              <h4 style="margin: 0;">🗄️ ניהול מסד נתונים וסנכרון ענן (3-Tier Database Switcher)</h4>
+              <span id="cfg-db-active-badge" class="badge-tag" style="background-color: #eff6ff; color: #1d4ed8; font-weight: 700;">ספק פעיל: שמירה מקומית 💻</span>
+            </div>
+            <p class="cg-desc" style="margin-bottom: 1rem;">בחר היכן לשמור ולסנכרן את כל ההתקדמות, הכוכבים והמבחנים של דניאל. המערכת שומרת תמיד עותק מהיר בדפדפן ומסנכרנת אוטומטית ברקע לענן הנבחר (כולל ניקוי תמונות כבדות בסיום יחידה לחיסכון של 98% בנפח).</p>
+
+            <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 0.85rem;">
+              <div>
+                <label for="cfg-db-provider" style="display: block; font-weight: 700; margin-bottom: 0.4rem;">בחר ספק מסד נתונים פעיל:</label>
+                <select id="cfg-db-provider" class="styled-input" style="width: 100%; font-weight: 600;">
+                  <option value="github">☁️ GitHub Secret Gist (מומלץ - חינמי לחלוטין על חשבון ה-GitHub שלך)</option>
+                  <option value="firebase">🔥 Google Firebase Realtime Database (חינמי - Spark Plan)</option>
+                  <option value="custom">🌐 שרת REST / Endpoint מותאם אישית (החלפה ב-5 דקות לכל שירות עתידי)</option>
+                  <option value="local">💻 שמירה מקומית בלבד (שרת מקומי server.py + דפדפן)</option>
+                </select>
+              </div>
+
+              <!-- Dynamic Step-by-Step Hebrew Instructions -->
+              <div id="cfg-db-instructions" style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-right: 4px solid #2563eb; border-radius: 10px; padding: 0.9rem 1.1rem; font-size: 0.94rem; line-height: 1.6;">
+              </div>
+
+              <!-- Provider Specific Fields: GitHub -->
+              <div id="cfg-db-github-fields" style="display: none; flex-direction: column; gap: 0.75rem;">
+                <div>
+                  <label for="cfg-db-github-token" style="display: block; font-weight: 700; font-size: 0.92rem; margin-bottom: 0.3rem;">🔑 GitHub Personal Access Token (הרשאת <code>gist</code> בלבד):</label>
+                  <input type="password" id="cfg-db-github-token" class="styled-input" style="width: 100%;" placeholder="הדבק כאן GitHub Token (למשל ghp_...)" autocomplete="off">
+                </div>
+                <div>
+                  <label for="cfg-db-github-gist-id" style="display: block; font-weight: 700; font-size: 0.92rem; margin-bottom: 0.3rem;">📄 מזהה Gist סודי (Gist ID — מתמלא אוטומטית בסנכרון הראשון!):</label>
+                  <input type="text" id="cfg-db-github-gist-id" class="styled-input" style="width: 100%;" placeholder="השאר ריק ליצירה אוטומטית או הדבק Gist ID קיים..." autocomplete="off">
+                </div>
+              </div>
+
+              <!-- Provider Specific Fields: Firebase -->
+              <div id="cfg-db-firebase-fields" style="display: none; flex-direction: column; gap: 0.75rem;">
+                <div>
+                  <label for="cfg-db-firebase-url" style="display: block; font-weight: 700; font-size: 0.92rem; margin-bottom: 0.3rem;">🔥 כתובת Firebase Realtime Database URL:</label>
+                  <input type="url" id="cfg-db-firebase-url" class="styled-input" style="width: 100%; direction: ltr; text-align: left;" placeholder="https://your-project-default-rtdb.firebaseio.com" autocomplete="off">
+                </div>
+                <div>
+                  <label for="cfg-db-firebase-secret" style="display: block; font-weight: 700; font-size: 0.92rem; margin-bottom: 0.3rem;">🔒 Database Secret / Auth Token (אופציונלי):</label>
+                  <input type="password" id="cfg-db-firebase-secret" class="styled-input" style="width: 100%;" placeholder="השאר ריק במצב בדיקה או הדבק Database Secret..." autocomplete="off">
+                </div>
+              </div>
+
+              <!-- Provider Specific Fields: Custom REST -->
+              <div id="cfg-db-custom-fields" style="display: none; flex-direction: column; gap: 0.75rem;">
+                <div>
+                  <label for="cfg-db-custom-url" style="display: block; font-weight: 700; font-size: 0.92rem; margin-bottom: 0.3rem;">🌐 כתובת שרת REST Endpoint (GET לקריאה, POST/PUT לשמירה):</label>
+                  <input type="url" id="cfg-db-custom-url" class="styled-input" style="width: 100%; direction: ltr; text-align: left;" placeholder="https://api.example.com/daniel-state" autocomplete="off">
+                </div>
+                <div>
+                  <label for="cfg-db-custom-key" style="display: block; font-weight: 700; font-size: 0.92rem; margin-bottom: 0.3rem;">🔑 מפתח API Key / Bearer Token (אופציונלי):</label>
+                  <input type="password" id="cfg-db-custom-key" class="styled-input" style="width: 100%;" placeholder="אופציונלי: יישלח בכותרת Authorization: Bearer..." autocomplete="off">
+                </div>
+              </div>
+
+              <div id="cfg-db-status" style="display: none; padding: 0.7rem 0.95rem; border-radius: 8px; font-size: 0.92rem; line-height: 1.5;"></div>
+
+              <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.35rem;">
+                <button type="button" id="btn-db-test" class="secondary-btn">🧪 בדוק חיבור למסד הנתונים</button>
+                <button type="button" id="btn-db-migrate" class="primary-btn" style="background-color: var(--success);">☁️ שמור והעבר את כל הנתונים לספק זה עכשיו</button>
+                <button type="button" id="btn-db-pull" class="secondary-btn">📥 משוך נתונים מהענן עכשיו</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Backup / Restore -->
           <div class="cg-section" style="margin-top: 2rem;">
             <h4>גיבוי ושחזור נתונים</h4>
@@ -839,6 +908,13 @@
   <!-- Core Scripts -->
   <script src="data/curriculum_general.js?v=4.4"></script>
   <script src="data/curriculum_accounting.js?v=4.4"></script>
+  <!-- 3-Tier Database Repository Layer (v5.0) -->
+  <script src="src/db/IDatabaseRepo.js?v=5.0"></script>
+  <script src="src/db/local/LocalRepo.js?v=5.0"></script>
+  <script src="src/db/github/GithubRepo.js?v=5.0"></script>
+  <script src="src/db/firebase/FirebaseRepo.js?v=5.0"></script>
+  <script src="src/db/custom/CustomRestRepo.js?v=5.0"></script>
+  <script src="src/db/DatabaseManager.js?v=5.0"></script>
   <!-- Modular Application Architecture (v4.1) -->
   <script src="src/state/store.js?v=4.4"></script>
   <script src="src/services/uiServices.js?v=4.4"></script>
