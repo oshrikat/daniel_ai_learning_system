@@ -23,7 +23,7 @@
 5. `src/db/custom/CustomRestRepo.js`: `CustomRestRepo` (5-minute swap adapter for any generic `GET` / `POST` / `PUT` JSON REST endpoint).
 6. `src/db/DatabaseManager.js`: `DatabaseManager` write-through orchestrator (`saveFullState` / `saveState`, 1.2s debounced cloud sync, `purgeUnitImages`, `migrateToProvider`).
 
-## Modular Application Map (`src/` — 17 Files)
+## Modular Application Map (`src/` — 18 Files)
 1. `src/state/store.js`: Constants (`STORAGE_KEY = 'DANIEL_AI_V3_CLEAN'`), `TRACKS` (including Track 3 `study_help`), `appState` (with `dbConfig`, `deletedUnitIds`, `unitOverrides`, `studyHelpStats`), `performSmartMergeAndMigration`, auto-purging `saveAppState` wired to `DatabaseManager`, and `syncCloudDatabaseOnStartup`.
 2. `src/services/uiServices.js`: `SoundService`, `showToast(message, type)`, Shabbat lock, and Calm Mode modal helpers.
 3. `src/services/pdf/pdfExtractor.js`: Client-side PDF/Image lesson extractor (up to 15 pages, Y-coordinate line-break preservation, JPEG page snapshots).
@@ -36,8 +36,9 @@
 10. `src/components/exerciseStepper.js`: `renderExerciseBlock` (Interactive multiple-choice exercise question stepper).
 11. `src/components/aiEvalBlock.js`: `renderAiEvalBlock` (Open-ended question with empowering AI evaluation).
 12. `src/components/blockEngine.js`: Dispatcher `renderBlock` + lightweight blocks (`renderTextBlock`, `renderCompareBlock`, `renderCalloutBlock`, `renderChecklistBlock`, `renderSpreadsheetBlock`).
-13. `src/controllers/roadmapController.js`: `showView`, `renderTrackTabs`, `renderRoadmap`, and Accounting Summary Exams zone.
-14. `src/controllers/studyHelpController.js`: Track 3 Daily Lesson Hub, Stage 1 Concept & Example Mastery Gate, Stage 2 Grounded Homework & Table Solver, streak/stars gamification, and Summary Exam generator.
-15. `src/controllers/unitPlayerController.js`: `renderUnitPlayer(unitId)` (Dynamic Block Engine + Exercise Stepper + `ai_eval_qa` completion gate + Summary Exam Player + Checkpoint tests).
-16. `src/controllers/adminController.js`: `initAdminPortal`, `renderAdminOverview`, `renderAdminCurriculum`, `renderAdminNotes`, `renderAdminSettings`, and 5-minute 3-Tier Database Switcher UI.
-17. `src/main.js`: `DOMContentLoaded` bootstrapper.
+13. `src/components/globalAiBubble.js`: `GlobalAiAssistant` system-wide floating AI assistant bubble (`#global-ai-assistant-fab`) & RTL chat drawer (`#global-ai-assistant-drawer`) with async screen-context handoff, visible loading dialog, quick starter chips, and `callGroqPreferredAI` routing.
+14. `src/controllers/roadmapController.js`: `showView`, `renderTrackTabs`, `renderRoadmap`, and Accounting Summary Exams zone.
+15. `src/controllers/studyHelpController.js`: Track 3 Daily Lesson Hub, `BeatGenerator` multi-stage pipeline, `UnitBeatCursor` phased mastery loop & WhatsApp Groq Private Tutor, Stage 4 Grounded Homework & Table Solver, auto-purge on completion, and Summary Exam generator.
+16. `src/controllers/unitPlayerController.js`: `renderUnitPlayer(unitId)` (Dynamic Block Engine + Exercise Stepper + `ai_eval_qa` completion gate + Summary Exam Player + Checkpoint tests).
+17. `src/controllers/adminController.js`: `initAdminPortal`, `renderAdminOverview`, `renderAdminCurriculum`, `renderAdminNotes`, `renderAdminSettings`, and 5-minute 3-Tier Database Switcher UI.
+18. `src/main.js`: `DOMContentLoaded` bootstrapper (including `GlobalAiAssistant.init()`).

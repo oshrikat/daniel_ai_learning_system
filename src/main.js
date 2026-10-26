@@ -50,5 +50,9 @@ document.addEventListener('DOMContentLoaded', () => {
   renderTrackTabs();
   renderRoadmap();
 
+  if (typeof GlobalAiAssistant !== 'undefined' && typeof GlobalAiAssistant.init === 'function') {
+    GlobalAiAssistant.init();
+  }
+
   showToast('ברוך הבא דניאל! גרסה 3 של המערכת נטענה בהצלחה ✨');
 });
