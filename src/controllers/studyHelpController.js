@@ -283,8 +283,8 @@ function showStudyHelpLoadingOverlay(statusText = 'קורא את הדפים שה
       const stepNum = pill.getAttribute('data-step');
       const isMatch =
         (stepNum === '1' && (text.includes('קורא') || text.includes('סורק'))) ||
-        (stepNum === '2' && (text.includes('מזהה') || text.includes('מחלץ') || text.includes('מנתח'))) ||
-        (stepNum === '3' && text.includes('מכין'));
+        (stepNum === '2' && (text.includes('ממפה') || text.includes('מזהה') || text.includes('מחלץ') || text.includes('מנתח'))) ||
+        (stepNum === '3' && (text.includes('בונה') || text.includes('מכין') || text.includes('פעימ')));
       pill.classList.toggle('active', isMatch);
     });
   };
@@ -444,100 +444,1218 @@ function openLessonPageViewerModal(unit, pageNumber = 1) {
   document.body.appendChild(modal);
 }
 
+// ============================================================================
+// ITERATIVE "BEATS" CONTENT GENERATION ENGINE (`BeatGenerator`)
+// Stage A: Beat 0 Zero-Loss Blueprint (3-page chunked multimodal extraction)
+// Stage B: Dynamic Concept Beat & Homework Beat Slide Generation
+// Stage C: Immediate Beat 1 Launch + Asynchronous Background Beat Queue
+// ============================================================================
+
+const _activeBeatWorkerPromises = new Map();
+const _inFlightBeatPromises = new Map();
+
 /**
- * Grounded parser for pasted text when running without cloud AI connectivity (e.g., offline pasted text only).
- * Uses ONLY the user's actual pasted text — NEVER injects hardcoded fake questions.
+ * Safely parses JSON from an AI response string.
+ * @param {string|object} rawResponse
+ * @returns {object|null}
+ */
+function parseJsonFromAIResponse(rawResponse) {
+  if (!rawResponse) return null;
+  if (typeof rawResponse === 'object') return rawResponse;
+  if (typeof AIService !== 'undefined' && typeof AIService.cleanAndParseJSON === 'function') {
+    return AIService.cleanAndParseJSON(rawResponse);
+  }
+  const str = String(rawResponse).trim();
+  const match = str.match(/\{[\s\S]*\}/);
+  return JSON.parse(match ? match[0] : str);
+}
+
+/**
+ * Creates the default dynamic learner adaptation profile tracked per unit.
+ * Updated continuously as Daniel answers Beat questions or requests simpler analogies.
+ * @returns {object}
+ */
+function createDefaultLearnerAdaptationProfile() {
+  return {
+    pace: 'balanced',
+    preferredAnalogyStyle: 'everyday_concrete',
+    askedForSimplerAnalogyCount: 0,
+    wrongMcAttemptsCount: 0,
+    challengingTerms: [],
+    masteredTerms: [],
+    recentLearnerNotes: [],
+    dirtyForNextBeat: false
+  };
+}
+
+/**
+ * Extracts only the `--- עמוד P ---` text sections matching `[startPage..endPage]`
+ * from `fullText`. Falls back to returning `fullText` if no page markers exist.
+ * @param {string} fullText
+ * @param {number} startPage
+ * @param {number} endPage
+ * @returns {string}
+ */
+function sliceExtractedTextForPages(fullText, startPage, endPage) {
+  const clean = String(fullText || '').trim();
+  if (!clean) return '';
+
+  const markerRegex = /---\s*עמוד\s*(\d+)\s*---/g;
+  const matches = Array.from(clean.matchAll(markerRegex));
+  if (matches.length === 0) {
+    return clean;
+  }
+
+  const matchingChunks = [];
+  for (let i = 0; i < matches.length; i++) {
+    const pageNum = Number(matches[i][1]);
+    const sectionStart = matches[i].index;
+    const sectionEnd = i + 1 < matches.length ? matches[i + 1].index : clean.length;
+    if (pageNum >= startPage && pageNum <= endPage) {
+      matchingChunks.push(clean.slice(sectionStart, sectionEnd).trim());
+    }
+  }
+
+  return matchingChunks.join('\n\n').trim();
+}
+
+/**
+ * Retrieves up to 3 inline image objects (`{ mimeType, data, pageNumber }`) from `unit.pageSnapshots`
+ * matching the requested `pageNumbers`, so individual Beat generation calls stay fast and grounded.
+ * @param {object} unit
+ * @param {Array<number>} pageNumbers
+ * @returns {Array<object>}
+ */
+function getSnapshotInlineImagesForPages(unit, pageNumbers = []) {
+  const snapshots = Array.isArray(unit?.pageSnapshots) ? unit.pageSnapshots : [];
+  if (snapshots.length === 0) return [];
+
+  const uniquePages = Array.from(
+    new Set(
+      (Array.isArray(pageNumbers) ? pageNumbers : [])
+        .map(n => Number(n))
+        .filter(n => !isNaN(n) && n > 0)
+    )
+  ).slice(0, 3);
+
+  const result = [];
+  for (const pNum of uniquePages) {
+    const snap = snapshots.find(s => Number(s.pageNumber) === pNum);
+    if (!snap) continue;
+    const rawDataUrl = String(snap.dataUrl || '');
+    const base64Data = snap.data || rawDataUrl.replace(/^data:[^;]+;base64,/, '');
+    if (base64Data) {
+      result.push({
+        mimeType: snap.mimeType || 'image/jpeg',
+        data: base64Data,
+        pageNumber: pNum
+      });
+    }
+  }
+  return result;
+}
+
+/**
+ * Grounded offline blueprint builder for direct pasted text when cloud AI is unreachable.
+ * Uses ONLY Daniel's pasted text — NEVER injects fake hardcoded questions!
  * @param {object} params
  * @returns {object|null}
  */
-function buildGroundedPastedTextUnit({ extractedText = '', sourceLabel = '' } = {}) {
+function buildGroundedPastedTextBlueprint({ extractedText = '', sourceLabel = '' } = {}) {
   const cleanText = String(extractedText || '').trim();
   if (!cleanText) return null;
 
   const dateStr = getTodayHebrewDateLabel();
-  const lines = cleanText
-    .split(/\n+/)
-    .map(l => l.trim())
-    .filter(Boolean);
-
+  const lines = cleanText.split(/\n+/).map(l => l.trim()).filter(Boolean);
   const rawQuestions = cleanText
-    .split(/(?=(?:^|\n)\s*(?:שאלה\s*\d+|תרגיל\s*\d+|\d+[\.\)\-]\s+))/g)
+    .split(/(?=(?:^|\n)\s*(?:שאלה\s*\d+|תרגיל\s*\d+|סעיף\s*[א-ת]|\d+[\.\)\-]\s+))/g)
     .map(s => s.trim())
     .filter(s => s.length >= 6);
 
   const questionChunks = rawQuestions.length > 0 ? rawQuestions : [cleanText];
 
-  const concepts = [
+  const concept_outlines = [
     {
-      id: 'c1',
       term_name: 'זיהוי הנתונים והפעולה החשבונאית בשאלה',
       page_number: 1,
-      simple_explanation: 'לפני שרושמים מספרים בטבלה, אנחנו קוראים את המשפט ומזהים מה נכנס לעסק (חובה) ומה יצא מהעסק (זכות) — ממש כמו לבדוק מה נכנס ויצא מהארנק.',
-      textbook_example: lines[0] || cleanText.slice(0, 140),
-      mfa_step1_question: 'מה הצעד הראשון שאנחנו עושים כשאנחנו קוראים שאלה חדשה בדף?',
-      mfa_step1_options: [
-        'מסמנים בנחת את הסכומים ומזהים מה נכנס לעסק ומה יצא ממנו',
-        'מנחשים מספר אקראי בלי לקרוא את הנתונים',
-        'מדלגים על השאלה בלי לבדוק את הסכומים'
-      ],
-      mfa_step1_correct_index: 0,
-      mfa_step2_why_question: 'למה חשוב לבדוק מה נכנס ומה יצא לפני שרושמים בפקודת היומן?',
-      mfa_step2_options: [
-        'כדי לדעת בוודאות איזה חשבון נמצא בחובה ואיזה חשבון נמצא בזכות',
-        'כי אין צורך באיזון בין חובה לזכות'
-      ],
-      mfa_step2_correct_index: 0
+      source_section_label: 'עמוד 1 - עיקרון מרכזי מתוך הטקסט שהודבק',
+      raw_book_excerpt: lines.slice(0, 3).join('\n') || cleanText.slice(0, 260)
     }
   ];
 
-  const questions = questionChunks.map((qText, idx) => ({
-    id: `q${idx + 1}`,
-    page_number: 1,
+  const question_outlines = questionChunks.map((qText, idx) => ({
     question_number_label: `שאלה ${idx + 1}`,
+    page_number: 1,
     question_type: 'open_question',
-    exact_book_text: qText,
-    friendly_translation: 'נקרא יחד את השאלה שהדבקת, נזהה את הסכומים ואת החשבונות המשתתפים, ונרשום את הפתרון צעד אחר צעד.',
-    table_schema: {
-      has_table: false,
-      columns: ['חובה', 'זכות', 'פרטים / שם החשבון'],
-      account_choices: ['קופה', 'עו"ש בנק', 'הכנסות ממכירות', 'קניות סחורה', 'ספקים', 'לקוחות'],
-      expected_rows: []
-    },
-    guided_options: [
-      'זיהוי חשבון החובה וחשבון הזכות ורישום הסכום המדויק מתוך השאלה',
-      'רישום צד אחד בלבד ללא איזון',
-      'התעלמות מהסכום המופיע בשאלה'
-    ],
-    correct_option_index: 0,
-    mfa_verification: {
-      question: 'למה הפתרון שבחרנו מאוזן ונכון?',
-      options: [
-        'כי זיהינו את החשבון שמקבל (חובה) ואת החשבון שנותן (זכות) בסכומים שווים',
-        'כי רשמנו רק צד אחד בטבלה'
-      ],
-      correct_index: 0
-    },
-    notebook_copy_summary: `פתרון שאלה ${idx + 1}: ${qText}`,
-    step_by_step_guide: [
-      'שלב 1: קריאת נתוני השאלה וסימון הסכומים.',
-      'שלב 2: קביעת חשבון חובה וחשבון זכות ואיזון הסכומים.'
-    ],
-    hint: 'בדוק אילו חשבונות מופיעים בטקסט השאלה ומה הסכום שצוין.',
-    expected_answer_summary: `פתרון מבוסס על נתוני השאלה: ${qText}`
+    exact_book_text: qText
   }));
 
   return {
     lesson_title: sourceLabel || `שיעור ותרגול יומי (${dateStr})`,
-    pages_summary: 'יחידת לימוד זו נבנתה ישירות מתוך הטקסט שהדבקת: תחילה נעבור על המושג המרכזי ולאחר מכן נפתור יחד את השאלות.',
-    concepts,
-    questions
+    pages_summary: 'יחידת לימוד זו נבנתה ישירות מתוך הטקסט שהדבקת: תחילה נבין את מושגי היסוד ולאחר מכן נפתור את כל השאלות צעד אחר צעד.',
+    concept_outlines,
+    question_outlines
   };
 }
 
 /**
- * Calls `callMultiTierAI` (with `jsonMode: true`, `maxTokens: 8192`, `inlineImages`, and `rawPdfPart`)
- * instructing Gemini to analyze ALL uploaded pages of the lesson (explanations, examples, tables, and exercises)
- * and return the full structured JSON schema (`lesson_title`, `pages_summary`, `concepts`, `questions`).
+ * Groups `concept_outlines` into Concept Beats (`conceptBeats`), each containing 1 to 3 related concepts
+ * (`beatIndex: 0, 1, 2...`). Ensures at least 1 Concept Beat exists so Stage 1 always prepares Daniel.
+ * @param {Array<object>} conceptOutlines
+ * @param {string} unitId
+ * @param {object} fallbackContext
+ * @returns {{ normalizedOutlines: Array<object>, conceptBeats: Array<object> }}
+ */
+function groupConceptOutlinesIntoBeats(conceptOutlines = [], unitId = 'unit', fallbackContext = {}) {
+  let cleanOutlines = (Array.isArray(conceptOutlines) ? conceptOutlines : [])
+    .filter(c => c && (c.term_name || c.raw_book_excerpt))
+    .map((c, idx) => ({
+      outlineIndex: idx,
+      term_name: String(c.term_name || `מושג ${idx + 1}`).trim(),
+      page_number: Math.max(1, Number(c.page_number) || 1),
+      source_section_label: String(c.source_section_label || `עמוד ${Math.max(1, Number(c.page_number) || 1)}`).trim(),
+      raw_book_excerpt: String(c.raw_book_excerpt || c.term_name || '').trim()
+    }));
+
+  if (cleanOutlines.length === 0) {
+    const firstQ = Array.isArray(fallbackContext.questionOutlines) && fallbackContext.questionOutlines[0]
+      ? fallbackContext.questionOutlines[0]
+      : null;
+    cleanOutlines = [
+      {
+        outlineIndex: 0,
+        term_name: String(fallbackContext.lessonTitle || 'העיקרון המרכזי בדפי התרגול').trim(),
+        page_number: firstQ ? (Number(firstQ.page_number) || 1) : 1,
+        source_section_label: `עמוד ${firstQ ? (Number(firstQ.page_number) || 1) : 1} - הכנה לפתרון השאלות`,
+        raw_book_excerpt: String(
+          firstQ?.exact_book_text ||
+          fallbackContext.pagesSummary ||
+          'קריאת נתוני השאלה מהעמוד, זיהוי צד החובה וצד הזכות ובדיקת איזון מלאה.'
+        ).trim()
+      }
+    ];
+  }
+
+  const rawGroups = [];
+  let currentGroup = [];
+
+  for (let i = 0; i < cleanOutlines.length; i++) {
+    const item = cleanOutlines[i];
+    if (currentGroup.length === 0) {
+      currentGroup.push(item);
+      continue;
+    }
+    const pageSpan = Math.abs(item.page_number - currentGroup[0].page_number);
+    if (currentGroup.length >= 3 || (currentGroup.length >= 2 && pageSpan > 2)) {
+      rawGroups.push(currentGroup);
+      currentGroup = [item];
+    } else {
+      currentGroup.push(item);
+    }
+  }
+  if (currentGroup.length > 0) {
+    rawGroups.push(currentGroup);
+  }
+
+  let runningConceptIdx = 0;
+  const conceptBeats = rawGroups.map((group, beatIdx) => {
+    const conceptIndices = group.map(() => runningConceptIdx++);
+    return {
+      beatIndex: beatIdx,
+      id: `${unitId}_cbeat_${beatIdx}`,
+      status: 'pending',
+      conceptOutlines: group,
+      conceptIndices,
+      slides: [],
+      tutorSlide: {
+        beatIndex: beatIdx,
+        required_terms_checklist: group.map(g => ({
+          term_name: g.term_name,
+          page_number: g.page_number,
+          verified: false
+        })),
+        chatHistory: [],
+        completed: false
+      },
+      completed: false
+    };
+  });
+
+  return { normalizedOutlines: cleanOutlines, conceptBeats };
+}
+
+/**
+ * Groups `question_outlines` into Homework Beats (`homeworkBeats`) with 2–3 homework questions per beat.
+ * Balances trailing single-item remainder into 2 + 2 when total questions >= 4.
+ * @param {Array<object>} questionOutlines
+ * @param {string} unitId
+ * @returns {{ normalizedQuestionOutlines: Array<object>, homeworkBeats: Array<object> }}
+ */
+function groupQuestionOutlinesIntoBeats(questionOutlines = [], unitId = 'unit') {
+  const cleanQuestions = (Array.isArray(questionOutlines) ? questionOutlines : [])
+    .filter(q => q && (q.exact_book_text || q.question_number_label))
+    .map((q, idx) => ({
+      outlineIndex: idx,
+      question_number_label: String(q.question_number_label || `שאלה ${idx + 1}`).trim(),
+      page_number: Math.max(1, Number(q.page_number) || 1),
+      question_type: String(q.question_type || 'open_question').trim(),
+      exact_book_text: String(q.exact_book_text || q.question_number_label || `שאלה ${idx + 1}`).trim()
+    }));
+
+  if (cleanQuestions.length === 0) {
+    return { normalizedQuestionOutlines: [], homeworkBeats: [] };
+  }
+
+  const rawGroups = [];
+  let idx = 0;
+  while (idx < cleanQuestions.length) {
+    const remaining = cleanQuestions.length - idx;
+    let take = 3;
+    if (remaining === 4) {
+      take = 2; // Balance 4 remaining questions into two beats of 2 + 2
+    } else if (remaining <= 3) {
+      take = remaining;
+    }
+    rawGroups.push(cleanQuestions.slice(idx, idx + take));
+    idx += take;
+  }
+
+  let runningQIdx = 0;
+  const homeworkBeats = rawGroups.map((group, beatIdx) => {
+    const questionIndices = group.map(() => runningQIdx++);
+    return {
+      beatIndex: beatIdx,
+      id: `${unitId}_hwbeat_${beatIdx}`,
+      status: 'pending',
+      questionOutlines: group,
+      questionIndices,
+      questions: [],
+      completed: false
+    };
+  });
+
+  return { normalizedQuestionOutlines: cleanQuestions, homeworkBeats };
+}
+
+/**
+ * Stage A — `extractLessonBeatBlueprint` (Beat 0 Blueprint):
+ * Scans ALL uploaded pages in chunks of up to 3 pages per AI call (when `inlineImages.length > 3`)
+ * so no single request ever times out or truncates, returning a 100% zero-loss inventory of
+ * `concept_outlines` and `question_outlines`, grouped into `conceptBeats` (1–3 concepts/beat)
+ * and `homeworkBeats` (2–3 questions/beat).
+ * @param {object} params
+ * @returns {Promise<object>}
+ */
+async function extractLessonBeatBlueprint({
+  extractedText = '',
+  inlineImages = [],
+  rawPdfPart = null,
+  sourceLabel = '',
+  isFileUpload = false
+} = {}) {
+  const cleanText = String(extractedText || '').trim();
+  const pageImages = (Array.isArray(inlineImages) ? inlineImages : []).filter(
+    img => img && !img.isNativePdf && img.mimeType !== 'application/pdf'
+  );
+  const hasNativePdfOnly = pageImages.length === 0 && Boolean(rawPdfPart && rawPdfPart.data);
+  const hasAnyVisuals = pageImages.length > 0 || hasNativePdfOnly;
+
+  const systemInstruction = `אתה מומחה למיפוי ספרי לימוד ודפי עבודה בהנהלת חשבונות עבור דניאל (בחור בן 28).
+חובה לחלץ 100% מכל תתי-הנושאים, המושגים, הדוגמאות הפתורות וכל השאלות והסעיפים המופיעים בעמודים אלו — אסור לדלג על אף שאלה ואסור לאחד שאלות לשאלה אחת!
+אסור בתכלית האיסור להמציא מושגים או שאלות שלא מופיעים בעמודים המצורפים. החזר אך ורק אובייקט JSON תקני בעברית.`;
+
+  const buildChunkBlueprintPrompt = ({ chunkText, startPage, endPage, totalPages }) => {
+    const pageRangeDesc = totalPages > 0
+      ? `עמודים ${startPage} עד ${endPage} מתוך ${totalPages}`
+      : 'חומר הלימוד המצורף';
+
+    return `בצע מיפוי מלא ללא שום השמטה (${pageRangeDesc}) מתוך השיעור${sourceLabel ? ` "${sourceLabel}"` : ''}.
+חובה לחלץ 100% מכל תתי-הנושאים, המושגים, הדוגמאות הפתורות וכל השאלות והסעיפים המופיעים בעמודים אלו — אסור לדלג על אף שאלה ואסור לאחד שאלות לשאלה אחת!
+אם לשאלה יש סעיפים (למשל סעיף א', סעיף ב', או מספר אירועים עסקיים בטבלה/רשימה), רשום כל סעיף או שאלה עם כל הנתונים והמספרים המדויקים מתוך העמוד.
+
+${chunkText ? `טקסט שחולץ מ${pageRangeDesc}:\n"""\n${chunkText}\n"""\n` : 'קרא בקפידה את כל הטקסט, ההגדרות, הדוגמאות, הטבלאות והתרגילים מתוך צילומי העמודים המצורפים.\n'}
+
+החזר אך ורק אובייקט JSON תקני במבנה המדויק הבא:
+{
+  "lesson_title": "הכותרת המדויקת של השיעור או הנושא מתוך העמודים",
+  "pages_summary": "סיכום קצר וברור של מה שמופיע בעמודים אלו",
+  "concept_outlines": [
+    {
+      "term_name": "שם המושג / הכלל / תת-הנושא מתוך העמוד",
+      "page_number": ${startPage || 1},
+      "source_section_label": "עמוד ${startPage || 1} - הגדרת ...",
+      "raw_book_excerpt": "הטקסט והדוגמה המדויקים מהעמוד (כולל המספרים והכללים כפי שמופיעים בספר)"
+    }
+  ],
+  "question_outlines": [
+    {
+      "question_number_label": "שאלה 1 סעיף א'",
+      "page_number": ${endPage || 1},
+      "question_type": "journal_table | general_table | calculation | multiple_choice | open_question",
+      "exact_book_text": "כל נוסח השאלה, הטבלה והמספרים במדויק מתוך העמוד"
+    }
+  ]
+}`;
+  };
+
+  // Build list of chunks:
+  // - If pageImages.length > 3: chunks of 3 pages per AI call!
+  // - If 1..3 pageImages: single 1..3 page call.
+  // - If native PDF fallback or text-only: chunk large text (> 8500 chars) or single call.
+  const chunks = [];
+  if (pageImages.length > 0) {
+    const CHUNK_SIZE = 3;
+    const totalPages = pageImages.length;
+    for (let i = 0; i < totalPages; i += CHUNK_SIZE) {
+      const slice = pageImages.slice(i, i + CHUNK_SIZE);
+      const startPage = Number(slice[0]?.pageNumber) || (i + 1);
+      const endPage = Number(slice[slice.length - 1]?.pageNumber) || Math.min(totalPages, i + slice.length);
+      chunks.push({
+        images: slice,
+        rawPdf: null,
+        chunkText: sliceExtractedTextForPages(cleanText, startPage, endPage),
+        startPage,
+        endPage,
+        totalPages
+      });
+    }
+  } else if (hasNativePdfOnly) {
+    chunks.push({
+      images: [],
+      rawPdf: rawPdfPart,
+      chunkText: cleanText,
+      startPage: 1,
+      endPage: 1,
+      totalPages: 1
+    });
+  } else if (cleanText) {
+    if (cleanText.length > 8500) {
+      const paragraphs = cleanText.split(/\n{2,}/);
+      let buffer = '';
+      let partNum = 1;
+      const parts = [];
+      for (const p of paragraphs) {
+        if ((buffer + '\n\n' + p).length > 7500 && buffer.length > 0) {
+          parts.push(buffer.trim());
+          buffer = p;
+        } else {
+          buffer = buffer ? `${buffer}\n\n${p}` : p;
+        }
+      }
+      if (buffer.trim()) parts.push(buffer.trim());
+      for (const partText of parts) {
+        chunks.push({
+          images: [],
+          rawPdf: null,
+          chunkText: partText,
+          startPage: partNum,
+          endPage: partNum,
+          totalPages: parts.length
+        });
+        partNum++;
+      }
+    } else {
+      chunks.push({
+        images: [],
+        rawPdf: null,
+        chunkText: cleanText,
+        startPage: 1,
+        endPage: 1,
+        totalPages: 1
+      });
+    }
+  }
+
+  if (chunks.length === 0) {
+    throw new Error('לא נמצא תוכן או עמודים למיפוי בקובץ שהועלה.');
+  }
+
+  let mergedTitle = '';
+  const chunkSummaries = [];
+  const allConceptOutlines = [];
+  const allQuestionOutlines = [];
+  const seenConceptKeys = new Set();
+  const seenQuestionKeys = new Set();
+  let lastChunkError = '';
+  let anyChunkSucceeded = false;
+
+  for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
+    const ch = chunks[cIdx];
+    if (pageImages.length > 3 || chunks.length > 1) {
+      showStudyHelpLoadingOverlay(
+        `ממפה מושגים ושאלות בעמודים ${ch.startPage} עד ${ch.endPage} מתוך ${ch.totalPages}...`
+      );
+    } else {
+      showStudyHelpLoadingOverlay(
+        hasAnyVisuals
+          ? `ממפה מושגים ושאלות בעמודים ${ch.startPage} עד ${ch.endPage} מתוך ${ch.totalPages}...`
+          : 'ממפה את כל המושגים והשאלות מתוך החומר שהועלה...'
+      );
+    }
+
+    const prompt = buildChunkBlueprintPrompt(ch);
+    let parsedChunk = null;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        if (attempt === 2) {
+          await new Promise(r => setTimeout(r, 650));
+          showStudyHelpLoadingOverlay(
+            `מבצע ניסיון שני למיפוי מדויק של עמודים ${ch.startPage} עד ${ch.endPage} מתוך ${ch.totalPages}...`
+          );
+        }
+
+        const raw = await callMultiTierAI(prompt, {
+          systemInstruction,
+          jsonMode: true,
+          maxTokens: 8192,
+          inlineImages: ch.images,
+          rawPdfPart: ch.rawPdf
+        });
+
+        const candidate = parseJsonFromAIResponse(raw);
+        if (
+          candidate &&
+          typeof candidate === 'object' &&
+          (Array.isArray(candidate.concept_outlines) ||
+            Array.isArray(candidate.question_outlines) ||
+            Array.isArray(candidate.concepts) ||
+            Array.isArray(candidate.questions))
+        ) {
+          parsedChunk = candidate;
+          break;
+        } else {
+          lastChunkError = `מבנה JSON חסר בעמודים ${ch.startPage}-${ch.endPage}`;
+        }
+      } catch (err) {
+        lastChunkError = err && err.message ? err.message : String(err);
+        console.warn(`[BeatGenerator] Blueprint chunk ${cIdx + 1}/${chunks.length} attempt ${attempt} failed:`, err);
+      }
+    }
+
+    if (!parsedChunk) {
+      if (isFileUpload || hasAnyVisuals) {
+        throw new Error(
+          `לא הצלחנו להשלים מיפוי מלא של עמודים ${ch.startPage}-${ch.endPage} (${lastChunkError || 'שגיאת תקשורת'}). נסה שוב כדי להבטיח 0% השמטת חומר.`
+        );
+      }
+      continue;
+    }
+
+    anyChunkSucceeded = true;
+
+    if (!mergedTitle && parsedChunk.lesson_title && String(parsedChunk.lesson_title).trim()) {
+      mergedTitle = String(parsedChunk.lesson_title).trim();
+    }
+    if (parsedChunk.pages_summary && String(parsedChunk.pages_summary).trim()) {
+      chunkSummaries.push(String(parsedChunk.pages_summary).trim());
+    }
+
+    const rawConcepts = Array.isArray(parsedChunk.concept_outlines)
+      ? parsedChunk.concept_outlines
+      : (Array.isArray(parsedChunk.concepts) ? parsedChunk.concepts : []);
+
+    for (const c of rawConcepts) {
+      if (!c) continue;
+      const term = String(c.term_name || '').trim();
+      const pageNum = Math.max(1, Number(c.page_number) || ch.startPage || 1);
+      const excerpt = String(c.raw_book_excerpt || c.textbook_example || c.simple_explanation || '').trim();
+      if (!term && !excerpt) continue;
+      const dedupeKey = `${pageNum}::${term.toLowerCase()}::${excerpt.slice(0, 60).toLowerCase()}`;
+      if (seenConceptKeys.has(dedupeKey)) continue;
+      seenConceptKeys.add(dedupeKey);
+
+      allConceptOutlines.push({
+        term_name: term || `מושג מעמוד ${pageNum}`,
+        page_number: pageNum,
+        source_section_label: String(c.source_section_label || `עמוד ${pageNum} - ${term || 'מושג מהספר'}`).trim(),
+        raw_book_excerpt: excerpt || term
+      });
+    }
+
+    const rawQuestions = Array.isArray(parsedChunk.question_outlines)
+      ? parsedChunk.question_outlines
+      : (Array.isArray(parsedChunk.questions) ? parsedChunk.questions : []);
+
+    for (const q of rawQuestions) {
+      if (!q) continue;
+      const pageNum = Math.max(1, Number(q.page_number) || ch.startPage || 1);
+      const label = String(q.question_number_label || `שאלה ${allQuestionOutlines.length + 1}`).trim();
+      const exactText = String(q.exact_book_text || q.original_question || q.question || '').trim();
+      if (!exactText && !label) continue;
+      const dedupeKey = `${pageNum}::${label.toLowerCase()}::${exactText.slice(0, 80).toLowerCase()}`;
+      if (seenQuestionKeys.has(dedupeKey)) continue;
+      seenQuestionKeys.add(dedupeKey);
+
+      allQuestionOutlines.push({
+        question_number_label: label,
+        page_number: pageNum,
+        question_type: String(q.question_type || 'open_question').trim(),
+        exact_book_text: exactText || label
+      });
+    }
+  }
+
+  if (!anyChunkSucceeded || (allConceptOutlines.length === 0 && allQuestionOutlines.length === 0)) {
+    if (!isFileUpload && !hasAnyVisuals && cleanText) {
+      const offlineBlueprint = buildGroundedPastedTextBlueprint({ extractedText: cleanText, sourceLabel });
+      if (offlineBlueprint) return offlineBlueprint;
+    }
+    throw new Error(lastChunkError || 'המודל לא החזיר מושגים או שאלות מתוך העמודים שהועלו.');
+  }
+
+  const dateLabel = getTodayHebrewDateLabel();
+  return {
+    lesson_title: mergedTitle || sourceLabel || `שיעור יומי (${dateLabel})`,
+    pages_summary: chunkSummaries.length > 0
+      ? chunkSummaries.join(' • ')
+      : 'יחידת לימוד מלאה המבוססת ב-100% על כל העמודים, המושגים והשאלות שבקובץ השיעור.',
+    concept_outlines: allConceptOutlines,
+    question_outlines: allQuestionOutlines
+  };
+}
+
+/**
+ * Formats an adaptation guidance paragraph injected into Beat prompts based on Daniel's live interaction signals.
+ * @param {object} profile
+ * @returns {string}
+ */
+function buildAdaptationGuidanceBlock(profile) {
+  const p = profile && typeof profile === 'object' ? profile : createDefaultLearnerAdaptationProfile();
+  const lines = [];
+
+  if (p.askedForSimplerAnalogyCount > 0 || p.wrongMcAttemptsCount >= 2 || p.pace === 'careful_step_by_step') {
+    lines.push('- דניאל ביקש הסברים פשוטים ומוחשיים יותר בפעימה הקודמת: השתמש בדוגמאות יומיומיות קצרות (כמו ארנק, קופה בסופר או חשבון בנק אישי) ופרק כל חישוב לשלבים קטנים וממוספרים.');
+  } else {
+    lines.push('- שמור על טון חם, מעודד ובגובה העיניים: פסקה ראשונה אינטואיטיבית ויומיומית, ופסקה שנייה המציגה את הכלל החשבונאי המלא מהספר בדיוק מקצועי.');
+  }
+
+  if (Array.isArray(p.challengingTerms) && p.challengingTerms.length > 0) {
+    lines.push(`- מושגים שדרשו חיזוק לאחרונה (קשר אליהם בעדינות אם רלוונטי): ${p.challengingTerms.slice(-4).join(', ')}.`);
+  }
+  if (Array.isArray(p.masteredTerms) && p.masteredTerms.length > 0) {
+    lines.push(`- מושגים שדניאל כבר פיצח בהצלחה וניתן להישען עליהם בביטחון: ${p.masteredTerms.slice(-5).join(', ')}.`);
+  }
+  if (Array.isArray(p.recentLearnerNotes) && p.recentLearnerNotes.length > 0) {
+    lines.push(`- סגנון הניסוח האישי של דניאל בתשובותיו הפתוחות: "${p.recentLearnerNotes.slice(-2).join(' | ')}".`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Stage B — `generateConceptBeatContent(unit, beatIndex, learnerAdaptationProfile)`:
+ * Generates the rich Concept Slide objects for the 1–3 concepts in `unit.conceptBeats[beatIndex]`,
+ * grounded 100% in `raw_book_excerpt` with explicit source citations, worked book examples,
+ * `interactive_widget`, strictly 2 `bottom_questions` (`mc_question` + `open_question`),
+ * and initializes the Beat's `tutorSlide` (`required_terms_checklist`).
+ * @param {object} unit
+ * @param {number} beatIndex
+ * @param {object} [learnerAdaptationProfile]
+ * @returns {Promise<object|null>}
+ */
+async function generateConceptBeatContent(unit, beatIndex, learnerAdaptationProfile = null) {
+  if (!unit || !Array.isArray(unit.conceptBeats) || !unit.conceptBeats[beatIndex]) {
+    return null;
+  }
+
+  const lockKey = `${unit.id}::concept::${beatIndex}`;
+  if (_inFlightBeatPromises.has(lockKey)) {
+    return _inFlightBeatPromises.get(lockKey);
+  }
+
+  const jobPromise = (async () => {
+    const beat = unit.conceptBeats[beatIndex];
+    beat.status = 'generating';
+
+    const profile = learnerAdaptationProfile || unit.learnerAdaptationProfile || createDefaultLearnerAdaptationProfile();
+    const sourceLabel = unit.sourceLabel || unit.lesson_title || unit.title || 'קובץ השיעור';
+    const outlines = Array.isArray(beat.conceptOutlines) ? beat.conceptOutlines : [];
+    const relevantPages = outlines.map(o => Number(o.page_number) || 1);
+    const beatImages = getSnapshotInlineImagesForPages(unit, relevantPages);
+
+    const outlinesPayloadText = outlines.map((c, idx) => {
+      const citation = `📍 מקור: ${sourceLabel} • עמוד ${c.page_number || 1} • ${c.source_section_label || ('עמוד ' + (c.page_number || 1))}`;
+      return `מושג ${idx + 1} בפעימה:
+- term_name: "${c.term_name}"
+- page_number: ${c.page_number || 1}
+- source_section_label: "${c.source_section_label || ''}"
+- source_citation: "${citation}"
+- raw_book_excerpt: """${c.raw_book_excerpt || ''}"""`;
+    }).join('\n\n');
+
+    const systemInstruction = `אתה מורה פרטי ומאמן הוראה מתקנת להנהלת חשבונות הבונה את פעימת הלימוד ${beatIndex + 1} עבור דניאל (בן 28).
+כל שקופית מושג חייבת להיות מעוגנת ב-100% ב-raw_book_excerpt ובעמוד המקור מהספר ללא השמטת פרטים או מספרים, ומותאמת אישית לפרופיל הקצב של דניאל.
+החזר אך ורק אובייקט JSON תקני בעברית.`;
+
+    const prompt = `בנה תוכן שקופיות עשיר ומדויק עבור פעימת המושגים ${beatIndex + 1} מתוך ${unit.conceptBeats.length} בשיעור "${unit.lesson_title || unit.title}".
+
+התאמה דינמית לפרופיל הלמידה הנוכחי של דניאל:
+${buildAdaptationGuidanceBlock(profile)}
+
+המושגים בפעימה זו (מתוך הספר):
+${outlinesPayloadText}
+
+עבור **כל אחד** מ-${outlines.length} המושגים שבפעימה זו (באותו סדר בדיוק!), החזר אובייקט במערך "slides" הכולל:
+1. "paragraphs": מערך של 1-2 פסקאות קצרות ובהירות כבדולח — פסקה ראשונה נותנת את האינטואיציה הפשוטה מחיי היומיום, ופסקה שנייה מציגה את הכלל המלא מהספר ללא ויתור על עומק.
+2. "book_example": הדוגמה הפתורה מתוך העמוד שהועלה מפורקת לצעדים ברורים עם המספרים המדויקים מהספר:
+   { "title": "דוגמה מתוך עמוד X בספר", "exact_excerpt": "הנתונים והמספרים המדויקים מהספר", "steps": ["צעד 1...", "צעד 2..."] }
+3. "interactive_widget": מיני-בדיקה אינטראקטיבית מובנית על המסך (למשל בחירת כיוון חובה/זכות לחשבון או בדיקת איזון קצרה):
+   { "widget_type": "direction_selector | mini_balance_check", "prompt": "שאלת התנסות קצרה...", "options": ["אפשרות א", "אפשרות ב"], "correct_index": 0, "explanation": "משוב קצר ומחזק" }
+4. "bottom_questions": **בדיוק 2 שאלות בתחתית השקופית**:
+   - "mc_question": { "question": "שאלה אמריקאית על המושג והדוגמה", "options": ["תשובה 1", "תשובה 2", "תשובה 3", "תשובה 4"], "correct_index": 0, "explanation": "הסבר ברור לתשובה הנכונה" }
+   - "open_question": { "question": "שאלת הבנה פתוחה קצרה במילים של דניאל", "expected_core_idea": "הרעיון המרכזי המצופה", "hint": "רמז עדין ומכוון" }
+
+החזר אך ורק JSON תקני במבנה:
+{
+  "slides": [
+    {
+      "term_name": "...",
+      "page_number": 1,
+      "source_section_label": "...",
+      "paragraphs": ["...", "..."],
+      "book_example": {
+        "title": "...",
+        "exact_excerpt": "...",
+        "steps": ["...", "..."]
+      },
+      "interactive_widget": {
+        "widget_type": "direction_selector",
+        "prompt": "...",
+        "options": ["...", "..."],
+        "correct_index": 0,
+        "explanation": "..."
+      },
+      "bottom_questions": {
+        "mc_question": {
+          "question": "...",
+          "options": ["...", "...", "...", "..."],
+          "correct_index": 0,
+          "explanation": "..."
+        },
+        "open_question": {
+          "question": "...",
+          "expected_core_idea": "...",
+          "hint": "..."
+        }
+      }
+    }
+  ]
+}`;
+
+    let parsed = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const raw = await callMultiTierAI(prompt, {
+          systemInstruction,
+          jsonMode: true,
+          maxTokens: 8192,
+          inlineImages: beatImages
+        });
+        const candidate = parseJsonFromAIResponse(raw);
+        if (candidate && Array.isArray(candidate.slides) && candidate.slides.length > 0) {
+          parsed = candidate;
+          break;
+        }
+      } catch (err) {
+        console.warn(`[BeatGenerator] Concept Beat ${beatIndex} attempt ${attempt} failed:`, err);
+      }
+    }
+
+    const rawSlides = parsed && Array.isArray(parsed.slides) ? parsed.slides : [];
+
+    const normalizedSlides = outlines.map((outline, localIdx) => {
+      const s = rawSlides[localIdx] || {};
+      const globalConceptIdx = Array.isArray(beat.conceptIndices) && typeof beat.conceptIndices[localIdx] === 'number'
+        ? beat.conceptIndices[localIdx]
+        : localIdx;
+      const existingConcept = (Array.isArray(unit.concepts) ? unit.concepts[globalConceptIdx] : null) || {};
+
+      const pageNumber = Math.max(1, Number(outline.page_number || s.page_number) || 1);
+      const sectionLabel = String(outline.source_section_label || s.source_section_label || `עמוד ${pageNumber}`).trim();
+      const sourceCitation = `📍 מקור: ${sourceLabel} • עמוד ${pageNumber} • ${sectionLabel}`;
+
+      const paragraphs = (Array.isArray(s.paragraphs) ? s.paragraphs : [])
+        .map(p => String(p || '').trim())
+        .filter(Boolean)
+        .slice(0, 2);
+      if (paragraphs.length === 0) {
+        paragraphs.push(
+          `בוא נבין יחד את המושג "${outline.term_name}" בצורה פשוטה ובהירה ישירות מתוך עמוד ${pageNumber} בספר.`,
+          outline.raw_book_excerpt || outline.term_name
+        );
+      }
+
+      const rawBookEx = s.book_example && typeof s.book_example === 'object' ? s.book_example : {};
+      const exSteps = (Array.isArray(rawBookEx.steps) ? rawBookEx.steps : [])
+        .map(st => String(st || '').trim())
+        .filter(Boolean);
+      const bookExample = {
+        title: String(rawBookEx.title || `דוגמה מתוך עמוד ${pageNumber} בספר`).trim(),
+        exact_excerpt: String(rawBookEx.exact_excerpt || outline.raw_book_excerpt || '').trim(),
+        steps: exSteps.length > 0
+          ? exSteps
+          : ['קריאת הנתונים והסכומים מתוך הדוגמה בעמוד', 'יישום הכלל החשבונאי צעד אחר צעד ובדיקת איזון']
+      };
+
+      const rawWidget = s.interactive_widget && typeof s.interactive_widget === 'object' ? s.interactive_widget : {};
+      const widgetOpts = (Array.isArray(rawWidget.options) && rawWidget.options.length >= 2)
+        ? rawWidget.options.map(o => String(o).trim())
+        : ['פועלים לפי הכלל והנתונים מהדוגמה בעמוד', 'רושמים ללא בדיקת הנתונים מהספר'];
+      const interactiveWidget = {
+        widget_type: String(rawWidget.widget_type || 'direction_selector').trim(),
+        prompt: String(rawWidget.prompt || `בדיקה מהירה על "${outline.term_name}": מה הכיוון הנכון לפי הדוגמה בעמוד ${pageNumber}?`).trim(),
+        options: widgetOpts,
+        correct_index: Math.min(Math.max(0, Number(rawWidget.correct_index) || 0), widgetOpts.length - 1),
+        explanation: String(rawWidget.explanation || 'מדויק! כך בדיוק מיישמים את הכלל מהספר.').trim(),
+        completed: Boolean(existingConcept?.interactive_widget?.completed)
+      };
+
+      const rawBottom = s.bottom_questions && typeof s.bottom_questions === 'object' ? s.bottom_questions : {};
+      const rawMc = rawBottom.mc_question && typeof rawBottom.mc_question === 'object' ? rawBottom.mc_question : {};
+      const mcOptions = (Array.isArray(rawMc.options) && rawMc.options.length >= 2)
+        ? rawMc.options.map(o => String(o).trim()).slice(0, 4)
+        : [
+            `יישום הכלל של "${outline.term_name}" לפי הנתונים בעמוד ${pageNumber}`,
+            'התעלמות מנתוני העמוד בספר',
+            'רישום אקראי ללא בדיקת הצדדים'
+          ];
+      const mcCorrectIdx = Math.min(Math.max(0, Number(rawMc.correct_index) || 0), mcOptions.length - 1);
+
+      const rawOpen = rawBottom.open_question && typeof rawBottom.open_question === 'object' ? rawBottom.open_question : {};
+      const bottomQuestions = {
+        mc_question: {
+          question: String(rawMc.question || `מה אומר הכלל של "${outline.term_name}" שלמדנו בעמוד ${pageNumber}?`).trim(),
+          options: mcOptions,
+          correct_index: mcCorrectIdx,
+          explanation: String(rawMc.explanation || 'כל הכבוד! זו בדיוק המשמעות של המושג לפי הדוגמה בספר.').trim(),
+          answeredCorrectly: Boolean(existingConcept.check1Passed || existingConcept.mastered)
+        },
+        open_question: {
+          question: String(rawOpen.question || `הסבר במשפט קצר במילים שלך: איך נזהה ונשתמש ב"${outline.term_name}" בתרגיל?`).trim(),
+          expected_core_idea: String(rawOpen.expected_core_idea || paragraphs.join(' ')).trim(),
+          hint: String(rawOpen.hint || `היעזר בדוגמה מעמוד ${pageNumber}: ${bookExample.exact_excerpt.slice(0, 110)}`).trim(),
+          userAnswer: String(existingConcept?.bottom_questions?.open_question?.userAnswer || ''),
+          verified: Boolean(existingConcept.mastered)
+        }
+      };
+
+      const formattedTextbookExample = [
+        bookExample.exact_excerpt,
+        ...bookExample.steps.map((st, idx) => `${idx + 1}. ${st}`)
+      ].filter(Boolean).join('\n');
+
+      const slideConceptObj = {
+        ...existingConcept,
+        id: existingConcept.id || `${unit.id}_c${globalConceptIdx + 1}`,
+        index: globalConceptIdx + 1,
+        beatIndex,
+        isBeatReady: true,
+        term_name: outline.term_name,
+        page_number: pageNumber,
+        source_section_label: sectionLabel,
+        source_citation: sourceCitation,
+        raw_book_excerpt: outline.raw_book_excerpt,
+        paragraphs,
+        book_example: bookExample,
+        interactive_widget: interactiveWidget,
+        bottom_questions: bottomQuestions,
+        // Backward-compatible Stage 1 fields:
+        simple_explanation: paragraphs.join('\n\n'),
+        textbook_example: formattedTextbookExample,
+        mfa_step1_question: bottomQuestions.mc_question.question,
+        mfa_step1_options: bottomQuestions.mc_question.options,
+        mfa_step1_correct_index: bottomQuestions.mc_question.correct_index,
+        mfa_step2_why_question: bottomQuestions.open_question.question,
+        mfa_step2_options: [
+          bottomQuestions.open_question.expected_core_idea || 'הסבר מבוסס על הכלל והדוגמה מהספר',
+          'ניחוש ללא קשר לכלל שלמדנו'
+        ],
+        mfa_step2_correct_index: 0,
+        extraSimplerAnalogy: existingConcept.extraSimplerAnalogy || '',
+        check1Passed: Boolean(existingConcept.check1Passed || existingConcept.mastered),
+        mastered: Boolean(existingConcept.mastered)
+      };
+
+      if (Array.isArray(unit.concepts)) {
+        unit.concepts[globalConceptIdx] = slideConceptObj;
+      }
+
+      return slideConceptObj;
+    });
+
+    beat.slides = normalizedSlides;
+    beat.tutorSlide = {
+      beatIndex,
+      required_terms_checklist: normalizedSlides.map(s => ({
+        term_name: s.term_name,
+        page_number: s.page_number,
+        verified: Boolean(s.mastered)
+      })),
+      chatHistory: Array.isArray(beat.tutorSlide?.chatHistory) ? beat.tutorSlide.chatHistory : [],
+      completed: normalizedSlides.every(s => Boolean(s.mastered))
+    };
+    beat.status = 'ready';
+    beat.generatedAt = new Date().toISOString();
+
+    if (unit.learnerAdaptationProfile) {
+      unit.learnerAdaptationProfile.dirtyForNextBeat = false;
+    }
+
+    // Refresh golden rules from Beat 1 once ready
+    if (beatIndex === 0 && Array.isArray(unit.concepts) && unit.concepts.length > 0) {
+      const topRules = unit.concepts
+        .slice(0, 3)
+        .map(c => `${c.term_name}: ${(Array.isArray(c.paragraphs) && c.paragraphs[0]) ? c.paragraphs[0] : (c.simple_explanation || '')}`);
+      unit.goldenRules = topRules;
+      unit.golden_rules = topRules;
+    }
+
+    return beat;
+  })();
+
+  _inFlightBeatPromises.set(lockKey, jobPromise);
+  try {
+    return await jobPromise;
+  } finally {
+    _inFlightBeatPromises.delete(lockKey);
+  }
+}
+
+/**
+ * Generates the grounded Stage 2 interactive Homework Solver questions for `unit.homeworkBeats[hwBeatIndex]`
+ * (2–3 questions per beat), preserving 100% of `exact_book_text` from Beat 0 Blueprint and adapting
+ * explanations/steps to `learnerAdaptationProfile`.
+ * @param {object} unit
+ * @param {number} hwBeatIndex
+ * @param {object} [learnerAdaptationProfile]
+ * @returns {Promise<object|null>}
+ */
+async function generateHomeworkBeatContent(unit, hwBeatIndex, learnerAdaptationProfile = null) {
+  if (!unit || !Array.isArray(unit.homeworkBeats) || !unit.homeworkBeats[hwBeatIndex]) {
+    return null;
+  }
+
+  const lockKey = `${unit.id}::homework::${hwBeatIndex}`;
+  if (_inFlightBeatPromises.has(lockKey)) {
+    return _inFlightBeatPromises.get(lockKey);
+  }
+
+  const jobPromise = (async () => {
+    const hwBeat = unit.homeworkBeats[hwBeatIndex];
+    hwBeat.status = 'generating';
+
+    const profile = learnerAdaptationProfile || unit.learnerAdaptationProfile || createDefaultLearnerAdaptationProfile();
+    const sourceLabel = unit.sourceLabel || unit.lesson_title || unit.title || 'קובץ השיעור';
+    const qOutlines = Array.isArray(hwBeat.questionOutlines) ? hwBeat.questionOutlines : [];
+    const relevantPages = qOutlines.map(q => Number(q.page_number) || 1);
+    const beatImages = getSnapshotInlineImagesForPages(unit, relevantPages);
+
+    const questionsPayloadText = qOutlines.map((q, idx) => (
+      `שאלה ${idx + 1} בפעימת התרגול:
+- question_number_label: "${q.question_number_label}"
+- page_number: ${q.page_number || 1}
+- question_type: "${q.question_type || 'open_question'}"
+- exact_book_text: """${q.exact_book_text}"""`
+    )).join('\n\n');
+
+    const systemInstruction = `אתה מאמן אישי להנהלת חשבונות הבונה סביבת פתרון מודרכת עבור פעימת שיעורי הבית ${hwBeatIndex + 1} של דניאל (בן 28).
+שמור מילה במילה על הנוסח והמספרים מתוך exact_book_text, ובנה עבור כל שאלה תרגום ידידותי, סכמת טבלה (אם רלוונטי), אפשרויות מונחות, וידוא הבנה וסיכום להעתקה למחברת.
+החזר אך ורק אובייקט JSON תקני בעברית.`;
+
+    const prompt = `בנה את נתוני הפתרון המודרכים עבור ${qOutlines.length} השאלות בפעימת התרגול ${hwBeatIndex + 1} מתוך ${unit.homeworkBeats.length} בשיעור "${unit.lesson_title || unit.title}".
+
+התאמה דינמית לפרופיל הלמידה של דניאל:
+${buildAdaptationGuidanceBlock(profile)}
+
+השאלות המדויקות מהספר בפעימה זו:
+${questionsPayloadText}
+
+עבור **כל אחת** מ-${qOutlines.length} השאלות (באותו סדר בדיוק, מבלי לאחד שאלות ומבלי לדלג!), החזר איבר במערך "questions":
+{
+  "questions": [
+    {
+      "question_number_label": "...",
+      "page_number": 4,
+      "question_type": "journal_table | general_table | calculation | multiple_choice | open_question",
+      "exact_book_text": "הציטוט המדויק מהספר",
+      "friendly_translation": "תרגום פשוט, חם ומונגש לדניאל: מה מבקשים בשאלה הזו ואיך ניגשים אליה ברוגע",
+      "table_schema": {
+        "has_table": true,
+        "columns": ["חובה", "זכות", "פרטים / שם החשבון"],
+        "account_choices": ["קופה", "עו\\"ש בנק", "הכנסות ממכירות", "קניות סחורה", "ספקים", "לקוחות"],
+        "expected_rows": [
+          { "debit": "5000", "credit": "", "details": "קניות סחורה" },
+          { "debit": "", "credit": "5000", "details": "עו\\"ש בנק" }
+        ]
+      },
+      "guided_options": [
+        "הפתרון הנכון והמלא לבחירה נוחה",
+        "מסיח 1",
+        "מסיח 2"
+      ],
+      "correct_option_index": 0,
+      "mfa_verification": {
+        "question": "למה הפתרון שבחרנו/רשמנו נכון ומאוזן?",
+        "options": ["הנימוק הנכון והפשוט", "נימוק שגוי"],
+        "correct_index": 0
+      },
+      "notebook_copy_summary": "הניסוח המדויק והמסודר שדניאל יעתיק למחברת",
+      "step_by_step_guide": ["שלב 1...", "שלב 2..."],
+      "hint": "רמז עדין ומכוון",
+      "expected_answer_summary": "הפתרון המלא והמדויק"
+    }
+  ]
+}`;
+
+    let parsed = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const raw = await callMultiTierAI(prompt, {
+          systemInstruction,
+          jsonMode: true,
+          maxTokens: 8192,
+          inlineImages: beatImages
+        });
+        const candidate = parseJsonFromAIResponse(raw);
+        if (candidate && Array.isArray(candidate.questions) && candidate.questions.length > 0) {
+          parsed = candidate;
+          break;
+        }
+      } catch (err) {
+        console.warn(`[BeatGenerator] Homework Beat ${hwBeatIndex} attempt ${attempt} failed:`, err);
+      }
+    }
+
+    const aiQuestions = parsed && Array.isArray(parsed.questions) ? parsed.questions : [];
+
+    const normalizedQuestions = qOutlines.map((outline, localIdx) => {
+      const q = aiQuestions[localIdx] || {};
+      const globalQIdx = Array.isArray(hwBeat.questionIndices) && typeof hwBeat.questionIndices[localIdx] === 'number'
+        ? hwBeat.questionIndices[localIdx]
+        : localIdx;
+      const existingQ = (Array.isArray(unit.questions) ? unit.questions[globalQIdx] : null) || {};
+
+      const pageNumber = Math.max(1, Number(outline.page_number || q.page_number) || 1);
+      const exactText = String(outline.exact_book_text || q.exact_book_text || `שאלה ${globalQIdx + 1}`).trim();
+      const friendlyTrans = String(
+        q.friendly_translation ||
+        'נקרא יחד את נתוני השאלה מהעמוד בספר, נזהה את הסכומים ואת החשבונות המשתתפים ונרשום את הפתרון צעד אחר צעד.'
+      ).trim();
+      const stepGuide = Array.isArray(q.step_by_step_guide) && q.step_by_step_guide.length > 0
+        ? q.step_by_step_guide.map(s => String(s).trim()).filter(Boolean)
+        : ['שלב 1: קריאת הנתונים והסכומים מהעמוד בספר', 'שלב 2: רישום צד החובה וצד הזכות ובדיקת איזון'];
+
+      const builtQ = {
+        ...existingQ,
+        id: existingQ.id || `${unit.id}_q${globalQIdx + 1}`,
+        index: globalQIdx + 1,
+        beatIndex: hwBeatIndex,
+        isBeatReady: true,
+        page_number: pageNumber,
+        source_citation: `📍 מקור: ${sourceLabel} • עמוד ${pageNumber} • ${outline.question_number_label}`,
+        question_number_label: String(outline.question_number_label || q.question_number_label || `שאלה ${globalQIdx + 1}`).trim(),
+        question_type: String(q.question_type || outline.question_type || 'open_question').trim(),
+        exact_book_text: exactText,
+        original_question: exactText,
+        questionText: exactText,
+        friendly_translation: friendlyTrans,
+        topic_focus: friendlyTrans,
+        topic: friendlyTrans,
+        table_schema: q.table_schema && typeof q.table_schema === 'object'
+          ? q.table_schema
+          : {
+              has_table: ['journal_table', 'general_table'].includes(outline.question_type),
+              columns: ['חובה', 'זכות', 'פרטים / שם החשבון'],
+              account_choices: [],
+              expected_rows: []
+            },
+        guided_options: Array.isArray(q.guided_options) ? q.guided_options : [],
+        correct_option_index: Number(q.correct_option_index) || 0,
+        mfa_verification: q.mfa_verification && typeof q.mfa_verification === 'object' ? q.mfa_verification : null,
+        notebook_copy_summary: String(q.notebook_copy_summary || q.expected_answer_summary || '').trim(),
+        step_by_step_guide: stepGuide,
+        hint: String(q.hint || 'בדוק אילו חשבונות וסכומים מופיעים בנוסח השאלה ויישם את הכלל שלמדנו בשלב המושגים.').trim(),
+        expected_answer_summary: String(q.expected_answer_summary || q.notebook_copy_summary || '').trim(),
+        coreConcept: String(q.expected_answer_summary || q.notebook_copy_summary || '').trim(),
+        isCompleted: Boolean(existingQ.isCompleted),
+        chatHistory: Array.isArray(existingQ.chatHistory) ? existingQ.chatHistory : []
+      };
+
+      // Reset auto-seeded placeholder chat message if Daniel hasn't typed anything yet so friendly_translation appears!
+      if (Array.isArray(unit.chatHistory) && Array.isArray(unit.chatHistory[globalQIdx])) {
+        const hasUserTurn = unit.chatHistory[globalQIdx].some(m => m && m.role === 'user');
+        if (!hasUserTurn) {
+          unit.chatHistory[globalQIdx] = [];
+        }
+      }
+
+      if (Array.isArray(unit.questions)) {
+        unit.questions[globalQIdx] = builtQ;
+      }
+
+      return builtQ;
+    });
+
+    hwBeat.questions = normalizedQuestions;
+    hwBeat.status = 'ready';
+    hwBeat.generatedAt = new Date().toISOString();
+    return hwBeat;
+  })();
+
+  _inFlightBeatPromises.set(lockKey, jobPromise);
+  try {
+    return await jobPromise;
+  } finally {
+    _inFlightBeatPromises.delete(lockKey);
+  }
+}
+
+/**
+ * Checks whether a unit still has any Concept Beats or Homework Beats not yet in `'ready'` state.
+ * @param {object} unit
+ * @returns {boolean}
+ */
+function hasPendingBeats(unit) {
+  if (!unit) return false;
+  const cPending = Array.isArray(unit.conceptBeats) && unit.conceptBeats.some(b => b && b.status !== 'ready');
+  const hwPending = Array.isArray(unit.homeworkBeats) && unit.homeworkBeats.some(b => b && b.status !== 'ready');
+  return Boolean(cPending || hwPending);
+}
+
+/**
+ * Ensures a specific Concept Beat or Homework Beat is generated (or re-adapted if `forceAdapt === true`),
+ * displaying the calming adaptation overlay if generation is required.
+ * @param {object} unit
+ * @param {'concept'|'homework'} beatType
+ * @param {number} beatIndex
+ * @param {boolean} [forceAdapt]
+ * @returns {Promise<void>}
+ */
+async function ensureBeatReadyForLearner(unit, beatType, beatIndex, forceAdapt = false) {
+  if (!unit) return;
+  const beatsList = beatType === 'homework' ? unit.homeworkBeats : unit.conceptBeats;
+  if (!Array.isArray(beatsList) || !beatsList[beatIndex]) return;
+
+  const targetBeat = beatsList[beatIndex];
+  if (targetBeat.status === 'ready' && !forceAdapt) {
+    return;
+  }
+
+  showStudyHelpLoadingOverlay('בונה עבורך את הפעימה הבאה בהתאמה אישית לקצב שלך...');
+  try {
+    if (beatType === 'homework') {
+      await generateHomeworkBeatContent(unit, beatIndex, unit.learnerAdaptationProfile);
+    } else {
+      await generateConceptBeatContent(unit, beatIndex, unit.learnerAdaptationProfile);
+    }
+    saveAppState();
+  } finally {
+    hideStudyHelpLoadingOverlay();
+  }
+}
+
+/**
+ * Stage C — Asynchronous Background Beat Queue (`runAsyncBeatsWorker(unitId)`):
+ * Iteratively generates remaining `Concept Beats 2..K` and all `Homework Beats 1..M`
+ * in the background, saving state after each beat completes without interrupting Daniel's active screen.
+ * @param {string} unitId
+ * @returns {Promise<void>}
+ */
+function runAsyncBeatsWorker(unitId) {
+  if (!unitId) return Promise.resolve();
+  if (_activeBeatWorkerPromises.has(unitId)) {
+    return _activeBeatWorkerPromises.get(unitId);
+  }
+
+  const workerPromise = (async () => {
+    try {
+      const findLiveUnit = () => (Array.isArray(appState.studyHelpUnits) ? appState.studyHelpUnits : []).find(u => u && u.id === unitId);
+
+      let unit = findLiveUnit();
+      if (!unit) return;
+
+      unit.beatsWorkerActive = true;
+
+      // 1. Iteratively generate Concept Beats 1..K-1 (Beat 0 is already generated at launch, or resume if pending)
+      const cBeatsCount = Array.isArray(unit.conceptBeats) ? unit.conceptBeats.length : 0;
+      for (let bIdx = 0; bIdx < cBeatsCount; bIdx++) {
+        unit = findLiveUnit();
+        if (!unit) return;
+        const cBeat = unit.conceptBeats[bIdx];
+        if (!cBeat || cBeat.status === 'ready') continue;
+
+        await generateConceptBeatContent(unit, bIdx, unit.learnerAdaptationProfile);
+
+        unit = findLiveUnit();
+        if (!unit) return;
+        saveAppState();
+        updateBackgroundBeatsBadgeInDom(unit);
+      }
+
+      // 2. Iteratively generate all Homework Beats 0..M-1
+      const hwBeatsCount = Array.isArray(unit.homeworkBeats) ? unit.homeworkBeats.length : 0;
+      for (let hwIdx = 0; hwIdx < hwBeatsCount; hwIdx++) {
+        unit = findLiveUnit();
+        if (!unit) return;
+        const hwBeat = unit.homeworkBeats[hwIdx];
+        if (!hwBeat || hwBeat.status === 'ready') continue;
+
+        await generateHomeworkBeatContent(unit, hwIdx, unit.learnerAdaptationProfile);
+
+        unit = findLiveUnit();
+        if (!unit) return;
+        saveAppState();
+        updateBackgroundBeatsBadgeInDom(unit);
+      }
+
+      unit = findLiveUnit();
+      if (unit) {
+        unit.beatsWorkerActive = false;
+        unit.allBeatsGenerated = true;
+        saveAppState();
+        updateBackgroundBeatsBadgeInDom(unit);
+      }
+    } catch (err) {
+      console.warn('[BeatGenerator] Background beats worker encountered an error:', err);
+    } finally {
+      _activeBeatWorkerPromises.delete(unitId);
+    }
+  })();
+
+  _activeBeatWorkerPromises.set(unitId, workerPromise);
+  return workerPromise;
+}
+
+/**
+ * Quietly updates the background Beat status pill in the DOM (if visible) without re-rendering inputs.
+ * @param {object} unit
+ */
+function updateBackgroundBeatsBadgeInDom(unit) {
+  if (typeof document === 'undefined' || !unit) return;
+  const badgeEl = document.getElementById('study-beats-bg-status-pill');
+  if (!badgeEl || appState.activeUnitId !== unit.id) return;
+
+  const totalBeats = (unit.conceptBeats?.length || 0) + (unit.homeworkBeats?.length || 0);
+  const readyBeats =
+    (unit.conceptBeats || []).filter(b => b && b.status === 'ready').length +
+    (unit.homeworkBeats || []).filter(b => b && b.status === 'ready').length;
+
+  if (readyBeats >= totalBeats) {
+    badgeEl.textContent = `✅ כל ${totalBeats} הפעימות מוכנות ומותאמות אישית`;
+    badgeEl.style.background = '#dcfce7';
+    badgeEl.style.color = '#166534';
+  } else {
+    badgeEl.textContent = `⚡ פעימות מוכנות ברקע: ${readyBeats}/${totalBeats}`;
+  }
+}
+
+/**
+ * Refactored Multi-Stage "Beats" Pipeline (`generateDailyStudyUnitFromMaterial`):
+ * - Stage A: Runs `extractLessonBeatBlueprint` (3-page chunked Beat 0 Blueprint for 100% source retention)
+ * - Stage B: Immediately generates `Concept Beat 1` (`beatIndex = 0`) grounded in `raw_book_excerpt`
+ * - Stage C: Saves unit to `appState.studyHelpUnits` & `DatabaseManager`, hides initial upload overlay,
+ *            immediately launches/opens the new unit, and starts `runAsyncBeatsWorker(unit.id)` in background!
  * Never injects fake hardcoded questions on file upload!
  * @param {object} params
  * @returns {Promise<object|null>}
@@ -550,9 +1668,6 @@ async function generateDailyStudyUnitFromMaterial({
   sourceLabel = '',
   isFileUpload = false
 } = {}) {
-  const hasImages = (Array.isArray(inlineImages) && inlineImages.length > 0) || Boolean(rawPdfPart && rawPdfPart.data);
-  const cleanText = String(extractedText || '').trim();
-
   _lastUploadRetryContext = {
     extractedText,
     inlineImages,
@@ -562,254 +1677,33 @@ async function generateDailyStudyUnitFromMaterial({
     isFileUpload
   };
 
-  showStudyHelpLoadingOverlay(
-    hasImages
-      ? 'מנתח את כל עמודי השיעור, ההסברים, הדוגמאות והשאלות מתוך הקובץ...'
-      : 'מזהה את המושגים והשאלות ובונה את שלבי הלימוד...'
-  );
-
-  const systemInstruction = `אתה מורה פרטי ומאמן הוראה מתקנת סבלני, חם ומקצועי להנהלת חשבונות עבור דניאל (בחור בן 28).
-תפקידך לקרוא בעיון רב את כל העמודים שהועלו מקובץ השיעור (הן עמודי ההסבר והדוגמאות מהספר והן עמודי השאלות, הטבלאות והתרגילים) ולהחזיר אובייקט JSON תקני בלבד בעברית ברורה.
-איסור מוחלט להמציא שאלות שלא מופיעות בחומר שהועלה! כל מושג, דוגמה ושאלה חייבים להיות מעוגנים ב-100% בטקסט ובתמונות של העמודים שהועלו.`;
-
-  const prompt = `נתח את כל עמודי השיעור וחומר הלימוד המצורפים ובנה עבור דניאל יחידת לימוד מלאה בת 2 שלבים:
-שלב 1: פיצוח המושגים והדוגמאות מתוך עמודי ההסבר בספר (עם הסבר פשוט בגובה העיניים ווידוא הבנה עדין בן 2 שלבים).
-שלב 2: כל השאלות, התרגילים והטבלאות המופיעים בדפים — עם ציטוט מדויק מהספר, תרגום ידידותי ופשוט לדניאל, סכמת טבלה (אם השאלה דורשת טבלת חובה/זכות או טבלה אחרת), אפשרויות מונחות וניסוח מסודר להעתקה למחברת.
-
-${sourceLabel ? `שם הקובץ / מקור החומר: ${sourceLabel}` : ''}
-${cleanText ? `\nטקסט שחולץ מעמודי הקובץ:\n"""\n${cleanText}\n"""\n` : '\nחלץ וקרא בקפידה את כל הטקסט, ההסברים, הטבלאות והשאלות מתוך צילומי העמודים המצורפים לפי סדר העמודים.\n'}
-
-החזר אך ורק אובייקט JSON תקני במבנה המדויק הבא:
-{
-  "lesson_title": "הכותרת המדויקת של השיעור מתוך הדפים (למשל: שיעור 1 - מבוא להנהלת חשבונות וחובה/זכות)",
-  "pages_summary": "תיאור קצר וחם למה שמופיע בעמודי הקובץ (למשל: עמודים 1-4 הסברים ודוגמאות מהספר, עמודים 5-8 תרגילים וטבלאות)",
-  "concepts": [
-    {
-      "id": "c1",
-      "term_name": "שם המושג או הכלל מתוך הדף",
-      "page_number": 1,
-      "simple_explanation": "הסבר פשוט וברור ברמת פשטות של 'מים' או 'לחייך' (1-2 משפטים קצרים מחיי היומיום)",
-      "textbook_example": "איך המושג או הדוגמה מופיעים בדף שהועלה (כולל המספרים או המילים המדויקות מהעמוד בספר)",
-      "mfa_step1_question": "שאלת הבנה ראשונה ופשוטה על המושג",
-      "mfa_step1_options": ["התשובה הנכונה והפשוטה", "מסיח 1", "מסיח 2"],
-      "mfa_step1_correct_index": 0,
-      "mfa_step2_why_question": "וידוא הבנה שני (עדין וקצר): למה זה נכון או איזו דוגמה מתאימה לזה?",
-      "mfa_step2_options": ["ההסבר הפשוט והנכון", "הסבר שגוי"],
-      "mfa_step2_correct_index": 0
-    }
-  ],
-  "questions": [
-    {
-      "id": "q1",
-      "page_number": 5,
-      "question_number_label": "שאלה 1 (או טבלה בעמוד 5)",
-      "question_type": "journal_table | general_table | calculation | multiple_choice | open_question",
-      "exact_book_text": "הציטוט המדויק של השאלה, הסעיפים והמספרים מתוך העמוד הסרוק בספר",
-      "friendly_translation": "תרגום מונגש, חם ופשוט עבור דניאל: מה בעצם מבקשים ממך לעשות כאן ואיך לגשת לזה בלי להתבלבל (ב-2-3 צעדים פשוטים)",
-      "table_schema": {
-        "has_table": true,
-        "columns": ["חובה", "זכות", "פרטים / שם החשבון"],
-        "account_choices": ["קופה", "עו\\"ש בנק", "הכנסות ממכירות", "קניות סחורה", "ספקים", "לקוחות"],
-        "expected_rows": [
-          { "debit": "5000", "credit": "", "details": "קניות סחורה" },
-          { "debit": "", "credit": "5000", "details": "עו\\"ש בנק" }
-        ]
-      },
-      "guided_options": [
-        "התשובה הנכונה המלאה לבחירה נוחה",
-        "אפשרות שגויה 1",
-        "אפשרות שגויה 2"
-      ],
-      "correct_option_index": 0,
-      "mfa_verification": {
-        "question": "וידוא הבנה מהיר (שלב 2): למה בחרנו/רשמנו את הפתרון הזה?",
-        "options": ["הנימוק הנכון והפשוט", "נימוק לא נכון"],
-        "correct_index": 0
-      },
-      "notebook_copy_summary": "הניסוח המדויק והמסודר שדניאל צריך להעתיק למחברת או לדף העבודה שלו עבור שאלה זו",
-      "step_by_step_guide": ["שלב 1...", "שלב 2..."],
-      "hint": "רמז עדין ומכוון",
-      "expected_answer_summary": "הפתרון המלא והמדויק"
-    }
-  ]
-}`;
-
-  let parsedUnit = null;
-  let lastDiagnosticError = '';
-
-  // Try up to 2 attempts if AI call or JSON parse fails
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      if (attempt === 2) {
-        showStudyHelpLoadingOverlay('מבצע ניסיון שני מעמיק לפענוח כל עמודי השיעור...');
+  let blueprint = null;
+  try {
+    blueprint = await extractLessonBeatBlueprint({
+      extractedText,
+      inlineImages,
+      rawPdfPart,
+      sourceLabel,
+      isFileUpload
+    });
+  } catch (blueprintErr) {
+    const diag = blueprintErr && blueprintErr.message ? blueprintErr.message : String(blueprintErr);
+    showStudyHelpRetryModal(diag, async () => {
+      if (_lastUploadRetryContext) {
+        await generateDailyStudyUnitFromMaterial(_lastUploadRetryContext);
       }
-      const rawResponse = await callMultiTierAI(prompt, {
-        systemInstruction,
-        jsonMode: true,
-        maxTokens: 8192,
-        inlineImages: hasImages ? inlineImages : [],
-        rawPdfPart: rawPdfPart || null
-      });
-
-      if (typeof AIService !== 'undefined' && typeof AIService.cleanAndParseJSON === 'function') {
-        parsedUnit = AIService.cleanAndParseJSON(rawResponse);
-      } else {
-        const jsonMatch = String(rawResponse || '').match(/\{[\s\S]*\}/);
-        parsedUnit = JSON.parse(jsonMatch ? jsonMatch[0] : rawResponse);
-      }
-
-      if (
-        parsedUnit &&
-        typeof parsedUnit === 'object' &&
-        ((Array.isArray(parsedUnit.questions) && parsedUnit.questions.length > 0) ||
-          (Array.isArray(parsedUnit.concepts) && parsedUnit.concepts.length > 0))
-      ) {
-        break;
-      } else {
-        lastDiagnosticError = 'המודל החזיר מבנה ללא שאלות או מושגים.';
-        parsedUnit = null;
-      }
-    } catch (err) {
-      lastDiagnosticError = err && err.message ? err.message : String(err);
-      console.warn(`[StudyHelp] Attempt ${attempt} failed:`, err);
-      parsedUnit = null;
-    }
-  }
-
-  // If AI failed and this was a file upload (or no pasted text), NEVER inject fake hardcoded questions!
-  if (!parsedUnit) {
-    if (isFileUpload || hasImages || !cleanText) {
-      showStudyHelpRetryModal(lastDiagnosticError || 'לא התקבל מענה תקין משרת ה-AI עבור קובץ השיעור.', async () => {
-        if (_lastUploadRetryContext) {
-          await generateDailyStudyUnitFromMaterial(_lastUploadRetryContext);
-        }
-      });
-      return null;
-    }
-    // Only if Daniel directly pasted text and is offline, structure his exact pasted text without fake questions
-    parsedUnit = buildGroundedPastedTextUnit({ extractedText: cleanText, sourceLabel });
-    if (!parsedUnit) {
-      showStudyHelpRetryModal(lastDiagnosticError || 'לא ניתן היה לחלץ שאלות מהטקסט.', async () => {
-        if (_lastUploadRetryContext) {
-          await generateDailyStudyUnitFromMaterial(_lastUploadRetryContext);
-        }
-      });
-      return null;
-    }
+    });
+    return null;
   }
 
   const unitId = `sh_unit_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const dateLabel = getTodayHebrewDateLabel();
-
-  // Normalize Concepts
-  const rawConcepts = Array.isArray(parsedUnit.concepts) && parsedUnit.concepts.length > 0
-    ? parsedUnit.concepts
-    : [
-        {
-          id: 'c1',
-          term_name: parsedUnit.lesson_title || parsedUnit.title || 'העיקרון המרכזי בשיעור',
-          page_number: 1,
-          simple_explanation: parsedUnit.pages_summary || parsedUnit.topic_summary || 'נבין יחד את הכלל הפשוט שעומד מאחורי השיעור של היום לפני שנפתור את השאלות.',
-          textbook_example: Array.isArray(parsedUnit.golden_rules) && parsedUnit.golden_rules[0]
-            ? parsedUnit.golden_rules[0]
-            : 'בכל רישום חשבונאי אנו מזהים מה נכנס לעסק ומה יצא ממנו.',
-          mfa_step1_question: 'איך אנחנו ניגשים נכון לפתרון השאלות בשיעור הזה?',
-          mfa_step1_options: [
-            'קוראים את הנתונים מהספר צעד אחר צעד ומיישמים את הכלל שלמדנו',
-            'מנחשים תשובה בלי לבדוק את הנתונים בדף',
-            'מדלגים על קריאת השאלה'
-          ],
-          mfa_step1_correct_index: 0,
-          mfa_step2_why_question: 'למה חשוב לעבוד לפי השלבים שלמדנו בדוגמה מהספר?',
-          mfa_step2_options: [
-            'כי כך אנחנו מבינים ב-100% כל פעולה ומונעים טעויות חישוב או רישום',
-            'אין צורך לבדוק את הנתונים'
-          ],
-          mfa_step2_correct_index: 0
-        }
-      ];
-
-  const normalizedConcepts = rawConcepts.map((c, idx) => {
-    const step1Opts = Array.isArray(c.mfa_step1_options) && c.mfa_step1_options.length >= 2
-      ? c.mfa_step1_options.map(o => String(o).trim())
-      : ['הבנת הכלל והנתונים מהדוגמה בספר', 'ניחוש אקראי ללא בדיקה'];
-    const step2Opts = Array.isArray(c.mfa_step2_options) && c.mfa_step2_options.length >= 2
-      ? c.mfa_step2_options.map(o => String(o).trim())
-      : ['כי זה מדגים בדיוק איך הכלל פועל בפועל בתרגיל', 'כי אין קשר בין הכלל לתרגיל'];
-
-    return {
-      id: c.id || `${unitId}_c${idx + 1}`,
-      index: idx + 1,
-      term_name: String(c.term_name || `מושג ${idx + 1}`).trim(),
-      page_number: Number(c.page_number) || 1,
-      simple_explanation: String(c.simple_explanation || '').trim(),
-      textbook_example: String(c.textbook_example || '').trim(),
-      mfa_step1_question: String(c.mfa_step1_question || `מה אומר המושג "${c.term_name || ''}" במילים פשוטות?`).trim(),
-      mfa_step1_options: step1Opts,
-      mfa_step1_correct_index: Math.min(Math.max(0, Number(c.mfa_step1_correct_index) || 0), step1Opts.length - 1),
-      mfa_step2_why_question: String(c.mfa_step2_why_question || 'וידוא הבנה שני: למה ההסבר הזה נכון ומתאים לדוגמה בספר?').trim(),
-      mfa_step2_options: step2Opts,
-      mfa_step2_correct_index: Math.min(Math.max(0, Number(c.mfa_step2_correct_index) || 0), step2Opts.length - 1),
-      extraSimplerAnalogy: '',
-      check1Passed: false,
-      mastered: false
-    };
-  });
-
-  // Normalize Questions
-  const rawQuestions = Array.isArray(parsedUnit.questions) ? parsedUnit.questions : [];
-  const normalizedQuestions = rawQuestions.map((q, idx) => {
-    const exactText = String(q.exact_book_text || q.original_question || q.questionText || q.question || `שאלה ${idx + 1} מתוך הקובץ`).trim();
-    const friendlyTrans = String(q.friendly_translation || q.topic_focus || 'נקרא את השאלה בנחת ונפתור אותה צעד אחר צעד.').trim();
-    const stepGuide = Array.isArray(q.step_by_step_guide) && q.step_by_step_guide.length > 0
-      ? q.step_by_step_guide.map(s => String(s).trim()).filter(Boolean)
-      : ['שלב 1: קריאת הנתונים מהספר', 'שלב 2: רישום הפתרון ובדיקתו'];
-
-    return {
-      id: q.id || `${unitId}_q${idx + 1}`,
-      index: idx + 1,
-      page_number: Number(q.page_number) || 1,
-      question_number_label: String(q.question_number_label || `שאלה ${idx + 1}`).trim(),
-      question_type: String(q.question_type || 'open_question').trim(),
-      exact_book_text: exactText,
-      original_question: exactText,
-      questionText: exactText,
-      friendly_translation: friendlyTrans,
-      topic_focus: friendlyTrans,
-      topic: friendlyTrans,
-      table_schema: q.table_schema && typeof q.table_schema === 'object'
-        ? q.table_schema
-        : { has_table: false, columns: [], account_choices: [], expected_rows: [] },
-      guided_options: Array.isArray(q.guided_options) ? q.guided_options : [],
-      correct_option_index: Number(q.correct_option_index) || 0,
-      mfa_verification: q.mfa_verification && typeof q.mfa_verification === 'object'
-        ? q.mfa_verification
-        : null,
-      notebook_copy_summary: String(q.notebook_copy_summary || q.expected_answer_summary || '').trim(),
-      step_by_step_guide: stepGuide,
-      hint: String(q.hint || 'הסתכל על הדוגמה שלמדנו בשלב המושגים ויישם אותה כאן צעד אחר צעד.').trim(),
-      expected_answer_summary: String(q.expected_answer_summary || q.notebook_copy_summary || '').trim(),
-      coreConcept: String(q.expected_answer_summary || q.notebook_copy_summary || '').trim(),
-      isCompleted: false,
-      chatHistory: []
-    };
-  });
-
-  const lessonTitle = String(
-    parsedUnit.lesson_title ||
-    parsedUnit.title ||
-    sourceLabel ||
-    `שיעור יומי (${dateLabel})`
-  ).trim();
-
+  const cleanSourceLabel = String(sourceLabel || blueprint.lesson_title || `שיעור יומי (${dateLabel})`).trim();
+  const lessonTitle = String(blueprint.lesson_title || cleanSourceLabel).trim();
   const pagesSummary = String(
-    parsedUnit.pages_summary ||
-    parsedUnit.topic_summary ||
-    parsedUnit.introText ||
-    'ביחידה זו נלמד קודם את המושגים והדוגמאות מתוך עמודי הקובץ, ומיד לאחר מכן נפתור יחד את השאלות והטבלאות!'
+    blueprint.pages_summary ||
+    'ביחידה זו נעבור פעימה אחר פעימה על כל המושגים והדוגמאות מהעמודים שהעלית, ומיד לאחר מכן נפתור יחד את כל השאלות והטבלאות!'
   ).trim();
-
-  const goldenRules = normalizedConcepts.slice(0, 3).map(c => `${c.term_name}: ${c.simple_explanation}`);
 
   // Store compact pageSnapshots ({ pageNumber, dataUrl }) on the unit object
   const storedSnapshots = Array.isArray(pageSnapshots) && pageSnapshots.length > 0
@@ -819,39 +1713,140 @@ ${cleanText ? `\nטקסט שחולץ מעמודי הקובץ:\n"""\n${cleanText}
       }))
     : (Array.isArray(inlineImages)
       ? inlineImages
-          .filter(img => !img.isNativePdf && img.mimeType !== 'application/pdf')
+          .filter(img => img && !img.isNativePdf && img.mimeType !== 'application/pdf')
           .map((img, i) => ({
             pageNumber: Number(img.pageNumber) || i + 1,
             dataUrl: img.dataUrl || (img.data ? `data:${img.mimeType || 'image/jpeg'};base64,${img.data}` : '')
           }))
       : []);
 
+  // Group outlines into Concept Beats (1-3 concepts/beat) and Homework Beats (2-3 questions/beat)
+  const { normalizedOutlines, conceptBeats } = groupConceptOutlinesIntoBeats(
+    blueprint.concept_outlines,
+    unitId,
+    {
+      lessonTitle,
+      pagesSummary,
+      questionOutlines: blueprint.question_outlines
+    }
+  );
+  const { normalizedQuestionOutlines, homeworkBeats } = groupQuestionOutlinesIntoBeats(
+    blueprint.question_outlines,
+    unitId
+  );
+
+  // Pre-seed placeholder entries for 100% accurate total counts across Roadmap & Timeline immediately
+  const initialConcepts = normalizedOutlines.map((c, idx) => {
+    const ownerBeatIdx = conceptBeats.findIndex(b => Array.isArray(b.conceptIndices) && b.conceptIndices.includes(idx));
+    const citation = `📍 מקור: ${cleanSourceLabel} • עמוד ${c.page_number} • ${c.source_section_label}`;
+    return {
+      id: `${unitId}_c${idx + 1}`,
+      index: idx + 1,
+      beatIndex: ownerBeatIdx >= 0 ? ownerBeatIdx : 0,
+      isBeatReady: false,
+      term_name: c.term_name,
+      page_number: c.page_number,
+      source_section_label: c.source_section_label,
+      source_citation: citation,
+      raw_book_excerpt: c.raw_book_excerpt,
+      paragraphs: [c.raw_book_excerpt],
+      simple_explanation: c.raw_book_excerpt,
+      textbook_example: c.raw_book_excerpt,
+      mfa_step1_question: `מה אומר המושג "${c.term_name}"?`,
+      mfa_step1_options: ['יישום הכלל מהספר', 'ניחוש ללא בדיקה'],
+      mfa_step1_correct_index: 0,
+      mfa_step2_why_question: 'הסבר במילים שלך את הרעיון המרכזי:',
+      mfa_step2_options: ['בהתאם לדוגמה בעמוד הספר', 'ללא קשר לדוגמה'],
+      mfa_step2_correct_index: 0,
+      extraSimplerAnalogy: '',
+      check1Passed: false,
+      mastered: false
+    };
+  });
+
+  const initialQuestions = normalizedQuestionOutlines.map((q, idx) => {
+    const ownerHwBeatIdx = homeworkBeats.findIndex(b => Array.isArray(b.questionIndices) && b.questionIndices.includes(idx));
+    return {
+      id: `${unitId}_q${idx + 1}`,
+      index: idx + 1,
+      beatIndex: ownerHwBeatIdx >= 0 ? ownerHwBeatIdx : 0,
+      isBeatReady: false,
+      page_number: q.page_number,
+      source_citation: `📍 מקור: ${cleanSourceLabel} • עמוד ${q.page_number} • ${q.question_number_label}`,
+      question_number_label: q.question_number_label,
+      question_type: q.question_type,
+      exact_book_text: q.exact_book_text,
+      original_question: q.exact_book_text,
+      questionText: q.exact_book_text,
+      friendly_translation: 'המאמן מכין את פירוק השלבים המותאם אישית לשאלה זו...',
+      topic_focus: q.question_number_label,
+      topic: q.question_number_label,
+      table_schema: {
+        has_table: ['journal_table', 'general_table'].includes(q.question_type),
+        columns: ['חובה', 'זכות', 'פרטים / שם החשבון'],
+        account_choices: [],
+        expected_rows: []
+      },
+      guided_options: [],
+      correct_option_index: 0,
+      mfa_verification: null,
+      notebook_copy_summary: '',
+      step_by_step_guide: [],
+      hint: '',
+      expected_answer_summary: '',
+      coreConcept: '',
+      isCompleted: false,
+      chatHistory: []
+    };
+  });
+
+  const learnerAdaptationProfile = createDefaultLearnerAdaptationProfile();
+
   const newUnit = {
     id: unitId,
     createdAt: new Date().toISOString(),
     createdAtLabel: dateLabel,
     dateLabel,
+    sourceLabel: cleanSourceLabel,
     title: lessonTitle,
     lesson_title: lessonTitle,
     pages_summary: pagesSummary,
     introText: pagesSummary,
     topic_summary: pagesSummary,
-    goldenRules,
-    golden_rules: goldenRules,
-    introAndRules: [pagesSummary, ...goldenRules],
-    concepts: normalizedConcepts,
+    goldenRules: [],
+    golden_rules: [],
+    introAndRules: [pagesSummary],
+    blueprint: {
+      lesson_title: lessonTitle,
+      pages_summary: pagesSummary,
+      total_concepts: normalizedOutlines.length,
+      total_questions: normalizedQuestionOutlines.length
+    },
+    learnerAdaptationProfile,
+    conceptBeats,
+    homeworkBeats,
+    beatsWorkerActive: false,
+    allBeatsGenerated: false,
+    concepts: initialConcepts,
     currentConceptIdx: 0,
     activeStage: 'stage1',
     pageSnapshots: storedSnapshots,
-    questions: normalizedQuestions,
-    chatHistory: normalizedQuestions.map(() => []),
-    solvedQuestions: normalizedQuestions.map(() => false),
+    questions: initialQuestions,
+    chatHistory: initialQuestions.map(() => []),
+    solvedQuestions: initialQuestions.map(() => false),
     currentQuestionIdx: 0,
     isNew: true,
     completed: false,
     isCompleted: false,
     summaryExamId: null
   };
+
+  // Stage B + C: Immediately generate Concept Beat 1 (`beatIndex = 0`) so Daniel starts right away!
+  showStudyHelpLoadingOverlay(
+    `בונה את פעימת הלימוד הראשונה (1 מתוך ${conceptBeats.length}) מתוך עמודי השיעור...`
+  );
+  await generateConceptBeatContent(newUnit, 0, newUnit.learnerAdaptationProfile);
+  newUnit.introAndRules = [pagesSummary, ...(newUnit.goldenRules || [])];
 
   if (!Array.isArray(appState.studyHelpUnits)) {
     appState.studyHelpUnits = [];
@@ -868,25 +1863,32 @@ ${cleanText ? `\nטקסט שחולץ מעמודי הקובץ:\n"""\n${cleanText}
   appState.studyHelp.activeCardId = newUnit.id;
 
   saveAppState();
+  if (typeof window !== 'undefined' && window.DatabaseManager && typeof window.DatabaseManager.add === 'function') {
+    window.DatabaseManager.add('study_help', newUnit).catch(err => {
+      console.warn('[BeatGenerator] DatabaseManager.add background warning:', err);
+    });
+  }
+
   hideStudyHelpLoadingOverlay();
 
   if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
     SoundService.playSuccessSound();
   }
   if (typeof showToast === 'function') {
-    showToast('יחידת השיעור של היום מוכנה! גלול למטה לכרטיס החדש 🌟', 'success');
+    showToast('פעימה 1 מוכנה ללמידה! שאר הפעימות נבנות עבורך ברקע 🌟', 'success');
   }
 
   if (typeof renderRoadmap === 'function') {
     renderRoadmap();
   }
 
-  setTimeout(() => {
-    const newCardEl = document.querySelector(`[data-study-unit-id="${newUnit.id}"]`);
-    if (newCardEl && typeof newCardEl.scrollIntoView === 'function') {
-      newCardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, 150);
+  // Immediately open Beat 1 for Daniel!
+  openStudyHelpUnit(newUnit.id);
+
+  // Launch background worker for Concept Beats 2..K and Homework Beats 1..M
+  if (hasPendingBeats(newUnit)) {
+    runAsyncBeatsWorker(newUnit.id);
+  }
 
   return newUnit;
 }
@@ -1141,7 +2143,16 @@ function openStudyHelpUnit(unitId) {
   unit.isNew = false;
   appState.activeUnitId = unit.id;
 
+  if (!unit.learnerAdaptationProfile || typeof unit.learnerAdaptationProfile !== 'object') {
+    unit.learnerAdaptationProfile = createDefaultLearnerAdaptationProfile();
+  }
+
   ensureUnitConceptsState(unit);
+
+  // Resume background worker if any Concept Beat or Homework Beat is still pending
+  if (hasPendingBeats(unit)) {
+    runAsyncBeatsWorker(unit.id);
+  }
 
   const concepts = Array.isArray(unit.concepts) ? unit.concepts : [];
   const questions = Array.isArray(unit.questions) ? unit.questions : [];
@@ -1152,6 +2163,41 @@ function openStudyHelpUnit(unitId) {
     unit.currentQuestionIdx = 0;
   }
   const qIdx = unit.currentQuestionIdx;
+  const isStage1Active = unit.activeStage !== 'stage2' || !allConceptsMastered || questions.length === 0;
+
+  // Stage C Gate: If Daniel reaches a Beat that is still being generated, show Calming Loading Dialog until ready
+  if (isStage1Active && concepts[unit.currentConceptIdx]) {
+    const targetCBeatIdx = typeof concepts[unit.currentConceptIdx].beatIndex === 'number'
+      ? concepts[unit.currentConceptIdx].beatIndex
+      : -1;
+    if (
+      targetCBeatIdx >= 0 &&
+      Array.isArray(unit.conceptBeats) &&
+      unit.conceptBeats[targetCBeatIdx] &&
+      unit.conceptBeats[targetCBeatIdx].status !== 'ready'
+    ) {
+      ensureBeatReadyForLearner(unit, 'concept', targetCBeatIdx).then(() => {
+        openStudyHelpUnit(unit.id);
+      });
+      return;
+    }
+  } else if (!isStage1Active && questions[qIdx]) {
+    const targetHwBeatIdx = typeof questions[qIdx].beatIndex === 'number'
+      ? questions[qIdx].beatIndex
+      : -1;
+    if (
+      targetHwBeatIdx >= 0 &&
+      Array.isArray(unit.homeworkBeats) &&
+      unit.homeworkBeats[targetHwBeatIdx] &&
+      unit.homeworkBeats[targetHwBeatIdx].status !== 'ready'
+    ) {
+      ensureBeatReadyForLearner(unit, 'homework', targetHwBeatIdx).then(() => {
+        openStudyHelpUnit(unit.id);
+      });
+      return;
+    }
+  }
+
   if (questions.length > 0) {
     ensureUnitQuestionChatState(unit, qIdx);
   } else if (!Array.isArray(unit.solvedQuestions)) {
@@ -1189,8 +2235,12 @@ function openStudyHelpUnit(unitId) {
   if (goalDescEl) goalDescEl.textContent = unit.pages_summary || unit.topic_summary || 'לימוד מונחה צעד אחר צעד מתוך עמודי השיעור שלך';
 
   const solvedQuestionsCount = Array.isArray(unit.solvedQuestions) ? unit.solvedQuestions.filter(Boolean).length : 0;
-  const isStage1Active = unit.activeStage !== 'stage2' || !allConceptsMastered;
   const hasPageSnapshots = Array.isArray(unit.pageSnapshots) && unit.pageSnapshots.length > 0;
+  const hasBeatsPipeline = Array.isArray(unit.conceptBeats) && unit.conceptBeats.length > 0;
+  const totalBeatsCount = (unit.conceptBeats?.length || 0) + (unit.homeworkBeats?.length || 0);
+  const readyBeatsCount =
+    (unit.conceptBeats || []).filter(b => b && b.status === 'ready').length +
+    (unit.homeworkBeats || []).filter(b => b && b.status === 'ready').length;
 
   // Build Habit & Momentum Bar + Visual Guiding Stones Timeline + 2-Stage Journey Bar HTML
   const journeyBarHtml = `
@@ -1205,20 +2255,20 @@ function openStudyHelpUnit(unitId) {
         <span class="journey-stage-icon">${allConceptsMastered ? '✅' : '1️⃣'}</span>
         <div class="journey-stage-info">
           <strong>שלב 1: הכנה לשיעור ופיצוח המושגים (${masteredConceptsCount}/${concepts.length})</strong>
-          <small>הסבר פשוט בגובה העיניים + דוגמה מהספר ווידוא הבנה (+1 ⭐ למושג)</small>
+          <small>פעימות לימוד מותאמות אישית + דוגמה מהספר ווידוא הבנה (+1 ⭐ למושג)</small>
         </div>
       </button>
 
       <button
         type="button"
         id="btn-journey-stage2"
-        class="study-journey-stage-tab ${!isStage1Active ? 'active' : ''} ${!allConceptsMastered ? 'locked' : ''}"
-        ${!allConceptsMastered ? 'aria-disabled="true"' : ''}
+        class="study-journey-stage-tab ${!isStage1Active ? 'active' : ''} ${(!allConceptsMastered || questions.length === 0) ? 'locked' : ''}"
+        ${(!allConceptsMastered || questions.length === 0) ? 'aria-disabled="true"' : ''}
       >
         <span class="journey-stage-icon">${!allConceptsMastered ? '🔒' : (solvedQuestionsCount === questions.length && questions.length > 0 ? '🏆' : '2️⃣')}</span>
         <div class="journey-stage-info">
           <strong>שלב 2: פתרון השאלות והטבלאות מהספר (${solvedQuestionsCount}/${questions.length})</strong>
-          <small>${!allConceptsMastered ? 'ייפתח מיד לאחר השלמת המושגים בשלב 1' : 'תרגול מודרך של כל השאלות מתוך דפי השיעור (+2 ⭐ לשאלה)'}</small>
+          <small>${questions.length === 0 ? 'קובץ זה מכיל מושגים ודוגמאות בלבד' : (!allConceptsMastered ? 'ייפתח מיד לאחר השלמת המושגים בשלב 1' : 'תרגול מודרך של כל השאלות מתוך דפי השיעור (+2 ⭐ לשאלה)')}</small>
         </div>
       </button>
     </nav>
@@ -1226,13 +2276,60 @@ function openStudyHelpUnit(unitId) {
 
   if (isStage1Active) {
     // ========================================================================
-    // STAGE 1: LESSON PROMO + CONCEPT & TEXTBOOK EXAMPLE MASTERY GATE (2-STEP MFA)
+    // STAGE 1: LESSON PROMO + BEAT SLIDES (CONCEPT + BOOK EXAMPLE + WIDGET + 2 BOTTOM QUESTIONS)
     // ========================================================================
     const cIdx = unit.currentConceptIdx;
     const activeConcept = concepts[cIdx] || concepts[0];
     const pageNum = Number(activeConcept?.page_number) || 1;
     const conceptCheck1Done = Boolean(activeConcept?.check1Passed || activeConcept?.mastered);
     const conceptMastered = Boolean(activeConcept?.mastered);
+    const activeBeatIdx = typeof activeConcept?.beatIndex === 'number' ? activeConcept.beatIndex : 0;
+    const activeBeatObj = hasBeatsPipeline ? unit.conceptBeats[activeBeatIdx] : null;
+    const hasBeatSlideSchema = Boolean(activeConcept?.bottom_questions && activeConcept.bottom_questions.mc_question && activeConcept.bottom_questions.open_question);
+
+    const paragraphsHtml = Array.isArray(activeConcept?.paragraphs) && activeConcept.paragraphs.length > 0
+      ? activeConcept.paragraphs
+          .map(p => `<p class="study-panel-body-text" style="margin-bottom:0.65rem;">${formatCoachChatHtml(p)}</p>`)
+          .join('')
+      : `<p class="study-panel-body-text">${formatCoachChatHtml(activeConcept?.simple_explanation || '')}</p>`;
+
+    const bookExObj = activeConcept?.book_example && typeof activeConcept.book_example === 'object'
+      ? activeConcept.book_example
+      : null;
+    const bookExampleHtml = bookExObj
+      ? `
+        ${bookExObj.exact_excerpt ? `<div style="background:#ffffff;border:1px solid #cbd5e1;border-radius:10px;padding:0.75rem 0.9rem;margin-bottom:0.7rem;font-weight:600;color:#0f172a;">${formatCoachChatHtml(bookExObj.exact_excerpt)}</div>` : ''}
+        ${Array.isArray(bookExObj.steps) && bookExObj.steps.length > 0 ? `
+          <ol class="study-guiding-stones-list" style="margin:0;">
+            ${bookExObj.steps.map((st, sIdx) => `
+              <li class="study-guiding-stone-item">
+                <span class="stone-num">${sIdx + 1}</span>
+                <span class="stone-text">${formatCoachChatHtml(st)}</span>
+              </li>
+            `).join('')}
+          </ol>
+        ` : ''}
+      `
+      : `<p class="study-panel-body-text">${formatCoachChatHtml(activeConcept?.textbook_example || '')}</p>`;
+
+    const widgetObj = activeConcept?.interactive_widget && Array.isArray(activeConcept.interactive_widget.options)
+      ? activeConcept.interactive_widget
+      : null;
+
+    const mcQ = hasBeatSlideSchema ? activeConcept.bottom_questions.mc_question : null;
+    const openQ = hasBeatSlideSchema ? activeConcept.bottom_questions.open_question : null;
+
+    // Sync tutorSlide checklist verification status with concept mastery
+    if (activeBeatObj && activeBeatObj.tutorSlide && Array.isArray(activeBeatObj.tutorSlide.required_terms_checklist)) {
+      activeBeatObj.tutorSlide.required_terms_checklist.forEach((chkItem, localIdx) => {
+        const gIdx = Array.isArray(activeBeatObj.conceptIndices) ? activeBeatObj.conceptIndices[localIdx] : -1;
+        if (gIdx >= 0 && concepts[gIdx]) {
+          chkItem.verified = Boolean(concepts[gIdx].mastered);
+        }
+      });
+      activeBeatObj.tutorSlide.completed = activeBeatObj.tutorSlide.required_terms_checklist.every(i => Boolean(i.verified));
+      activeBeatObj.completed = activeBeatObj.tutorSlide.completed;
+    }
 
     blocksWrapper.innerHTML = `
       <div class="study-unit-player-container" dir="rtl">
@@ -1244,6 +2341,18 @@ function openStudyHelpUnit(unitId) {
             <div class="study-intro-badges">
               <span class="study-today-date-badge">📅 ${dateLabel}</span>
               <span class="badge-tag" style="background:#dcfce7;color:#166534;font-weight:800;">🧭 שלב 1 מתוך 2: מבינים את החומר לפני שפותרים</span>
+              ${hasBeatsPipeline ? `
+                <span class="badge-tag" style="background:#ede9fe;color:#5b21b6;font-weight:800;">
+                  🎵 פעימה ${activeBeatIdx + 1} מתוך ${unit.conceptBeats.length}
+                </span>
+                <span
+                  id="study-beats-bg-status-pill"
+                  class="badge-tag"
+                  style="background:${readyBeatsCount >= totalBeatsCount ? '#dcfce7' : '#e0f2fe'};color:${readyBeatsCount >= totalBeatsCount ? '#166534' : '#0369a1'};font-weight:700;"
+                >
+                  ${readyBeatsCount >= totalBeatsCount ? `✅ כל ${totalBeatsCount} הפעימות מוכנות ומותאמות אישית` : `⚡ פעימות מוכנות ברקע: ${readyBeatsCount}/${totalBeatsCount}`}
+                </span>
+              ` : ''}
             </div>
             ${hasPageSnapshots ? `
               <button type="button" id="btn-open-all-pages-viewer" class="secondary-btn study-view-page-btn">
@@ -1255,7 +2364,7 @@ function openStudyHelpUnit(unitId) {
           <p class="study-intro-summary-text">${formatCoachChatHtml(unit.pages_summary || unit.topic_summary || '')}</p>
         </section>
 
-        <!-- כרטיס פיצוח מושג פעיל + דוגמה מהספר + וידוא הבנה דו-שלבי (Gentle 2-Step MFA) -->
+        <!-- כרטיס שקופית מושג בפעימה + דוגמה מהספר + ווידג'ט אינטראקטיבי + 2 שאלות בתחתית -->
         <section class="card study-concept-mastery-card" aria-label="כרטיס מושג ודוגמה מהספר">
           <div class="study-q-progress-top">
             <div class="study-q-progress-headline">
@@ -1287,12 +2396,14 @@ function openStudyHelpUnit(unitId) {
             }).join('')}
           </div>
 
-          <!-- תוכן המושג הפעיל -->
+          <!-- תוכן שקופית המושג הפעילה -->
           <div class="study-concept-detail-box">
             <div class="study-concept-top-bar">
               <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
-                <span class="study-active-q-tag">📄 מתוך עמוד ${pageNum} בקובץ השיעור</span>
-                ${conceptMastered ? `<span class="badge-completed-card">✅ הבנתי את המושג ב-100%!</span>` : ''}
+                <span class="study-active-q-tag">
+                  ${escapeHtmlAttr(activeConcept.source_citation || `📄 מתוך עמוד ${pageNum} בקובץ השיעור`)}
+                </span>
+                ${conceptMastered ? `<span class="badge-completed-card">✅ ברור כשמש בבוקר!</span>` : ''}
               </div>
               ${hasPageSnapshots ? `
                 <button type="button" id="btn-view-concept-page" class="secondary-btn study-view-page-btn" data-page-num="${pageNum}">
@@ -1304,10 +2415,10 @@ function openStudyHelpUnit(unitId) {
             <h3 class="study-concept-term-title">💡 מושג ${cIdx + 1}: ${activeConcept.term_name}</h3>
 
             <div class="study-concept-columns">
-              <!-- בלוק 1: מה זה אומר במילים הכי פשוטות? -->
+              <!-- בלוק 1: הסבר אינטואיטיבי + הכלל המלא מהספר (1-2 פסקאות בהירות) -->
               <div class="study-concept-explain-panel simple-panel">
-                <div class="study-panel-badge">🌱 מה זה אומר במילים הכי פשוטות?</div>
-                <p class="study-panel-body-text">${formatCoachChatHtml(activeConcept.simple_explanation)}</p>
+                <div class="study-panel-badge">🌱 הסבר בהיר: אינטואיציה יומיומית + הכלל המלא מהספר</div>
+                ${paragraphsHtml}
                 ${activeConcept.extraSimplerAnalogy ? `
                   <div class="study-extra-analogy-box">
                     <strong>✨ דוגמה פשוטה נוספת מחיי היומיום:</strong>
@@ -1316,97 +2427,207 @@ function openStudyHelpUnit(unitId) {
                 ` : ''}
               </div>
 
-              <!-- בלוק 2: איך זה מופיע בדוגמה בספר שלנו? -->
+              <!-- בלוק 2: דוגמה פתורה מהעמוד שהועלה בספר מפורקת לצעדים -->
               <div class="study-concept-explain-panel textbook-panel">
-                <div class="study-panel-badge">📖 איך זה מופיע בדוגמה בספר שלנו? (עמוד ${pageNum})</div>
-                <p class="study-panel-body-text">${formatCoachChatHtml(activeConcept.textbook_example)}</p>
+                <div class="study-panel-badge">📖 ${escapeHtmlAttr(bookExObj?.title || `דוגמה מתוך עמוד ${pageNum} בספר`)}</div>
+                ${bookExampleHtml}
               </div>
             </div>
 
-            <!-- וידוא הבנה דו-שלבי עדין (Gentle 2-Step MFA) -->
+            <!-- מיני-ווידג'ט התנסות אינטראקטיבית על המסך (כשזמין בפעימה) -->
+            ${widgetObj ? `
+              <div class="study-mfa-step-box ${widgetObj.completed ? 'step-passed' : ''}" id="concept-interactive-widget-box" style="margin-top:1rem; background:#f8fafc;">
+                <div class="study-mfa-step-badge">🧩 בדיקה אינטראקטיבית מהירה על המסך</div>
+                <p class="study-mfa-question-text">${formatCoachChatHtml(widgetObj.prompt)}</p>
+                <div class="study-mfa-options-list">
+                  ${widgetObj.options.map((wOpt, wIdx) => `
+                    <button
+                      type="button"
+                      class="study-mfa-option-btn widget-opt-btn ${widgetObj.completed && wIdx === widgetObj.correct_index ? 'correct-selected' : ''}"
+                      data-widget-opt-idx="${wIdx}"
+                    >
+                      <span class="opt-letter">${idxToHebrewLetter(wIdx)}.</span>
+                      <span>${formatCoachChatHtml(wOpt)}</span>
+                    </button>
+                  `).join('')}
+                </div>
+                <div id="concept-widget-feedback" class="study-mfa-feedback ${widgetObj.completed ? 'success' : ''}" style="display:${widgetObj.completed ? 'block' : 'none'};">
+                  ${widgetObj.completed ? `✅ ${formatCoachChatHtml(widgetObj.explanation)}` : ''}
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- 2 שאלות בתחתית השקופית (MC + Open Question) או 2-Step MFA ליחידות ישנות -->
             <div class="study-mfa-gate-container">
               <div class="study-mfa-header-row">
-                <h4 class="study-mfa-gate-title">🎯 וידוא הבנה עדין ב-2 צעדים (כדי שנהיה בטוחים ב-100% שזה ברור!)</h4>
+                <h4 class="study-mfa-gate-title">
+                  ${hasBeatSlideSchema
+                    ? '🎯 2 שאלות וידוא הבנה בתחתית השקופית (אמריקאית + פתוחה במילים שלך)'
+                    : '🎯 וידוא הבנה עדין ב-2 צעדים (כדי שנהיה בטוחים ב-100% שזה ברור!)'}
+                </h4>
                 <button type="button" id="btn-simpler-analogy" class="study-quick-assist-chip">
                   <span>🤔 תסביר לי בעוד דרך פשוטה יותר</span>
                 </button>
               </div>
 
-              <!-- צעד 1 של וידוא ההבנה -->
-              <div class="study-mfa-step-box ${conceptCheck1Done ? 'step-passed' : ''}" id="concept-mfa-step1-box">
-                <div class="study-mfa-step-badge">בדיקה 1 מתוך 2 — זיהוי הרעיון המרכזי</div>
-                <p class="study-mfa-question-text">${formatCoachChatHtml(activeConcept.mfa_step1_question)}</p>
-                <div class="study-mfa-options-list">
-                  ${(activeConcept.mfa_step1_options || []).map((opt, oIdx) => {
-                    const isCorrectOpt = oIdx === activeConcept.mfa_step1_correct_index;
-                    return `
-                      <button
-                        type="button"
-                        class="study-mfa-option-btn step1-opt-btn ${conceptCheck1Done && isCorrectOpt ? 'correct-selected' : ''}"
-                        data-opt-idx="${oIdx}"
-                      >
-                        <span class="opt-letter">${idxToHebrewLetter(oIdx)}.</span>
-                        <span>${opt}</span>
-                      </button>
-                    `;
-                  }).join('')}
-                </div>
-
-                <!-- אפשרות להסביר במילים של דניאל במקום לבחור -->
-                <div class="study-mfa-own-words-row">
-                  <input
-                    type="text"
-                    id="concept-own-words-input"
-                    class="styled-input study-own-words-input"
-                    placeholder="או כתוב כאן במילים שלך איך הבנת את המושג..."
-                  />
-                  <button type="button" id="btn-check-own-words" class="secondary-btn">
-                    <span>בדוק בניסוח שלי ✨</span>
-                  </button>
-                </div>
-                <div id="concept-mfa-step1-feedback" class="study-mfa-feedback" style="display:${conceptCheck1Done ? 'block' : 'none'};">
-                  ${conceptCheck1Done ? '✅ מעולה דניאל! עברת את בדיקה 1 בהצלחה. עכשיו בוא נאשר זאת בבדיקה הקצרה השנייה:' : ''}
-                </div>
-              </div>
-
-              <!-- צעד 2 של וידוא ההבנה (נפתח לאחר צעד 1) -->
-              <div
-                class="study-mfa-step-box ${conceptMastered ? 'step-passed' : ''}"
-                id="concept-mfa-step2-box"
-                style="display:${conceptCheck1Done ? 'block' : 'none'};"
-              >
-                <div class="study-mfa-step-badge">בדיקה 2 מתוך 2 (וידוא הבנה סופי - בלי ניחושים!)</div>
-                <p class="study-mfa-question-text">${formatCoachChatHtml(activeConcept.mfa_step2_why_question)}</p>
-                <div class="study-mfa-options-list">
-                  ${(activeConcept.mfa_step2_options || []).map((opt, oIdx) => {
-                    const isCorrectOpt = oIdx === activeConcept.mfa_step2_correct_index;
-                    return `
-                      <button
-                        type="button"
-                        class="study-mfa-option-btn step2-opt-btn ${conceptMastered && isCorrectOpt ? 'correct-selected' : ''}"
-                        data-opt-idx="${oIdx}"
-                      >
-                        <span class="opt-letter">${idxToHebrewLetter(oIdx)}.</span>
-                        <span>${opt}</span>
-                      </button>
-                    `;
-                  }).join('')}
-                </div>
-                <div id="concept-mfa-step2-feedback" class="study-mfa-feedback" style="display:${conceptMastered ? 'block' : 'none'};">
-                  ${conceptMastered ? '🌟 <strong>הבנתי את המושג ב-100%!</strong> כל הכבוד דניאל, פיצחת את המושג הזה עד הסוף.' : ''}
-                </div>
-              </div>
-
-              <!-- פעולת המשך למושג הבא או פתיחת שלב 2 -->
-              <div id="concept-mastered-actions-bar" class="study-question-solved-action-box" style="display:${conceptMastered ? 'flex' : 'none'}; margin-top:1rem;">
-                ${allConceptsMastered ? `
-                  <div class="study-solved-celebration-text">
-                    🎉 <strong>אלוף דניאל! פיצחת ב-100% את כל המושגים והדוגמאות של השיעור!</strong>
+              ${hasBeatSlideSchema ? `
+                <!-- שאלה 1 בתחתית השקופית: שאלה אמריקאית (mc_question) -->
+                <div class="study-mfa-step-box ${conceptCheck1Done ? 'step-passed' : ''}" id="concept-mfa-step1-box">
+                  <div class="study-mfa-step-badge">שאלה 1 מתוך 2 — שאלה אמריקאית</div>
+                  <p class="study-mfa-question-text">${formatCoachChatHtml(mcQ.question)}</p>
+                  <div class="study-mfa-options-list">
+                    ${(mcQ.options || []).map((opt, oIdx) => {
+                      const isCorrectOpt = oIdx === mcQ.correct_index;
+                      return `
+                        <button
+                          type="button"
+                          class="study-mfa-option-btn step1-opt-btn ${conceptCheck1Done && isCorrectOpt ? 'correct-selected' : ''}"
+                          data-opt-idx="${oIdx}"
+                        >
+                          <span class="opt-letter">${idxToHebrewLetter(oIdx)}.</span>
+                          <span>${formatCoachChatHtml(opt)}</span>
+                        </button>
+                      `;
+                    }).join('')}
                   </div>
-                  <button type="button" id="btn-unlock-stage2-questions" class="primary-btn study-finish-all-btn">
-                    <span>🔓 כל המושגים ברורים! בוא נעבור לפתרון השאלות מהספר ▶</span>
-                  </button>
-                ` : `
+                  <div id="concept-mfa-step1-feedback" class="study-mfa-feedback ${conceptCheck1Done ? 'success' : ''}" style="display:${conceptCheck1Done ? 'block' : 'none'};">
+                    ${conceptCheck1Done ? `✅ ${formatCoachChatHtml(mcQ.explanation || 'תשובה נכונה! כעת עבור לשאלה הפתוחה הקצרה למטה:')}` : ''}
+                  </div>
+                </div>
+
+                <!-- שאלה 2 בתחתית השקופית: שאלה פתוחה (open_question) -->
+                <div
+                  class="study-mfa-step-box ${conceptMastered ? 'step-passed' : ''}"
+                  id="concept-mfa-step2-box"
+                  style="display:${conceptCheck1Done ? 'block' : 'none'};"
+                >
+                  <div class="study-mfa-step-badge">שאלה 2 מתוך 2 — שאלה פתוחה במילים שלך</div>
+                  <p class="study-mfa-question-text">${formatCoachChatHtml(openQ.question)}</p>
+                  <div style="margin-bottom:0.55rem;">
+                    <button type="button" id="btn-toggle-open-q-hint" class="study-quick-assist-chip" style="font-size:0.85rem;">
+                      <span>💡 הצג רמז מכוון</span>
+                    </button>
+                    <div id="concept-open-q-hint-box" style="display:none; margin-top:0.45rem; padding:0.55rem 0.8rem; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; color:#92400e; font-size:0.92rem;">
+                      💡 <strong>רמז:</strong> ${formatCoachChatHtml(openQ.hint || '')}
+                    </div>
+                  </div>
+                  <div class="study-mfa-own-words-row">
+                    <input
+                      type="text"
+                      id="concept-open-q-input"
+                      class="styled-input study-own-words-input"
+                      placeholder="כתוב כאן משפט קצר במילים שלך..."
+                      value="${escapeHtmlAttr(openQ.userAnswer || '')}"
+                    />
+                    <button type="button" id="btn-submit-open-q" class="primary-btn" style="padding:0.6rem 1.1rem;">
+                      <span>בדוק תשובה ✨</span>
+                    </button>
+                  </div>
+                  <div id="concept-mfa-step2-feedback" class="study-mfa-feedback ${conceptMastered ? 'success' : ''}" style="display:${conceptMastered ? 'block' : 'none'};">
+                    ${conceptMastered ? '🌟 <strong>ברור כשמש בבוקר!</strong> פיצחת את המושג הזה ב-100% במילים שלך.' : ''}
+                  </div>
+                </div>
+              ` : `
+                <!-- תמיכה מלאה ביחידות קיימות (2-Step MFA) -->
+                <div class="study-mfa-step-box ${conceptCheck1Done ? 'step-passed' : ''}" id="concept-mfa-step1-box">
+                  <div class="study-mfa-step-badge">בדיקה 1 מתוך 2 — זיהוי הרעיון המרכזי</div>
+                  <p class="study-mfa-question-text">${formatCoachChatHtml(activeConcept.mfa_step1_question)}</p>
+                  <div class="study-mfa-options-list">
+                    ${(activeConcept.mfa_step1_options || []).map((opt, oIdx) => {
+                      const isCorrectOpt = oIdx === activeConcept.mfa_step1_correct_index;
+                      return `
+                        <button
+                          type="button"
+                          class="study-mfa-option-btn step1-opt-btn ${conceptCheck1Done && isCorrectOpt ? 'correct-selected' : ''}"
+                          data-opt-idx="${oIdx}"
+                        >
+                          <span class="opt-letter">${idxToHebrewLetter(oIdx)}.</span>
+                          <span>${opt}</span>
+                        </button>
+                      `;
+                    }).join('')}
+                  </div>
+
+                  <div class="study-mfa-own-words-row">
+                    <input
+                      type="text"
+                      id="concept-own-words-input"
+                      class="styled-input study-own-words-input"
+                      placeholder="או כתוב כאן במילים שלך איך הבנת את המושג..."
+                    />
+                    <button type="button" id="btn-check-own-words" class="secondary-btn">
+                      <span>בדוק בניסוח שלי ✨</span>
+                    </button>
+                  </div>
+                  <div id="concept-mfa-step1-feedback" class="study-mfa-feedback" style="display:${conceptCheck1Done ? 'block' : 'none'};">
+                    ${conceptCheck1Done ? '✅ מעולה דניאל! עברת את בדיקה 1 בהצלחה. עכשיו בוא נאשר זאת בבדיקה הקצרה השנייה:' : ''}
+                  </div>
+                </div>
+
+                <div
+                  class="study-mfa-step-box ${conceptMastered ? 'step-passed' : ''}"
+                  id="concept-mfa-step2-box"
+                  style="display:${conceptCheck1Done ? 'block' : 'none'};"
+                >
+                  <div class="study-mfa-step-badge">בדיקה 2 מתוך 2 (וידוא הבנה סופי - בלי ניחושים!)</div>
+                  <p class="study-mfa-question-text">${formatCoachChatHtml(activeConcept.mfa_step2_why_question)}</p>
+                  <div class="study-mfa-options-list">
+                    ${(activeConcept.mfa_step2_options || []).map((opt, oIdx) => {
+                      const isCorrectOpt = oIdx === activeConcept.mfa_step2_correct_index;
+                      return `
+                        <button
+                          type="button"
+                          class="study-mfa-option-btn step2-opt-btn ${conceptMastered && isCorrectOpt ? 'correct-selected' : ''}"
+                          data-opt-idx="${oIdx}"
+                        >
+                          <span class="opt-letter">${idxToHebrewLetter(oIdx)}.</span>
+                          <span>${opt}</span>
+                        </button>
+                      `;
+                    }).join('')}
+                  </div>
+                  <div id="concept-mfa-step2-feedback" class="study-mfa-feedback" style="display:${conceptMastered ? 'block' : 'none'};">
+                    ${conceptMastered ? '🌟 <strong>הבנתי את המושג ב-100%!</strong> כל הכבוד דניאל, פיצחת את המושג הזה עד הסוף.' : ''}
+                  </div>
+                </div>
+              `}
+
+              <!-- שקופית מאמן / רשימת תיוג מושגי הפעימה (Tutor Slide Required Terms Checklist) -->
+              ${activeBeatObj && activeBeatObj.tutorSlide && Array.isArray(activeBeatObj.tutorSlide.required_terms_checklist) ? `
+                <div style="margin-top:1rem; padding:0.85rem 1rem; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px;">
+                  <div style="font-weight:800; color:#166534; margin-bottom:0.45rem; font-size:0.95rem;">
+                    ☀️ צ'ק-ליסט מאמן אישי לפעימה ${activeBeatIdx + 1} (חייב להיות ברור כשמש בבוקר לפני הפעימה הבאה):
+                  </div>
+                  <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+                    ${activeBeatObj.tutorSlide.required_terms_checklist.map(chk => `
+                      <span style="display:inline-flex; align-items:center; gap:0.35rem; padding:0.3rem 0.7rem; border-radius:999px; font-size:0.88rem; font-weight:700; background:${chk.verified ? '#dcfce7' : '#ffffff'}; color:${chk.verified ? '#15803d' : '#475569'}; border:1px solid ${chk.verified ? '#86efac' : '#cbd5e1'};">
+                        <span>${chk.verified ? '✅' : '⏳'}</span>
+                        <span>${escapeHtmlAttr(chk.term_name)} (עמ' ${chk.page_number})</span>
+                      </span>
+                    `).join('')}
+                  </div>
+                </div>
+              ` : ''}
+
+              <!-- פעולת המשך למושג הבא / פעימה הבאה / פתיחת שלב 2 -->
+              <div id="concept-mastered-actions-bar" class="study-question-solved-action-box" style="display:${conceptMastered ? 'flex' : 'none'}; margin-top:1rem;">
+                ${allConceptsMastered ? (
+                  questions.length > 0 ? `
+                    <div class="study-solved-celebration-text">
+                      🎉 <strong>אלוף דניאל! פיצחת ב-100% את כל המושגים והדוגמאות של השיעור!</strong>
+                    </div>
+                    <button type="button" id="btn-unlock-stage2-questions" class="primary-btn study-finish-all-btn">
+                      <span>🔓 כל המושגים ברורים! בוא נעבור לפתרון השאלות מהספר ▶</span>
+                    </button>
+                  ` : `
+                    <div class="study-solved-celebration-text">
+                      🎉 <strong>אלוף דניאל! השלמת ב-100% את כל פעימות המושגים בקובץ זה!</strong>
+                    </div>
+                    <button type="button" id="btn-finish-concepts-only-exam" class="primary-btn study-finish-all-btn">
+                      <span>🎉 סיימתי את כל יחידת הלימוד של היום! צור לי מבחן מסכם 🏆</span>
+                    </button>
+                  `
+                ) : `
                   <div class="study-solved-celebration-text">
                     ✅ <strong>הבנתי את המושג ב-100%!</strong> מוכן לעבור למושג הבא בשיעור.
                   </div>
@@ -1434,6 +2655,34 @@ function openStudyHelpUnit(unitId) {
       viewConceptPageBtn.onclick = () => openLessonPageViewerModal(unit, pageNum);
     }
 
+    // Bind Interactive Widget Options
+    if (widgetObj) {
+      const widgetFeedbackEl = blocksWrapper.querySelector('#concept-widget-feedback');
+      blocksWrapper.querySelectorAll('.widget-opt-btn').forEach(wBtn => {
+        wBtn.onclick = () => {
+          const picked = Number(wBtn.getAttribute('data-widget-opt-idx'));
+          if (picked === Number(widgetObj.correct_index || 0)) {
+            widgetObj.completed = true;
+            saveAppState();
+            blocksWrapper.querySelectorAll('.widget-opt-btn').forEach(b => b.classList.remove('correct-selected', 'wrong-selected'));
+            wBtn.classList.add('correct-selected');
+            if (widgetFeedbackEl) {
+              widgetFeedbackEl.style.display = 'block';
+              widgetFeedbackEl.className = 'study-mfa-feedback success';
+              widgetFeedbackEl.innerHTML = `✅ ${formatCoachChatHtml(widgetObj.explanation)}`;
+            }
+          } else {
+            wBtn.classList.add('wrong-selected');
+            if (widgetFeedbackEl) {
+              widgetFeedbackEl.style.display = 'block';
+              widgetFeedbackEl.className = 'study-mfa-feedback warning';
+              widgetFeedbackEl.innerHTML = '💡 נסה שוב — הסתכל על הכיוון בדוגמה מהספר למעלה.';
+            }
+          }
+        };
+      });
+    }
+
     // Bind Concept Nav Pills
     blocksWrapper.querySelectorAll('.concept-nav-pill').forEach(pill => {
       pill.onclick = () => {
@@ -1446,12 +2695,20 @@ function openStudyHelpUnit(unitId) {
       };
     });
 
-    // Bind "🤔 תסביר לי בעוד דרך פשוטה יותר" button
+    // Bind "🤔 תסביר לי בעוד דרך פשוטה יותר" button (and record adaptation signal!)
     const simplerBtn = blocksWrapper.querySelector('#btn-simpler-analogy');
     if (simplerBtn) {
       simplerBtn.onclick = async () => {
         simplerBtn.disabled = true;
         simplerBtn.innerHTML = '<span>⏳ מכין הסבר עוד יותר פשוט...</span>';
+        unit.learnerAdaptationProfile.askedForSimplerAnalogyCount =
+          (Number(unit.learnerAdaptationProfile.askedForSimplerAnalogyCount) || 0) + 1;
+        unit.learnerAdaptationProfile.pace = 'careful_step_by_step';
+        if (!unit.learnerAdaptationProfile.challengingTerms.includes(activeConcept.term_name)) {
+          unit.learnerAdaptationProfile.challengingTerms.push(activeConcept.term_name);
+        }
+        unit.learnerAdaptationProfile.dirtyForNextBeat = true;
+
         try {
           const prompt = `הסבר לדניאל (בן 28) את המושג "${activeConcept.term_name}" (מתוך השיעור "${displayTitle}") בדרך פשוטה עוד יותר, עם דוגמה מוחשית מחיי היומיום (כמו קניות בסופר, ארנק או חשבון בנק אישי) ב-2 משפטים קצרים וברורים.
 הסבר נוכחי: ${activeConcept.simple_explanation}
@@ -1466,22 +2723,26 @@ function openStudyHelpUnit(unitId) {
       };
     }
 
-    // Bind Check 1 Multiple-Choice Options
+    // Bind Question 1 / Check 1 Multiple-Choice Options
     const step1Feedback = blocksWrapper.querySelector('#concept-mfa-step1-feedback');
     const step2Box = blocksWrapper.querySelector('#concept-mfa-step2-box');
+    const expectedMcIdx = hasBeatSlideSchema ? Number(mcQ.correct_index || 0) : Number(activeConcept.mfa_step1_correct_index || 0);
 
     blocksWrapper.querySelectorAll('.step1-opt-btn').forEach(btn => {
       btn.onclick = () => {
         const chosenIdx = Number(btn.getAttribute('data-opt-idx'));
-        if (chosenIdx === activeConcept.mfa_step1_correct_index) {
+        if (chosenIdx === expectedMcIdx) {
           activeConcept.check1Passed = true;
+          if (mcQ) mcQ.answeredCorrectly = true;
           saveAppState();
           blocksWrapper.querySelectorAll('.step1-opt-btn').forEach(b => b.classList.remove('correct-selected', 'wrong-selected'));
           btn.classList.add('correct-selected');
           if (step1Feedback) {
             step1Feedback.style.display = 'block';
             step1Feedback.className = 'study-mfa-feedback success';
-            step1Feedback.innerHTML = '✅ מעולה דניאל! תשובה נכונה. עכשיו בוא נאשר זאת בבדיקה הקצרה השנייה למטה:';
+            step1Feedback.innerHTML = hasBeatSlideSchema && mcQ?.explanation
+              ? `✅ ${formatCoachChatHtml(mcQ.explanation)}`
+              : '✅ מעולה דניאל! תשובה נכונה. עכשיו בוא נאשר זאת בשאלה השנייה למטה:';
           }
           if (step2Box) {
             step2Box.style.display = 'block';
@@ -1491,118 +2752,258 @@ function openStudyHelpUnit(unitId) {
           }
         } else {
           btn.classList.add('wrong-selected');
+          unit.learnerAdaptationProfile.wrongMcAttemptsCount =
+            (Number(unit.learnerAdaptationProfile.wrongMcAttemptsCount) || 0) + 1;
+          if (!unit.learnerAdaptationProfile.challengingTerms.includes(activeConcept.term_name)) {
+            unit.learnerAdaptationProfile.challengingTerms.push(activeConcept.term_name);
+          }
+          if (unit.learnerAdaptationProfile.wrongMcAttemptsCount >= 2) {
+            unit.learnerAdaptationProfile.pace = 'careful_step_by_step';
+            unit.learnerAdaptationProfile.dirtyForNextBeat = true;
+          }
+          saveAppState();
+
           if (step1Feedback) {
             step1Feedback.style.display = 'block';
             step1Feedback.className = 'study-mfa-feedback warning';
-            step1Feedback.innerHTML = '💡 כמעט! קרא שוב את ההסבר הפשוט למעלה ("מה זה אומר במילים הכי פשוטות?") ונסה לבחור את המשפט שמתאר אותו.';
+            step1Feedback.innerHTML = '💡 כמעט! קרא שוב את ההסבר והדוגמה מהספר למעלה ונסה לבחור את המשפט המדויק.';
           }
         }
       };
     });
 
-    // Bind Check 1 Own-Words Input
-    const ownWordsInput = blocksWrapper.querySelector('#concept-own-words-input');
-    const checkOwnWordsBtn = blocksWrapper.querySelector('#btn-check-own-words');
-    if (checkOwnWordsBtn && ownWordsInput) {
-      checkOwnWordsBtn.onclick = async () => {
-        const userWords = ownWordsInput.value.trim();
-        if (userWords.length < 3) {
-          if (typeof showToast === 'function') {
-            showToast('כתוב משפט קצר במילים שלך ונבדוק יחד 💡', 'warning');
-          }
-          return;
-        }
-        checkOwnWordsBtn.disabled = true;
-        checkOwnWordsBtn.innerHTML = '<span>בודק...</span>';
-        let passed = true;
-        let feedbackMsg = '✅ ניסוח נהדר דניאל! הבנת את הכיוון. עכשיו השלם את בדיקה 2 למטה:';
-        try {
-          const evalPrompt = `דניאל לומד את המושג "${activeConcept.term_name}" (${activeConcept.simple_explanation}).
-הוא הסביר אותו במילים שלו כך: "${userWords}".
-החזר JSON בלבד: { "passed": true/false, "feedback": "משוב קצר וחם בעברית" }`;
-          const raw = await callMultiTierAI(evalPrompt, { jsonMode: true, maxTokens: 512 });
-          const parsed = typeof AIService !== 'undefined' && AIService.cleanAndParseJSON ? AIService.cleanAndParseJSON(raw) : JSON.parse(raw);
-          if (parsed && typeof parsed.passed === 'boolean') {
-            passed = parsed.passed;
-            feedbackMsg = parsed.feedback || feedbackMsg;
-          }
-        } catch (err) {
-          passed = true;
-        }
-        checkOwnWordsBtn.disabled = false;
-        checkOwnWordsBtn.innerHTML = '<span>בדוק בניסוח שלי ✨</span>';
+    if (hasBeatSlideSchema) {
+      // Bind Open Question Hint & Submission for Beat Slides
+      const toggleHintBtn = blocksWrapper.querySelector('#btn-toggle-open-q-hint');
+      const hintBox = blocksWrapper.querySelector('#concept-open-q-hint-box');
+      if (toggleHintBtn && hintBox) {
+        toggleHintBtn.onclick = () => {
+          hintBox.style.display = hintBox.style.display === 'none' ? 'block' : 'none';
+        };
+      }
 
-        if (passed) {
-          activeConcept.check1Passed = true;
-          saveAppState();
-          if (step1Feedback) {
-            step1Feedback.style.display = 'block';
-            step1Feedback.className = 'study-mfa-feedback success';
-            step1Feedback.innerHTML = `✅ ${formatCoachChatHtml(feedbackMsg)}`;
-          }
-          if (step2Box) {
-            step2Box.style.display = 'block';
-          }
-        } else if (step1Feedback) {
-          step1Feedback.style.display = 'block';
-          step1Feedback.className = 'study-mfa-feedback warning';
-          step1Feedback.innerHTML = `💡 ${formatCoachChatHtml(feedbackMsg)}`;
-        }
-      };
-    }
+      const openQInput = blocksWrapper.querySelector('#concept-open-q-input');
+      const submitOpenQBtn = blocksWrapper.querySelector('#btn-submit-open-q');
+      const openQFeedback = blocksWrapper.querySelector('#concept-mfa-step2-feedback');
 
-    // Bind Check 2 (Gentle MFA Confirmation)
-    const step2Feedback = blocksWrapper.querySelector('#concept-mfa-step2-feedback');
-    blocksWrapper.querySelectorAll('.step2-opt-btn').forEach(btn => {
-      btn.onclick = () => {
-        const chosenIdx = Number(btn.getAttribute('data-opt-idx'));
-        if (chosenIdx === activeConcept.mfa_step2_correct_index) {
-          activeConcept.check1Passed = true;
-          activeConcept.mastered = true;
-          if (!activeConcept.starAwarded) {
-            activeConcept.starAwarded = true;
-            awardStudyHelpStars(1, `פיצוח מושג: ${activeConcept.term_name}`);
+      if (submitOpenQBtn && openQInput) {
+        submitOpenQBtn.onclick = async () => {
+          const userWords = openQInput.value.trim();
+          if (userWords.length < 3) {
+            if (typeof showToast === 'function') {
+              showToast('כתוב משפט קצר במילים שלך ונבדוק יחד 💡', 'warning');
+            }
+            openQInput.focus();
+            return;
+          }
+
+          submitOpenQBtn.disabled = true;
+          submitOpenQBtn.innerHTML = '<span>בודק...</span>';
+          let passed = true;
+          let feedbackMsg = 'ניסוח מצוין דניאל! המושג ברור ב-100%.';
+
+          try {
+            const evalPrompt = `דניאל לומד את המושג "${activeConcept.term_name}" (עמוד ${pageNum}).
+השאלה הפתוחה: "${openQ.question}"
+הרעיון המרכזי המצופה: "${openQ.expected_core_idea}"
+תשובתו של דניאל: "${userWords}"
+בדוק בעדינות ובהעצמה האם דניאל הבין את הכיוון המרכזי. החזר JSON תקני בלבד:
+{ "passed": true או false, "feedback": "משוב חם וקצר בעברית (1-2 משפטים)" }`;
+            const raw = await callMultiTierAI(evalPrompt, { jsonMode: true, maxTokens: 512 });
+            const parsed = parseJsonFromAIResponse(raw);
+            if (parsed && typeof parsed.passed === 'boolean') {
+              passed = parsed.passed;
+              feedbackMsg = parsed.feedback || feedbackMsg;
+            }
+          } catch (err) {
+            passed = userWords.length >= 4;
+          }
+
+          submitOpenQBtn.disabled = false;
+          submitOpenQBtn.innerHTML = '<span>בדוק תשובה ✨</span>';
+          openQ.userAnswer = userWords;
+
+          if (passed) {
+            openQ.verified = true;
+            activeConcept.check1Passed = true;
+            activeConcept.mastered = true;
+            if (!unit.learnerAdaptationProfile.masteredTerms.includes(activeConcept.term_name)) {
+              unit.learnerAdaptationProfile.masteredTerms.push(activeConcept.term_name);
+            }
+            unit.learnerAdaptationProfile.recentLearnerNotes.push(userWords);
+            if (unit.learnerAdaptationProfile.recentLearnerNotes.length > 5) {
+              unit.learnerAdaptationProfile.recentLearnerNotes.shift();
+            }
+
+            if (!activeConcept.starAwarded) {
+              activeConcept.starAwarded = true;
+              awardStudyHelpStars(1, `פיצוח מושג: ${activeConcept.term_name}`);
+            } else {
+              saveAppState();
+            }
+            if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
+              SoundService.playSuccessSound();
+            }
+            openStudyHelpUnit(unit.id);
           } else {
             saveAppState();
+            if (openQFeedback) {
+              openQFeedback.style.display = 'block';
+              openQFeedback.className = 'study-mfa-feedback warning';
+              openQFeedback.innerHTML = `💡 ${formatCoachChatHtml(feedbackMsg)}`;
+            }
           }
-          if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
-            SoundService.playSuccessSound();
-          }
-          openStudyHelpUnit(unit.id);
-        } else {
-          btn.classList.add('wrong-selected');
-          if (step2Feedback) {
-            step2Feedback.style.display = 'block';
-            step2Feedback.className = 'study-mfa-feedback warning';
-            step2Feedback.innerHTML = '💡 שים לב לדוגמה מהספר למעלה ובחר את הנימוק שמסביר למה זה נכון.';
-          }
-        }
-      };
-    });
+        };
 
-    // Bind Next Concept / Unlock Stage 2 Buttons
+        openQInput.onkeydown = (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            submitOpenQBtn.click();
+          }
+        };
+      }
+    } else {
+      // Legacy Check 1 Own-Words Input + Check 2 Options
+      const ownWordsInput = blocksWrapper.querySelector('#concept-own-words-input');
+      const checkOwnWordsBtn = blocksWrapper.querySelector('#btn-check-own-words');
+      if (checkOwnWordsBtn && ownWordsInput) {
+        checkOwnWordsBtn.onclick = async () => {
+          const userWords = ownWordsInput.value.trim();
+          if (userWords.length < 3) {
+            if (typeof showToast === 'function') {
+              showToast('כתוב משפט קצר במילים שלך ונבדוק יחד 💡', 'warning');
+            }
+            return;
+          }
+          checkOwnWordsBtn.disabled = true;
+          checkOwnWordsBtn.innerHTML = '<span>בודק...</span>';
+          let passed = true;
+          let feedbackMsg = '✅ ניסוח נהדר דניאל! הבנת את הכיוון. עכשיו השלם את בדיקה 2 למטה:';
+          try {
+            const evalPrompt = `דניאל לומד את המושג "${activeConcept.term_name}" (${activeConcept.simple_explanation}).
+הוא הסביר אותו במילים שלו כך: "${userWords}".
+החזר JSON בלבד: { "passed": true/false, "feedback": "משוב קצר וחם בעברית" }`;
+            const raw = await callMultiTierAI(evalPrompt, { jsonMode: true, maxTokens: 512 });
+            const parsed = parseJsonFromAIResponse(raw);
+            if (parsed && typeof parsed.passed === 'boolean') {
+              passed = parsed.passed;
+              feedbackMsg = parsed.feedback || feedbackMsg;
+            }
+          } catch (err) {
+            passed = true;
+          }
+          checkOwnWordsBtn.disabled = false;
+          checkOwnWordsBtn.innerHTML = '<span>בדוק בניסוח שלי ✨</span>';
+
+          if (passed) {
+            activeConcept.check1Passed = true;
+            saveAppState();
+            if (step1Feedback) {
+              step1Feedback.style.display = 'block';
+              step1Feedback.className = 'study-mfa-feedback success';
+              step1Feedback.innerHTML = `✅ ${formatCoachChatHtml(feedbackMsg)}`;
+            }
+            if (step2Box) {
+              step2Box.style.display = 'block';
+            }
+          } else if (step1Feedback) {
+            step1Feedback.style.display = 'block';
+            step1Feedback.className = 'study-mfa-feedback warning';
+            step1Feedback.innerHTML = `💡 ${formatCoachChatHtml(feedbackMsg)}`;
+          }
+        };
+      }
+
+      const step2Feedback = blocksWrapper.querySelector('#concept-mfa-step2-feedback');
+      blocksWrapper.querySelectorAll('.step2-opt-btn').forEach(btn => {
+        btn.onclick = () => {
+          const chosenIdx = Number(btn.getAttribute('data-opt-idx'));
+          if (chosenIdx === activeConcept.mfa_step2_correct_index) {
+            activeConcept.check1Passed = true;
+            activeConcept.mastered = true;
+            if (!activeConcept.starAwarded) {
+              activeConcept.starAwarded = true;
+              awardStudyHelpStars(1, `פיצוח מושג: ${activeConcept.term_name}`);
+            } else {
+              saveAppState();
+            }
+            if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
+              SoundService.playSuccessSound();
+            }
+            openStudyHelpUnit(unit.id);
+          } else {
+            btn.classList.add('wrong-selected');
+            if (step2Feedback) {
+              step2Feedback.style.display = 'block';
+              step2Feedback.className = 'study-mfa-feedback warning';
+              step2Feedback.innerHTML = '💡 שים לב לדוגמה מהספר למעלה ובחר את הנימוק שמסביר למה זה נכון.';
+            }
+          }
+        };
+      });
+    }
+
+    // Bind Next Concept / Beat Transition (with Dynamic Adaptation when crossing Beat boundaries!)
     const nextConceptBtn = blocksWrapper.querySelector('#btn-next-concept-step');
     if (nextConceptBtn) {
-      nextConceptBtn.onclick = () => {
+      nextConceptBtn.onclick = async () => {
         const nextUnmastered = concepts.findIndex((c, i) => i > cIdx && !c.mastered);
         const anyUnmastered = concepts.findIndex(c => !c.mastered);
-        unit.currentConceptIdx = nextUnmastered >= 0
+        const nextIdx = nextUnmastered >= 0
           ? nextUnmastered
           : (anyUnmastered >= 0 ? anyUnmastered : Math.min(cIdx + 1, concepts.length - 1));
+
+        const nextConceptObj = concepts[nextIdx];
+        const nextBeatIdx = typeof nextConceptObj?.beatIndex === 'number' ? nextConceptObj.beatIndex : -1;
+
+        unit.currentConceptIdx = nextIdx;
         saveAppState();
+
+        // If moving into a new Beat that either isn't ready yet OR needs adaptation based on Daniel's answers in current beat:
+        if (
+          hasBeatsPipeline &&
+          nextBeatIdx >= 0 &&
+          nextBeatIdx !== activeBeatIdx &&
+          unit.conceptBeats[nextBeatIdx]
+        ) {
+          const targetBeat = unit.conceptBeats[nextBeatIdx];
+          const targetUntouched = (targetBeat.conceptIndices || []).every(idx => !concepts[idx]?.mastered && !concepts[idx]?.check1Passed);
+          const shouldReAdapt = Boolean(unit.learnerAdaptationProfile?.dirtyForNextBeat && targetUntouched);
+
+          if (targetBeat.status !== 'ready' || shouldReAdapt) {
+            await ensureBeatReadyForLearner(unit, 'concept', nextBeatIdx, shouldReAdapt);
+          }
+        }
+
         openStudyHelpUnit(unit.id);
       };
     }
 
     const unlockStage2Btn = blocksWrapper.querySelector('#btn-unlock-stage2-questions');
     if (unlockStage2Btn) {
-      unlockStage2Btn.onclick = () => {
+      unlockStage2Btn.onclick = async () => {
         unit.activeStage = 'stage2';
         saveAppState();
+        const firstHwBeatIdx = typeof questions[0]?.beatIndex === 'number' ? questions[0].beatIndex : -1;
+        if (
+          firstHwBeatIdx >= 0 &&
+          Array.isArray(unit.homeworkBeats) &&
+          unit.homeworkBeats[firstHwBeatIdx] &&
+          unit.homeworkBeats[firstHwBeatIdx].status !== 'ready'
+        ) {
+          await ensureBeatReadyForLearner(unit, 'homework', firstHwBeatIdx, false);
+        }
         if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
           SoundService.playSuccessSound();
         }
         openStudyHelpUnit(unit.id);
+      };
+    }
+
+    const finishConceptsOnlyBtn = blocksWrapper.querySelector('#btn-finish-concepts-only-exam');
+    if (finishConceptsOnlyBtn) {
+      finishConceptsOnlyBtn.onclick = async () => {
+        await completeStudyHelpUnitAndGenerateExam(unit);
       };
     }
 
@@ -3515,7 +4916,23 @@ ${practicedQuestionsSummary}
   return examUnit;
 }
 
+const BeatGenerator = {
+  extractLessonBeatBlueprint,
+  generateConceptBeatContent,
+  generateHomeworkBeatContent,
+  runAsyncBeatsWorker,
+  ensureBeatReadyForLearner,
+  groupConceptOutlinesIntoBeats,
+  groupQuestionOutlinesIntoBeats
+};
+
 if (typeof window !== 'undefined') {
+  window.BeatGenerator = BeatGenerator;
+  window.extractLessonBeatBlueprint = extractLessonBeatBlueprint;
+  window.generateConceptBeatContent = generateConceptBeatContent;
+  window.generateHomeworkBeatContent = generateHomeworkBeatContent;
+  window.runAsyncBeatsWorker = runAsyncBeatsWorker;
+  window.ensureBeatReadyForLearner = ensureBeatReadyForLearner;
   window.getTodayHebrewDateLabel = getTodayHebrewDateLabel;
   window.showStudyHelpLoadingOverlay = showStudyHelpLoadingOverlay;
   window.hideStudyHelpLoadingOverlay = hideStudyHelpLoadingOverlay;
