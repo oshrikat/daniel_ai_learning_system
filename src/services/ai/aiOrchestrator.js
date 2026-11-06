@@ -7,7 +7,47 @@ function createOrchestratorAbortError(message = 'הבקשה ל-AI בוטלה ע�
   return abortErr;
 }
 
-// Ensure callOpenRouterAPI enforces a 25-second AbortController timeout + options.abortSignal linking
+/**
+ * Sanitizes AI pedagogical output to guarantee clean Israeli Hebrew & valid JSON/text:
+ * - Strips `<think>...</think>` reasoning blocks (including unclosed trailing `<think>`)
+ * - Removes stray CJK, Hiragana/Katakana, Hangul, Arabic, Cyrillic, Devanagari, or Thai characters
+ * - Collapses repeated punctuation (`.....` -> `...`, `!!!!` -> `!`, `????` -> `?`)
+ * - Removes echoed meta-instructions (`ROLE:...`, `ACCOUNTING GROUND-TRUTH ANCHOR:...`, `HEBREW QUALITY RULE:...`)
+ * @param {string} text
+ * @returns {string}
+ */
+function sanitizeHebrewPedagogicalOutput(text) {
+  if (!text || typeof text !== 'string') return '';
+  let cleaned = typeof stripThinkTags === 'function'
+    ? stripThinkTags(text)
+    : text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+
+  cleaned = cleaned.replace(/<think>[\s\S]*$/gi, '');
+
+  // Strip stray CJK, Kana, Hangul, Arabic, Cyrillic, Devanagari, and Thai characters
+  cleaned = cleaned.replace(
+    /[\u0400-\u04FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\u0900-\u097F\u0E00-\u0E7F\u2E80-\u2FFF\u3000-\u303F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFB50-\uFDFF\uFE70-\uFEFF]+/g,
+    ''
+  );
+
+  // Strip echoed meta-instruction lines if leaked outside JSON
+  cleaned = cleaned
+    .replace(/^\s*(?:ROLE|ACCOUNTING GROUND-TRUTH ANCHOR|HEBREW QUALITY RULE|SYSTEM INSTRUCTION|JSON CONTRACT)\s*:.*$/gim, '')
+    .replace(/^\s*(?:הוראת מערכת|הנחיית מערכת)\s*:.*$/gim, '');
+
+  // Collapse repeated punctuation and double horizontal spaces left by stripped foreign tokens
+  cleaned = cleaned
+    .replace(/\.{4,}/g, '...')
+    .replace(/!{3,}/g, '!')
+    .replace(/\?{3,}/g, '?')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return cleaned;
+}
+
+// Ensure callOpenRouterAPI enforces a 25-second AbortController timeout + options.abortSignal linking + systemInstruction/temperature
 callOpenRouterAPI = async function (apiKey, prompt, explicitModel = '', options = {}) {
   if (options.abortSignal && options.abortSignal.aborted) {
     throw createOrchestratorAbortError();
@@ -36,12 +76,26 @@ callOpenRouterAPI = async function (apiKey, prompt, explicitModel = '', options 
       }, timeoutMs)
     : null;
 
+  const messages = [];
+  if (options.systemInstruction && typeof options.systemInstruction === 'string' && options.systemInstruction.trim()) {
+    messages.push({ role: 'system', content: options.systemInstruction.trim() });
+  }
+  messages.push({ role: 'user', content: prompt });
+
+  const requestBody = {
+    model,
+    messages,
+    temperature: typeof options.temperature === 'number' ? options.temperature : 0.2,
+    max_tokens: options.maxTokens || 2048,
+    ...(options.jsonMode ? { response_format: { type: 'json_object' } } : {})
+  };
+
   let res;
   try {
     res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify(requestBody),
       ...(controller ? { signal: controller.signal } : {})
     });
   } catch (err) {
@@ -63,7 +117,7 @@ callOpenRouterAPI = async function (apiKey, prompt, explicitModel = '', options 
   if (!res.ok) throw new Error(`OpenRouter (${model}) HTTP ${res.status}`);
   const data = await res.json();
   const choice = data?.choices?.[0]?.message;
-  const text = stripThinkTags(choice?.content || choice?.reasoning_content || choice?.reasoning || '');
+  const text = sanitizeHebrewPedagogicalOutput(choice?.content || choice?.reasoning_content || choice?.reasoning || '');
   if (!text) throw new Error(`OpenRouter (${model}) returned empty content`);
   return text;
 };
@@ -168,9 +222,10 @@ async function callMultiTierAI(prompt, options = {}) {
       ].filter(Boolean);
     } else if (isGroq) {
       groqModelsToTry = [...new Set([
-        cfg.verifiedGroqModel,
-        'qwen/qwen3.8-27b',
         'llama-3.3-70b-versatile',
+        'openai/gpt-oss-120b',
+        'qwen/qwen3-32b',
+        cfg.verifiedGroqModel,
         'llama-3.1-8b-instant'
       ].filter(Boolean))];
     } else {
@@ -242,9 +297,11 @@ async function callMultiTierAI(prompt, options = {}) {
 }
 
 /**
- * Dedicated fast conversational AI helper for WhatsApp-style Private Tutor & Global AI Bubble turns.
- * Tries Groq first (`qwen/qwen3.8-27b` -> `llama-3.3-70b-versatile`) to keep chat instant and save Gemini quota,
- * and falls back seamlessly to `callMultiTierAI(prompt, options)` if Groq is unavailable.
+ * Dedicated high-precision conversational AI helper for Private Tutor, Open Question Checks, & Global AI Assistant.
+ * Cascade (with `temperature: 0.2` and `sanitizeHebrewPedagogicalOutput`):
+ *   1. Groq verified text cascade: `llama-3.3-70b-versatile` -> `openai/gpt-oss-120b` -> `qwen/qwen3-32b`
+ *   2. OpenRouter fallback: `openai/gpt-4o-mini`
+ *   3. Gemini fallback: `gemini-2.5-flash-lite` -> `gemini-2.5-flash`
  * @param {string} prompt
  * @param {object} options
  * @returns {Promise<string>}
@@ -267,23 +324,35 @@ async function callGroqPreferredAI(prompt, options = {}) {
     cfg.xaiKey ||
     ''
   );
+  const orKey = cleanApiKey(
+    localStorage.getItem('openrouter_api_key') ||
+    cfg.openrouterKey ||
+    ''
+  );
+  const geminiKey = cleanApiKey(
+    localStorage.getItem('gemini_api_key') ||
+    cfg.geminiKey ||
+    ''
+  );
 
   const normalizedImages = Array.isArray(options.inlineImages) && options.inlineImages.length > 0
     ? options.inlineImages
     : (Array.isArray(options.images) ? options.images : []);
   const hasImages = normalizedImages.length > 0 || Boolean(options.rawPdfPart && options.rawPdfPart.data);
 
+  const fastOptions = {
+    ...options,
+    temperature: typeof options.temperature === 'number' ? options.temperature : 0.2,
+    maxTokens: options.maxTokens || 1500,
+    timeoutMs: options.timeoutMs || 25000
+  };
+
+  // Tier 1: Verified Groq text model cascade (`llama-3.3-70b-versatile`, `openai/gpt-oss-120b`, `qwen/qwen3-32b`)
   if (grokKey && !hasImages) {
     const isGroq = grokKey.startsWith('gsk_');
     const groqModelsToTry = isGroq
-      ? [...new Set(['qwen/qwen3.8-27b', 'llama-3.3-70b-versatile', cfg.verifiedGroqModel].filter(Boolean))]
+      ? ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'qwen/qwen3-32b']
       : ['grok-2-latest'];
-
-    const fastOptions = {
-      ...options,
-      maxTokens: options.maxTokens || 1500,
-      timeoutMs: options.timeoutMs || 25000
-    };
 
     for (const model of groqModelsToTry) {
       if (options.abortSignal?.aborted) {
@@ -297,7 +366,7 @@ async function callGroqPreferredAI(prompt, options = {}) {
         if (isGroq && appState?.apiConfig) {
           appState.apiConfig.verifiedGroqModel = model;
         }
-        return reply;
+        return sanitizeHebrewPedagogicalOutput(reply);
       } catch (err) {
         if (options.abortSignal?.aborted || (err && err.name === 'AbortError')) {
           throw (err && err.name === 'AbortError') ? err : createOrchestratorAbortError();
@@ -307,11 +376,79 @@ async function callGroqPreferredAI(prompt, options = {}) {
     }
   }
 
-  return callMultiTierAI(prompt, options);
+  // Tier 2: OpenRouter (`openai/gpt-4o-mini`)
+  if (orKey && !hasImages) {
+    const orModelsToTry = [...new Set([
+      'openai/gpt-4o-mini',
+      cfg.verifiedOpenRouterModel
+    ].filter(Boolean))];
+
+    for (const model of orModelsToTry) {
+      if (options.abortSignal?.aborted) {
+        throw createOrchestratorAbortError();
+      }
+      try {
+        const reply = await callOpenRouterAPI(orKey, prompt, model, fastOptions);
+        if (options.abortSignal?.aborted) {
+          throw createOrchestratorAbortError();
+        }
+        if (appState?.apiConfig) {
+          appState.apiConfig.verifiedOpenRouterModel = model;
+        }
+        return sanitizeHebrewPedagogicalOutput(reply);
+      } catch (err) {
+        if (options.abortSignal?.aborted || (err && err.name === 'AbortError')) {
+          throw (err && err.name === 'AbortError') ? err : createOrchestratorAbortError();
+        }
+        console.warn(`[callGroqPreferredAI] OpenRouter (${model}) failed, trying next…`, err);
+      }
+    }
+  }
+
+  // Tier 3: Gemini (`gemini-2.5-flash-lite` -> `gemini-2.5-flash`)
+  if (geminiKey) {
+    const geminiModelsToTry = [...new Set([
+      'gemini-2.5-flash-lite',
+      'gemini-2.5-flash',
+      localStorage.getItem('verified_gemini_model'),
+      cfg.verifiedGeminiModel
+    ].filter(Boolean))];
+
+    const geminiOptions = {
+      ...fastOptions,
+      ...(hasImages ? { inlineImages: normalizedImages, images: normalizedImages } : {})
+    };
+
+    for (const model of geminiModelsToTry) {
+      if (options.abortSignal?.aborted) {
+        throw createOrchestratorAbortError();
+      }
+      try {
+        const reply = await callGeminiAPI(model, geminiKey, prompt, geminiOptions);
+        if (options.abortSignal?.aborted) {
+          throw createOrchestratorAbortError();
+        }
+        if (appState?.apiConfig) {
+          appState.apiConfig.verifiedGeminiModel = model;
+        }
+        localStorage.setItem('verified_gemini_model', model);
+        return sanitizeHebrewPedagogicalOutput(reply);
+      } catch (err) {
+        if (options.abortSignal?.aborted || (err && err.name === 'AbortError')) {
+          throw (err && err.name === 'AbortError') ? err : createOrchestratorAbortError();
+        }
+        console.warn(`[callGroqPreferredAI] Gemini (${model}) failed, trying next…`, err);
+      }
+    }
+  }
+
+  const fallbackReply = await callMultiTierAI(prompt, fastOptions);
+  return sanitizeHebrewPedagogicalOutput(fallbackReply);
 }
 
 if (typeof window !== 'undefined') {
   window.callGroqPreferredAI = callGroqPreferredAI;
+  window.sanitizeHebrewPedagogicalOutput = sanitizeHebrewPedagogicalOutput;
 }
 
 
@@ -323,6 +460,8 @@ if (typeof window !== 'undefined') {
 
 const AIService = {
   geminiModels: [
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-flash',
     'gemini-3.6-flash',
     'gemini-3.5-flash',
     'gemini-flash-latest',
@@ -333,10 +472,10 @@ const AIService = {
   ],
 
   groqModels: [
-    'qwen/qwen3.8-27b',
     'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant',
-    'allam-2-7b'
+    'openai/gpt-oss-120b',
+    'qwen/qwen3-32b',
+    'llama-3.1-8b-instant'
   ],
 
   openrouterModels: [

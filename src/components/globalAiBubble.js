@@ -482,6 +482,7 @@ const GlobalAiAssistant = {
               const openPrompt = c.bottom_questions?.open_question?.question || c.bottom_questions?.open_q?.prompt || '';
               activeContentText = [
                 `מושג נלמד (עמוד ${c.page_number || 1}): ${c.term_name || ''}`,
+                c.raw_book_excerpt ? `raw_book_excerpt: """${c.raw_book_excerpt}"""` : '',
                 paragraphs ? `הסבר המושג: ${paragraphs}` : '',
                 bookExText ? `דוגמה מהספר: ${bookExText}` : '',
                 mcqPrompt ? `שאלה אמריקאית בשקופית: ${mcqPrompt}` : '',
@@ -639,32 +640,30 @@ const GlobalAiAssistant = {
 
     const ctx = this.activeContext || this.collectActiveScreenContext();
     const systemInstruction = [
-      'אתה עוזר ה-AI האישי, החם והנגיש של דניאל במערכת הלמידה שלו.',
-      'כללי שיחה מחייבים:',
-      '1. ענה תמיד בעברית תקנית, חמה, מעודדת ובגובה העיניים.',
-      '2. כתוב בסגנון וואטסאפ קצר, נקי ונעים לקריאה (2 עד 4 פסקאות קצרצרות או נקודות ברורות, בלי הצפת טקסט).',
-      '3. התבסס על ההקשר המדויק של המסך והשקופית שדניאל צופה בהם כרגע.',
-      '4. שמירה מוחלטת על למידה אמיתית וטוהר בחינות: לעולם אל תגלה תשובה סופית מוכנה במבחן או בשאלת תרגול! במקום לגלות את התשובה הסופית, הסבר את המושג במילים פשוטות, פרק את הדרך לצעדים קטנים, או תן דוגמה דומה עם מספרים אחרים כדי שדניאל יגיע לתשובה בעצמו בגאווה.'
+      'ROLE: You are a warm, patient, crystal-clear personal accounting tutor for a learner with special educational needs who benefits from short, concrete, step-by-step explanations.',
+      'ACCOUNTING GROUND-TRUTH ANCHOR: Base every explanation strictly on the provided textbook excerpt ("raw_book_excerpt"). In double-entry bookkeeping (הנהלת חשבונות כפולה): every transaction has BOTH a Debit (חובה) side and a Credit (זכות) side. When a business receives payment (cash/check/transfer) from a customer (לקוח), the Cash/Bank account receiving the money is DEBITED (בחובה), and the Customer account giving the value is CREDITED (בזכות). Never say "if a customer paid us, we record it in Credit" without explicitly stating WHICH account is Debited (קופה/בנק) and WHICH account is Credited (לקוח).',
+      'HEBREW QUALITY RULE: Write all learner-facing replies in 100% natural, grammatically correct, everyday Israeli Hebrew (1 to 3 short sentences per message). Never translate English idioms literally, never use bizarre words (like "חייך תאריך" or "ישירי"), and never address the learner by a hardcoded personal name.',
+      'SOCRATIC & EXAM INTEGRITY RULE: Never reveal final ready-to-copy answers to active exam or practice questions. Explain the underlying concept clearly, break the task into tiny concrete steps, or give an analogous example with different numbers so the learner solves it independently.'
     ].join('\n');
 
     const recentTurns = this.chatHistory
       .slice(-7, -1)
-      .map(m => `${m.role === 'user' ? 'דניאל' : 'עוזר ה-AI'}: ${m.text}`)
+      .map(m => `${m.role === 'user' ? 'Learner' : 'Tutor'}: ${m.text}`)
       .join('\n');
 
     const fullPrompt = [
-      `=== הקשר המסך הנוכחי של דניאל ===`,
-      `- מסלול פעיל: ${ctx.activeTrackLabel} (${ctx.activeTrack})`,
-      `- מסך / יחידה: ${ctx.unitTitle || 'כללי'}`,
-      `- שקופית / שלב נוכחי: ${ctx.slideLabel || 'כללי'}`,
+      `=== Active Screen Context ===`,
+      `- Active Track: ${ctx.activeTrackLabel} (${ctx.activeTrack})`,
+      `- Active Unit / View: ${ctx.unitTitle || 'General'}`,
+      `- Active Slide / Step: ${ctx.slideLabel || 'General'}`,
       ctx.isExamOrCheckpoint
-        ? `- ⚠️ מצב מבחן פעיל: דניאל נמצא כרגע במבחן! אסור בשום אופן לגלות את התשובה הנכונה לשאלה שעל המסך — הסבר רק את המושג או רמז חשיבתי עדין.`
-        : `- מצב למידה/תרגול: הסבר בפשטות ועזור לדניאל להבין בעצמו בלי לתת פתרון סופי להעתקה עיוורת.`,
-      ctx.activeContentText ? `- תוכן המסך והשקופית כרגע:\n${ctx.activeContentText}` : '',
-      ctx.recentInteractionLog ? `- יומן אינטראקציות אחרונות של דניאל:\n${ctx.recentInteractionLog}` : '',
-      recentTurns ? `\n=== היסטוריית שיחה אחרונה בחלונית העוזר ===\n${recentTurns}` : '',
-      `\n=== השאלה החדשה של דניאל ===\n"${userText}"`,
-      `\nענה כעת לדניאל בעברית חמה, קצרה וברורה (בסגנון הודעת וואטסאפ ידידותית):`
+        ? `- EXAM MODE ACTIVE: The learner is currently taking an exam! Strictly DO NOT reveal the correct answer to the on-screen question — explain only the concept or provide a gentle thinking hint.`
+        : `- PRACTICE / STUDY MODE: Guide the learner calmly step-by-step without giving away a final answer for blind copying.`,
+      ctx.activeContentText ? `- On-Screen Content & raw_book_excerpt:\n${ctx.activeContentText}` : '',
+      ctx.recentInteractionLog ? `- Recent Learner Interactions:\n${ctx.recentInteractionLog}` : '',
+      recentTurns ? `\n=== Recent Chat Turns ===\n${recentTurns}` : '',
+      `\n=== New Learner Message ===\n"${userText}"`,
+      `\nReply now in 100% natural, grammatically correct Israeli Hebrew (1 to 3 short sentences, grounded strictly in the textbook rules and double-entry Debit/Credit account accuracy, without any hardcoded personal name):`
     ]
       .filter(Boolean)
       .join('\n');
@@ -674,17 +673,23 @@ const GlobalAiAssistant = {
       if (typeof callGroqPreferredAI === 'function') {
         assistantReply = await callGroqPreferredAI(fullPrompt, {
           systemInstruction,
+          temperature: 0.2,
           maxTokens: 900,
           timeoutMs: 25000
         });
       } else if (typeof callMultiTierAI === 'function') {
         assistantReply = await callMultiTierAI(fullPrompt, {
           systemInstruction,
+          temperature: 0.2,
           maxTokens: 900
         });
       }
     } catch (err) {
       console.warn('[GlobalAiAssistant] AI call warning, falling back to contextual offline helper:', err);
+    }
+
+    if (typeof sanitizeHebrewPedagogicalOutput === 'function' && assistantReply) {
+      assistantReply = sanitizeHebrewPedagogicalOutput(assistantReply);
     }
 
     if (!assistantReply || !String(assistantReply).trim()) {

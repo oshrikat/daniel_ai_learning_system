@@ -3151,10 +3151,30 @@ const UnitBeatCursor = {
   }
 };
 
+const TUTOR_PEDAGOGICAL_SYSTEM_ANCHOR = [
+  'ROLE: You are a warm, patient, crystal-clear personal accounting tutor for a learner with special educational needs who benefits from short, concrete, step-by-step explanations.',
+  'ACCOUNTING GROUND-TRUTH ANCHOR: Base every explanation strictly on the provided textbook excerpt ("raw_book_excerpt"). In double-entry bookkeeping (הנהלת חשבונות כפולה): every transaction has BOTH a Debit (חובה) side and a Credit (זכות) side. When a business receives payment (cash/check/transfer) from a customer (לקוח), the Cash/Bank account receiving the money is DEBITED (בחובה), and the Customer account giving the value is CREDITED (בזכות). Never say "if a customer paid us, we record it in Credit" without explicitly stating WHICH account is Debited (קופה/בנק) and WHICH account is Credited (לקוח).',
+  'HEBREW QUALITY RULE: Write all learner-facing replies in 100% natural, grammatically correct, everyday Israeli Hebrew (1 to 3 short sentences per message). Never translate English idioms literally, never use bizarre words (like "חייך תאריך" or "ישירי"), and never address the learner by a hardcoded personal name.'
+].join('\n');
+
+function cleanTutorHebrewText(rawText) {
+  if (!rawText || typeof rawText !== 'string') return '';
+  if (typeof sanitizeHebrewPedagogicalOutput === 'function') {
+    return sanitizeHebrewPedagogicalOutput(rawText);
+  }
+  if (typeof window !== 'undefined' && typeof window.sanitizeHebrewPedagogicalOutput === 'function') {
+    return window.sanitizeHebrewPedagogicalOutput(rawText);
+  }
+  return rawText
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/\.{4,}/g, '...')
+    .trim();
+}
+
 /**
- * Async Context Handoff (`performAsyncTutorContextHandoff(unit, beatIndex)`):
+ * Async Context Handoff (`performAsyncTutorContextHandoff` / `preparePrivateTutorHandoff(unit, beatIndex)`):
  * Displays `showStudyHelpLoadingOverlay("🔄 מעביר את התשובות והנקודות שלך למורה הפרטי ומכין את השיחה...")`
- * while `callGroqPreferredAI` synthesizes Daniel's answers/mistakes on the 1–3 Concept Slides of `beatIndex`
+ * while `callGroqPreferredAI` synthesizes the learner's answers/mistakes on the 1–3 Concept Slides of `beatIndex`
  * and generates the Private Tutor's personalized WhatsApp opening message!
  * @param {object} unit
  * @param {number} beatIndex
@@ -3172,7 +3192,8 @@ async function performAsyncTutorContextHandoff(unit, beatIndex) {
     const cIndices = Array.isArray(beat.conceptIndices) ? beat.conceptIndices : [];
     const beatConceptsSummary = cIndices.map((gIdx, idx) => {
       const c = unit.concepts[gIdx] || {};
-      return `${idx + 1}. מושג "${c.term_name}" (עמוד ${c.page_number || 1}): ${(c.paragraphs || [c.simple_explanation]).join(' ')}`;
+      const excerpt = c.raw_book_excerpt || (c.paragraphs || [c.simple_explanation]).join(' ');
+      return `${idx + 1}. term_name: "${c.term_name}" (page ${c.page_number || 1})\n   raw_book_excerpt: """${excerpt}"""`;
     }).join('\n');
 
     const beatLogs = (Array.isArray(unit.slideInteractionLog) ? unit.slideInteractionLog : [])
@@ -3182,36 +3203,38 @@ async function performAsyncTutorContextHandoff(unit, beatIndex) {
     const logsSummary = beatLogs.length > 0
       ? beatLogs.map(l => {
           if (l.questionType === 'open_question') {
-            return `- בשאלה הפתוחה על "${l.term_name}" דניאל כתב: "${l.userAnswer}" (${l.passed ? 'עבר בהצלחה' : 'התקשה מעט'})`;
+            return `- Open question on "${l.term_name}": learner wrote "${l.userAnswer}" (${l.passed ? 'passed' : 'needed reinforcement'})`;
           }
           if (l.questionType === 'mc_question') {
-            return `- בשאלה האמריקאית על "${l.term_name}": ${l.passed ? 'ענה נכון' : 'טעה בניסיון ראשון ותיקן'}`;
+            return `- Multiple-choice on "${l.term_name}": ${l.passed ? 'answered correctly' : 'revised after initial mistake'}`;
           }
           if (l.questionType === 'simpler_analogy') {
-            return `- דניאל ביקש הסבר פשוט נוסף על "${l.term_name}"`;
+            return `- Learner requested an extra simple analogy for "${l.term_name}"`;
           }
           return '';
         }).filter(Boolean).join('\n')
-      : '- דניאל השלים את השקופיות בקבוצה זו בהצלחה.';
+      : '- Learner completed all concept slides in this beat.';
 
     const firstUnverifiedTerm = checklist.find(t => !t.verified) || checklist[0] || { term_name: 'המושג הראשון' };
 
-    const systemInstruction = `אתה המורה הפרטי האישי של דניאל (בחור בן 28) בהנהלת חשבונות, המשוחח איתו בצ'אט בסגנון וואטסאפ טבעי, חם, קצר ובגובה העיניים.
-כל הודעה שלך חייבת להיות קצרה וטבעית (1 עד 3 משפטים קצרים בלבד!). החזר אך ורק JSON תקני בעברית.`;
+    const systemInstruction = [
+      TUTOR_PEDAGOGICAL_SYSTEM_ANCHOR,
+      'JSON CONTRACT: Return ONLY a valid JSON object: { "opening_whatsapp_message": "..." }.'
+    ].join('\n');
 
-    const prompt = `דניאל סיים עכשיו את שקופיות קבוצת המושגים ${beatIndex + 1} מתוך ${unit.conceptBeats.length} בשיעור "${unit.lesson_title || unit.title}".
+    const prompt = `The learner just finished Concept Beat ${beatIndex + 1} of ${unit.conceptBeats.length} in lesson "${unit.lesson_title || unit.title}".
 
-המושגים שחייבים להיות ברורים לו כמו שמש בבוקר בקבוצה זו:
+Required Concepts & Textbook Excerpts ("raw_book_excerpt") for this Beat:
 ${beatConceptsSummary}
 
-מה דניאל ענה בשקופיות של קבוצה זו עכשיו:
+Learner's Slide Activity in this Beat:
 ${logsSummary}
 
-כתוב הודעת פתיחה אישית קצרה בוואטסאפ לדניאל (1-3 משפטים קצרים בלבד!):
-1. פרגן לו במשפט קצר על משהו ספציפי שהוא ענה/כתב בשקופיות עכשיו.
-2. בקש ממנו להסביר לך במילים שלו מהראש ובפשטות את המושג הראשון ברשימה: "${firstUnverifiedTerm.term_name}" (למשל מה זה אומר או דוגמה קטנה), כדי שנסמן יחד שהכל ברור ב-100%.
+Write a short, warm WhatsApp opening message in natural Israeli Hebrew (1 to 3 short sentences, NO hardcoded personal name):
+1. Briefly praise something specific the learner answered or accomplished on the slides.
+2. Invite the learner to explain in their own simple words the first unverified concept: "${firstUnverifiedTerm.term_name}" (for example what it means or a tiny example), grounded strictly in "raw_book_excerpt".
 
-החזר JSON תקני בלבד:
+Return ONLY valid JSON:
 {
   "opening_whatsapp_message": "..."
 }`;
@@ -3221,11 +3244,12 @@ ${logsSummary}
       const raw = await invokeGroqPreferred(prompt, {
         systemInstruction,
         jsonMode: true,
+        temperature: 0.2,
         maxTokens: 700
       });
       const parsed = parseJsonFromAIResponse(raw);
       if (parsed && typeof parsed.opening_whatsapp_message === 'string' && parsed.opening_whatsapp_message.trim()) {
-        openingText = parsed.opening_whatsapp_message.trim();
+        openingText = cleanTutorHebrewText(parsed.opening_whatsapp_message);
       }
     } catch (err) {
       console.warn('[PrivateTutor Handoff] Fallback opening message used:', err);
@@ -3234,9 +3258,9 @@ ${logsSummary}
     if (!openingText) {
       const lastOpenEntry = [...beatLogs].reverse().find(l => l.questionType === 'open_question' && l.userAnswer);
       const personalNote = lastOpenEntry
-        ? `אהבתי מאוד את מה שכתבת בשקופית ("${lastOpenEntry.userAnswer}")! 👏 `
+        ? `אהבתי מאוד את התשובה שלך בשקופית ("${lastOpenEntry.userAnswer}")! 👏 `
         : 'כל הכבוד על השלמת השקופיות בקבוצה הזו! 👏 ';
-      openingText = `${personalNote}בוא נוודא שהכל יושב בראש ברור כמו שמש בבוקר ☀️ — איך היית מסביר לי במשפט פשוט מהראש מה זה **${firstUnverifiedTerm.term_name}**?`;
+      openingText = `${personalNote}בוא נוודא שהכל יושב בראש בצורה בהירה ופשוטה ☀️ — איך היית מסביר במילים שלך מה אומר המושג **${firstUnverifiedTerm.term_name}**?`;
     }
 
     beat.tutorSlide.chatHistory = [
@@ -3254,8 +3278,10 @@ ${logsSummary}
   }
 }
 
+const preparePrivateTutorHandoff = performAsyncTutorContextHandoff;
+
 /**
- * Evaluates Daniel's WhatsApp reply inside `PRIVATE_TUTOR_SLIDE` via `callGroqPreferredAI` (`jsonMode: true`),
+ * Evaluates the learner's WhatsApp reply inside `PRIVATE_TUTOR_SLIDE` via `callGroqPreferredAI` (`jsonMode: true`),
  * returning `{ verified_term_ids, all_beat_terms_mastered, tutor_whatsapp_reply }` and updating the Sunlight Checklist!
  * @param {object} unit
  * @param {number} beatIndex
@@ -3270,45 +3296,46 @@ async function evaluatePrivateTutorTurnWithGroq(unit, beatIndex, userMessage) {
   const termsSpecText = checklist.map((item, idx) => {
     const gIdx = cIndices[idx];
     const cObj = typeof gIdx === 'number' ? (unit.concepts?.[gIdx] || {}) : {};
-    const coreRule = Array.isArray(cObj.paragraphs) ? cObj.paragraphs.join(' ') : (cObj.simple_explanation || '');
-    return `- term_id: "${item.term_id}" | term_name: "${item.term_name}" (עמוד ${item.page_number}) | סטטוס נוכחי: ${item.verified ? 'כבר אומת ✅' : 'ממתין לבדיקה ⏳'} | הסבר מהספר: ${coreRule}`;
+    const excerpt = cObj.raw_book_excerpt || (Array.isArray(cObj.paragraphs) ? cObj.paragraphs.join(' ') : (cObj.simple_explanation || ''));
+    return `- term_id: "${item.term_id}" | term_name: "${item.term_name}" (page ${item.page_number}) | status: ${item.verified ? 'ALREADY_VERIFIED' : 'PENDING_VERIFICATION'} | raw_book_excerpt: """${excerpt}"""`;
   }).join('\n');
 
   const recentChatText = (beat?.tutorSlide?.chatHistory || [])
     .slice(-10)
-    .map(m => `${m.role === 'user' ? 'דניאל' : 'המורה הפרטי'}: ${m.text}`)
+    .map(m => `${m.role === 'user' ? 'Learner' : 'Tutor'}: ${m.text}`)
     .join('\n');
 
   const alreadyVerifiedIds = checklist.filter(t => Boolean(t.verified)).map(t => t.term_id);
 
-  const systemInstruction = `אתה המורה הפרטי האישי של דניאל (בן 28) בהנהלת חשבונות בצ'אט וואטסאפ.
-סגנון השיחה שלך: חם, מעודד, ישראלי וטבעי, קצר וממוקד — בין 1 ל-3 משפטים קצרים בלבד בכל הודעה!
-תפקידך לוודא שכל אחד מ-${checklist.length} המושגים ברשימת הקבוצה ברור לדניאל כמו שמש בבוקר במילים הפשוטות שלו (בלי העתק-הדבק ובלי לדרוש ניסוח אקדמי נוקשה — העיקר שהרעיון והכיוון נכונים!).
-חוקים חשובים:
-1. החזר ב-"verified_term_ids" את כל ה-term_id של המושגים שדניאל כבר הוכיח שהוא מבין (כולל אלו שכבר אומתו קודם + כל מושג שהוא הסביר נכון עכשיו).
-2. אם עדיין נשארו מושגים ברשימה שטרם אומתו, פרגן על מה שהסביר נכון ושאל שאלה קצרה ופשוטה על המושג הבא ברשימה שטרם אומת ("all_beat_terms_mastered": false).
-3. אם דניאל התבלבל או ביקש עזרה, תן לו דוגמה יומיומית קטנטנה ב-1-2 משפטים ובקש ממנו לנסות שוב במילים שלו ("all_beat_terms_mastered": false).
-4. אך ורק כאשר **כל** ${checklist.length} המושגים שברשימה אומתו במלואם, החזר את כל ה-term_id שלהם ב-"verified_term_ids", קבע "all_beat_terms_mastered": true, וכתוב הודעת סיום נלהבת וקצרה שפותחת לו את ההמשך!
-החזר אך ורק אובייקט JSON תקני בעברית.`;
+  const systemInstruction = [
+    TUTOR_PEDAGOGICAL_SYSTEM_ANCHOR,
+    `EVALUATION & MASTERY GATE RULES:`,
+    `1. Verify each of the ${checklist.length} concept(s) in simple, everyday own-words (do NOT demand rigid academic definitions, as long as the core idea and Debit/Credit account directions match "raw_book_excerpt").`,
+    `2. In "verified_term_ids", include ALL previously verified term_ids PLUS any term_id the learner accurately explained in this turn.`,
+    `3. If any checklist term is still unverified, praise what was right and ask one short, concrete question about the next pending term ("all_beat_terms_mastered": false).`,
+    `4. If the learner is confused or mixes up Debit (חובה) and Credit (זכות), give a tiny concrete 1–2 sentence example naming the exact Debited account and Credited account per "raw_book_excerpt", and invite another try ("all_beat_terms_mastered": false).`,
+    `5. ONLY when ALL ${checklist.length} checklist terms are verified, return all their term_ids in "verified_term_ids", set "all_beat_terms_mastered": true, and write a brief, enthusiastic closing reply in Hebrew.`,
+    `JSON CONTRACT: Return ONLY valid JSON: { "verified_term_ids": ["..."], "all_beat_terms_mastered": boolean, "tutor_whatsapp_reply": "..." }.`
+  ].join('\n');
 
-  const prompt = `שיעור: "${unit.lesson_title || unit.title}" (קבוצת מושגים ${beatIndex + 1} מתוך ${unit.conceptBeats.length})
+  const prompt = `Lesson: "${unit.lesson_title || unit.title}" (Concept Beat ${beatIndex + 1} of ${unit.conceptBeats.length})
 
-רשימת המושגים של הקבוצה לאימות:
+Checklist Concepts & Textbook Ground-Truth ("raw_book_excerpt"):
 ${termsSpecText}
 
-מושגים שכבר אומתו קודם: ${JSON.stringify(alreadyVerifiedIds)}
+Already Verified term_ids: ${JSON.stringify(alreadyVerifiedIds)}
 
-היסטוריית שיחת הוואטסאפ בקבוצה זו:
+Recent WhatsApp Conversation:
 ${recentChatText}
 
-הודעה חדשה מדניאל עכשיו:
+New Learner Message:
 "${userMessage}"
 
-החזר JSON תקני בלבד במבנה המדויק:
+Return ONLY valid JSON:
 {
   "verified_term_ids": ["..."],
   "all_beat_terms_mastered": false,
-  "tutor_whatsapp_reply": "הודעת וואטסאפ קצרה (1-3 משפטים) לדניאל"
+  "tutor_whatsapp_reply": "1 to 3 short, natural Israeli Hebrew sentences (no hardcoded personal name)"
 }`;
 
   let verifiedSet = new Set(alreadyVerifiedIds);
@@ -3319,6 +3346,7 @@ ${recentChatText}
     const raw = await invokeGroqPreferred(prompt, {
       systemInstruction,
       jsonMode: true,
+      temperature: 0.2,
       maxTokens: 900
     });
     const parsed = parseJsonFromAIResponse(raw);
@@ -3338,7 +3366,7 @@ ${recentChatText}
       }
       aiDeclaredAllMastered = Boolean(parsed.all_beat_terms_mastered);
       if (typeof parsed.tutor_whatsapp_reply === 'string' && parsed.tutor_whatsapp_reply.trim()) {
-        replyText = parsed.tutor_whatsapp_reply.trim();
+        replyText = cleanTutorHebrewText(parsed.tutor_whatsapp_reply);
       }
     }
   } catch (err) {
@@ -3355,14 +3383,14 @@ ${recentChatText}
       verifiedSet.add(nextUnverified.term_id);
       const stillRemaining = checklist.find(t => !verifiedSet.has(t.term_id));
       if (stillRemaining) {
-        replyText = `בול דניאל, הסברת מעולה את **${nextUnverified.term_name}**! 🙌 עכשיו בוא נבדוק את המושג הבא שלנו: איך היית מסביר במילים שלך מה זה **${stillRemaining.term_name}**?`;
+        replyText = `הסבר מעולה ומדויק של **${nextUnverified.term_name}**! 🙌 עכשיו בוא נבדוק את המושג הבא: איך היית מסביר במילים שלך מה אומר **${stillRemaining.term_name}**?`;
       } else {
-        replyText = `אלוף דניאל! 🌟 הסברת במילים שלך את כל המושגים בקבוצה הזו בצורה הכי ברורה שיש — הכל ברור כמו שמש בבוקר! אפשר להתקדם בשמחה הלאה.`;
+        replyText = `כל הכבוד! 🌟 הסברת במילים שלך את כל המושגים בקבוצה הזו בצורה בהירה ומדויקת — אפשר להתקדם בשמחה לשלב הבא.`;
       }
     } else if (nextUnverified) {
-      replyText = `אתה בכיוון טוב דניאל! 💬 נסה לכתוב במשפט קצר ופשוט מהראש מה אומר המושג **${nextUnverified.term_name}** (או לתת דוגמה קטנה מחיי היומיום).`;
+      replyText = `אתה בכיוון טוב! 💬 נסה לכתוב במשפט קצר ופשוט במילים שלך מה אומר המושג **${nextUnverified.term_name}** (או לתת דוגמה קטנה).`;
     } else {
-      replyText = `מעולה דניאל! 🌟 כל המושגים בקבוצה הזו ברורים ב-100%!`;
+      replyText = `מעולה! 🌟 כל המושגים בקבוצה הזו ברורים ב-100%!`;
     }
   }
 
@@ -3483,56 +3511,52 @@ async function evaluateStudyHelpTurnWithAI({ unit, qIdx, userText, assistMode = 
 
   const recentTurnsText = history
     .slice(-8)
-    .map(m => `${m.role === 'user' ? 'דניאל' : 'המאמן'}: ${m.text}`)
+    .map(m => `${m.role === 'user' ? 'Learner' : 'Coach'}: ${m.text}`)
     .join('\n');
 
-  const systemInstruction = `אתה המאמן האישי של דניאל (בחור בן 28) בלימודי הנהלת חשבונות.
-סגנון ההנחיה שלך: חם, סבלני, מעודד, בגובה העיניים ובשיטה סוקרטית (צעד אחר צעד).
-החזר אך ורק אובייקט JSON תקני במבנה:
-{
-  "is_question_solved": true או false,
-  "coach_reply": "התשובה שלך לדניאל בעברית ברורה ונעימה"
-}`;
+  const systemInstruction = [
+    TUTOR_PEDAGOGICAL_SYSTEM_ANCHOR,
+    'SOCRATIC HOMEWORK RULE: Guide step-by-step without giving away final answers before the learner solves them.',
+    'JSON CONTRACT: Return ONLY a valid JSON object: { "is_question_solved": boolean, "coach_reply": "1 to 3 short, natural Israeli Hebrew sentences (no hardcoded personal name)" }.'
+  ].join('\n');
 
   let modeDirective = '';
   if (assistMode === 'hint') {
-    modeDirective = `דניאל לחץ על כפתור העזרה "💡 תן לי רמז כיוון".
-תן לו רמז חם ומכוון מבלי לגלות את התשובה הסופית, ושאל אותו שאלה מנחה פשוטה להמשך. חובה להחזיר "is_question_solved": false.`;
+    modeDirective = `The learner clicked "Give me a hint". Give one gentle, concrete hint without revealing the final answer, and ask a simple guiding question. Set "is_question_solved": false.`;
   } else if (assistMode === 'steps') {
-    modeDirective = `דניאל לחץ על כפתור העזרה "🔍 פרק לי לשלבים קטנים".
-פרק עבורו את השאלה הנוכחית ל-2 עד 3 שלבים קטנים וברורים, ובקש ממנו להתחיל בשלב 1 בלבד. חובה להחזיר "is_question_solved": false.`;
+    modeDirective = `The learner clicked "Break into small steps". Break this exercise into 2 to 3 clear micro-steps and invite the learner to start with step 1 only. Set "is_question_solved": false.`;
   } else if (assistMode === 'explain') {
-    modeDirective = `דניאל לחץ על כפתור העזרה "📖 הסבר לי שוב בפשטות".
-הסבר את הכלל החשבונאי שמאחורי השאלה במילים פשוטות עם דוגמה יומיומית קצרה, ושאל אותו איך ניישם זאת בשאלה שלנו. חובה להחזיר "is_question_solved": false.`;
+    modeDirective = `The learner clicked "Explain simply again". Explain the accounting rule behind this exercise with a concrete everyday example (explicitly naming which account is Debited and which is Credited), and ask how to apply it here. Set "is_question_solved": false.`;
   } else {
-    modeDirective = `דניאל כתב תשובה או ניסיון פתרון: "${userText}".
-בדוק את תשובתו מול הפתרון המצופה:
-- אם התשובה חלקית או לא מדויקת ("is_question_solved": false): צטט בחום את דבריו של דניאל, חזק אותו על הכיוון, הסבר בפשטות מה כדאי לדייק מבלי לגלות את כל הפתרון הסופי, ושאל את השאלה המנחה הבאה.
-- אם דניאל פתר נכון והבין את העיקרון והסכומים ("is_question_solved": true): שבח אותו בחום על החשיבה המדויקת שלו, וסכם במשפט אחד ברור את הפתרון המלא של השאלה!`;
+    modeDirective = `The learner submitted an attempt: "${userText}".
+Evaluate against the expected solution:
+- If partial or inaccurate ("is_question_solved": false): validate what is right, clarify gently which specific account is Debited (בחובה) vs. Credited (בזכות) without giving away the full answer, and ask the next short guiding question.
+- If accurate ("is_question_solved": true): praise the learner warmly and summarize the complete balanced solution in one clear Hebrew sentence.`;
   }
 
-  const prompt = `נושא היחידה: ${unit.title}
-שאלה נוכחית (${qIdx + 1}): "${questionText}"
-תרגום מונגש: ${qObj.friendly_translation || qObj.topic_focus || ''}
-שלבי פתרון מומלצים: ${stepGuide.join(' | ')}
-רמז מוכן: ${hintText}
-פתרון מצופה לבדיקת המאמן: ${expectedAnswer}
+  const prompt = `Unit Topic: "${unit.title}"
+Current Exercise (${qIdx + 1}) — raw_book_excerpt: """${questionText}"""
+Friendly Translation: ${qObj.friendly_translation || qObj.topic_focus || ''}
+Recommended Steps: ${stepGuide.join(' | ')}
+Prepared Hint: ${hintText}
+Expected Solution (coach reference only): ${expectedAnswer}
 
-היסטוריית השיחה בשאלה זו:
+Recent Conversation:
 ${recentTurnsText}
 
 ${modeDirective}
 
-החזר אך ורק JSON תקני:
+Return ONLY valid JSON:
 {
   "is_question_solved": false,
   "coach_reply": "..."
 }`;
 
   try {
-    const raw = await callMultiTierAI(prompt, {
+    const raw = await invokeGroqPreferred(prompt, {
       systemInstruction,
-      jsonMode: true
+      jsonMode: true,
+      temperature: 0.2
     });
 
     let parsed = null;
@@ -3547,7 +3571,7 @@ ${modeDirective}
       const solved = assistMode ? false : Boolean(parsed.is_question_solved);
       return {
         is_question_solved: solved,
-        coach_reply: parsed.coach_reply.trim()
+        coach_reply: cleanTutorHebrewText(parsed.coach_reply)
       };
     }
   } catch (err) {
@@ -4252,12 +4276,17 @@ function openStudyHelpUnit(unitId, options = {}) {
         });
 
         try {
-          const prompt = `הסבר לדניאל (בן 28) את המושג "${activeConcept.term_name}" (מתוך השיעור "${displayTitle}") בדרך פשוטה עוד יותר, עם דוגמה מוחשית מחיי היומיום (כמו קניות בסופר, ארנק או חשבון בנק אישי) ב-2 משפטים קצרים וברורים.
-הסבר נוכחי: ${(activeConcept.paragraphs || [activeConcept.simple_explanation]).join(' ')}`;
-          const reply = await invokeGroqPreferred(prompt, { maxTokens: 700 });
-          activeConcept.extraSimplerAnalogy = String(reply || '').trim();
+          const simplerSystemInstruction = TUTOR_PEDAGOGICAL_SYSTEM_ANCHOR;
+          const prompt = `Explain the concept "${activeConcept.term_name}" (lesson: "${displayTitle}") in an even simpler, concrete everyday way (e.g. wallet, grocery register, or bank account) in 2 short, natural Israeli Hebrew sentences (no hardcoded personal name).
+raw_book_excerpt: """${activeConcept.raw_book_excerpt || (activeConcept.paragraphs || [activeConcept.simple_explanation]).join(' ')}"""`;
+          const reply = await invokeGroqPreferred(prompt, {
+            systemInstruction: simplerSystemInstruction,
+            temperature: 0.2,
+            maxTokens: 700
+          });
+          activeConcept.extraSimplerAnalogy = cleanTutorHebrewText(String(reply || ''));
         } catch (e) {
-          activeConcept.extraSimplerAnalogy = `תחשוב על "${activeConcept.term_name}" כמו בדיקה פשוטה ביומיום: קודם מסתכלים מה קיבלנו ומה נתנו, ורושמים כל צד במקום הקבוע שלו כדי שלא נתבלבל.`;
+          activeConcept.extraSimplerAnalogy = `תחשוב על "${activeConcept.term_name}" כמו בדיקה פשוטה ביומיום: קודם בודקים איזה חשבון מקבל את הערך (בחובה) ואיזה חשבון נותן את הערך (בזכות), ורושמים כל צד במקומו הקבוע.`;
         }
         saveAppState();
         openStudyHelpUnit(unit.id);
@@ -4358,20 +4387,34 @@ function openStudyHelpUnit(unitId, options = {}) {
         submitOpenQBtn.disabled = true;
         submitOpenQBtn.innerHTML = '<span>בודק...</span>';
         let passed = true;
-        let feedbackMsg = 'ניסוח מצוין במילים שלך דניאל!';
+        let feedbackMsg = 'ניסוח מצוין ומדויק במילים שלך!';
 
         try {
-          const evalPrompt = `דניאל לומד את המושג "${activeConcept.term_name}" (עמוד ${pageNum}).
-השאלה הפתוחה בתחתית השקופית: "${openQ.question}"
-הרעיון המרכזי המצופה: "${openQ.expected_core_idea || (activeConcept.paragraphs || []).join(' ')}"
-תשובתו של דניאל במילים שלו: "${userWords}"
-בדוק בעדינות ובהעצמה האם דניאל הבין את הכיוון המרכזי (אין צורך בניסוח אקדמי, העיקר שהרעיון נכון!). החזר JSON תקני בלבד בעברית:
-{ "passed": true או false, "feedback": "משוב חם וקצר בעברית (1-2 משפטים)" }`;
-          const raw = await invokeGroqPreferred(evalPrompt, { jsonMode: true, maxTokens: 512 });
+          const evalSystemInstruction = [
+            TUTOR_PEDAGOGICAL_SYSTEM_ANCHOR,
+            'EVALUATION RULE: Accept warm, everyday phrasing when the core accounting meaning matches "raw_book_excerpt". However, if the learner reverses Debit (חובה) and Credit (זכות) or confuses WHICH account is Debited vs. Credited, set "passed": false and gently explain which specific account is in Debit and which is in Credit.',
+            'JSON CONTRACT: Return ONLY valid JSON: { "passed": boolean, "feedback": "1 to 2 short, warm, natural Israeli Hebrew sentences (no hardcoded personal name)" }.'
+          ].join('\n');
+
+          const rawExcerptForEval = activeConcept.raw_book_excerpt || (activeConcept.paragraphs || [activeConcept.simple_explanation]).join(' ');
+          const evalPrompt = `Evaluate the learner's own-words answer on Concept Slide "${activeConcept.term_name}" (page ${pageNum}).
+raw_book_excerpt: """${rawExcerptForEval}"""
+Slide Open Question: "${openQ.question}"
+Expected Core Idea: "${openQ.expected_core_idea || rawExcerptForEval}"
+Learner's Answer: "${userWords}"
+
+Return ONLY valid JSON:
+{ "passed": true, "feedback": "..." }`;
+          const raw = await invokeGroqPreferred(evalPrompt, {
+            systemInstruction: evalSystemInstruction,
+            jsonMode: true,
+            temperature: 0.2,
+            maxTokens: 512
+          });
           const parsed = parseJsonFromAIResponse(raw);
           if (parsed && typeof parsed.passed === 'boolean') {
             passed = parsed.passed;
-            feedbackMsg = parsed.feedback || feedbackMsg;
+            feedbackMsg = cleanTutorHebrewText(parsed.feedback) || feedbackMsg;
           }
         } catch (err) {
           passed = userWords.length >= 4;
@@ -6843,6 +6886,7 @@ const BeatGenerator = {
   prewarmNextPendingBeat,
   runAsyncBeatsWorker,
   ensureBeatReadyForLearner,
+  preparePrivateTutorHandoff,
   groupConceptOutlinesIntoBeats,
   groupQuestionOutlinesIntoBeats
 };
@@ -6851,6 +6895,7 @@ if (typeof window !== 'undefined') {
   window.StudyGenerationCancelManager = StudyGenerationCancelManager;
   window.BeatGenerator = BeatGenerator;
   window.UnitBeatCursor = UnitBeatCursor;
+  window.preparePrivateTutorHandoff = preparePrivateTutorHandoff;
   window.performAsyncTutorContextHandoff = performAsyncTutorContextHandoff;
   window.evaluatePrivateTutorTurnWithGroq = evaluatePrivateTutorTurnWithGroq;
   window.extractLessonBeatBlueprint = extractLessonBeatBlueprint;
