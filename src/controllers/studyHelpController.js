@@ -708,15 +708,16 @@ function buildGroundedPastedTextBlueprint({ extractedText = '', sourceLabel = ''
     }
   ];
 
-  const question_outlines = questionChunks.map((qText, idx) => ({
+  const rawQuestionOutlines = questionChunks.map((qText, idx) => ({
     question_number_label: `שאלה ${idx + 1}`,
     page_number: 1,
     question_type: 'open_question',
     exact_book_text: qText
   }));
+  const question_outlines = consolidateAndCapQuestionOutlines(rawQuestionOutlines, 12);
 
   return {
-    lesson_title: sourceLabel || `שיעור ותרגול יומי (${dateStr})`,
+    lesson_title: sanitizeBlueprintLessonTitle(sourceLabel, `שיעור ותרגול יומי (${dateStr})`),
     pages_summary: 'יחידת לימוד זו נבנתה ישירות מתוך הטקסט שהדבקת: תחילה נבין את מושגי היסוד ולאחר מכן נפתור את כל השאלות צעד אחר צעד.',
     concept_outlines,
     question_outlines
@@ -812,6 +813,346 @@ function groupConceptOutlinesIntoBeats(conceptOutlines = [], unitId = 'unit', fa
   return { normalizedOutlines: cleanOutlines, conceptBeats };
 }
 
+const QUESTION_TYPE_PRIORITY = {
+  journal_table: 5,
+  general_table: 4,
+  calculation: 3,
+  multiple_choice: 2,
+  open_question: 1
+};
+
+function pickHigherPriorityQuestionType(typeA, typeB) {
+  const a = String(typeA || 'open_question').trim();
+  const b = String(typeB || 'open_question').trim();
+  const scoreA = QUESTION_TYPE_PRIORITY[a] || 1;
+  const scoreB = QUESTION_TYPE_PRIORITY[b] || 1;
+  return scoreB > scoreA ? b : a;
+}
+
+function sanitizeBlueprintLessonTitle(rawTitle, fallbackTitle = '') {
+  const cleanStr = (val) => String(val || '')
+    .replace(/מיפוי\s+מלא\s+של\s+עמודים[^-–—:•|]*/gi, '')
+    .replace(/(?:מתוך\s+)?עמוד(?:ים)?\s*\d+(?:\s*(?:עד|-|–)\s*\d+)?(?:\s*מתוך\s*\d+)?/gi, '')
+    .replace(/^[\s\-–—:•|.,]+|[\s\-–—:•|.,]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  let cleaned = cleanStr(rawTitle);
+  if (!cleaned) {
+    cleaned = cleanStr(fallbackTitle);
+  }
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length > 8) {
+    cleaned = words.slice(0, 8).join(' ').replace(/[,:;–—\-]+$/, '');
+  }
+  return cleaned;
+}
+
+function sanitizeBlueprintSummary(rawSummary) {
+  return String(rawSummary || '')
+    .replace(/מיפוי\s+מלא\s+של\s+עמודים\s*\d+(?:\s*(?:עד|-|–)\s*\d+)?(?:\s*מתוך\s*\d+)?\s*[:\-–—]?/gi, '')
+    .replace(/\bבעמודים\s+\d+\s*(?:עד|-|–)\s*\d+(?:\s+מתוך\s+\d+)?\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s\-–—:•|.,]+/, '')
+    .trim();
+}
+
+function isSolvedExampleOutline(item) {
+  if (!item || typeof item !== 'object') return true;
+  const label = String(item.question_number_label || '').trim();
+  const text = String(item.exact_book_text || item.original_question || item.question || '').trim();
+  if (!label && !text) return true;
+
+  const solvedPhraseRe = /(?:דוגמ[הא]\s*פתור[הא]|פתרון\s*לדוגמ[הא]|דוגמ[הא]\s*מספרית\s*פתור[הא]|הדגמה\s*פתור[הא]|אירוע\s*לדוגמ[הא]\s*פתור)/i;
+  if (solvedPhraseRe.test(label) || solvedPhraseRe.test(text)) {
+    return true;
+  }
+  const solvedLabelPrefixRe = /^\s*(?:דוגמ[הא]|פתרון\s+לדוגמ[הא]|הדגמה)(?:\s+\d+|\s*[:\-–()]|$)/i;
+  if (solvedLabelPrefixRe.test(label)) {
+    return true;
+  }
+  return false;
+}
+
+function parseQuestionParentInfo(rawLabel, rawText) {
+  const label = String(rawLabel || '').trim();
+  const text = String(rawText || '').trim();
+
+  // Pattern 1: "שאלה 1 סעיף א'", "תרגיל 3 (ב)", "שאלה מס' 2 - שורה 1"
+  const namedMatch = label.match(/^\s*(?:שאלה|תרגיל|משימה)\s*(?:מס['׳.]?\s*)?(\d+)\b\s*(.*)$/i);
+  if (namedMatch) {
+    const mainNum = namedMatch[1];
+    const subRest = String(namedMatch[2] || '').replace(/^[\s\-–—:.,()]+|[\s()]+$/g, '').trim();
+    return {
+      mainKey: `q_${mainNum}`,
+      mainNum: Number(mainNum),
+      parentLabel: `שאלה ${mainNum}`,
+      subPart: subRest,
+      hasExplicitSubPart: Boolean(subRest),
+      isStandaloneSubItem: false
+    };
+  }
+
+  // Pattern 2: "1. סעיף א'", "1 (ב)", "1א'"
+  const numericPrefixMatch = label.match(/^\s*(\d+)\s*(?:[\.\)\-–:]\s*(.*)|\(([א-ת0-9'׳]+)\)|([א-ת]['׳]?)|\s+(סעיף\s*[א-ת0-9'׳]+.*))$/i);
+  if (numericPrefixMatch) {
+    const mainNum = numericPrefixMatch[1];
+    const rawSub = numericPrefixMatch[2] || numericPrefixMatch[3] || numericPrefixMatch[4] || numericPrefixMatch[5] || '';
+    const subRest = String(rawSub).replace(/^[\s\-–—:.,()]+|[\s()]+$/g, '').trim();
+    return {
+      mainKey: `q_${mainNum}`,
+      mainNum: Number(mainNum),
+      parentLabel: `שאלה ${mainNum}`,
+      subPart: subRest ? (/^סעיף/i.test(subRest) ? subRest : `סעיף ${subRest}`) : '',
+      hasExplicitSubPart: Boolean(subRest),
+      isStandaloneSubItem: false
+    };
+  }
+
+  // Pattern 3: standalone sub-item label like "סעיף ב'" or "שורה 2"
+  const standaloneSubMatch = label.match(/^\s*(?:סעיף|שורה)\s*[א-ת0-9'׳]+/i);
+  if (standaloneSubMatch) {
+    return {
+      mainKey: null,
+      mainNum: null,
+      parentLabel: '',
+      subPart: label,
+      hasExplicitSubPart: true,
+      isStandaloneSubItem: true
+    };
+  }
+
+  // Pattern 4: Check beginning of exact_book_text if label is generic
+  const textNamedMatch = text.match(/^\s*(?:שאלה|תרגיל)\s*(?:מס['׳.]?\s*)?(\d+)\b/i);
+  if (textNamedMatch && (!label || /^שאלה$/i.test(label))) {
+    const mainNum = textNamedMatch[1];
+    return {
+      mainKey: `q_${mainNum}`,
+      mainNum: Number(mainNum),
+      parentLabel: `שאלה ${mainNum}`,
+      subPart: '',
+      hasExplicitSubPart: false,
+      isStandaloneSubItem: false
+    };
+  }
+
+  return {
+    mainKey: null,
+    mainNum: null,
+    parentLabel: label,
+    subPart: '',
+    hasExplicitSubPart: false,
+    isStandaloneSubItem: false
+  };
+}
+
+function capMicroStepsArray(stepsList) {
+  const clean = (Array.isArray(stepsList) ? stepsList : [])
+    .map(s => String(s || '').trim())
+    .filter(Boolean);
+
+  if (clean.length === 0) {
+    return [
+      'צעד 1: נקרא בנחת את נתוני השאלה והסכומים מתוך הספר.',
+      'צעד 2: נזהה את החשבונות המשתתפים (חובה וזכות) ונרשום פתרון מאוזן.'
+    ];
+  }
+  if (clean.length === 1) {
+    return [
+      clean[0],
+      'צעד 2: נבדוק שהסכומים והחשבונות שרשמנו תואמים במדויק לנתוני השאלה.'
+    ];
+  }
+  if (clean.length <= 4) {
+    return clean;
+  }
+
+  // Consolidate > 4 raw sub-steps into 4 calm, balanced micro-steps
+  const grouped = [];
+  const total = clean.length;
+  const targetCount = 4;
+  const base = Math.floor(total / targetCount);
+  const rem = total % targetCount;
+  let cursor = 0;
+  for (let i = 0; i < targetCount; i++) {
+    const take = base + (i >= targetCount - rem ? 1 : 0);
+    const slice = clean.slice(cursor, cursor + take);
+    cursor += take;
+    grouped.push(`צעד ${i + 1}: ${slice.map(s => s.replace(/^צעד\s*\d+\s*:\s*/, '')).join(' • ')}`);
+  }
+  return grouped;
+}
+
+/**
+ * Post-processes blueprint `question_outlines` to prevent question explosion:
+ * 1. Filters out solved examples (`דוגמה פתורה` / demonstration examples).
+ * 2. Merges outlines sharing the same parent question number (e.g. `"שאלה 1 סעיף א'"`, `"שאלה 1 סעיף ב'"` -> `"שאלה 1"`)
+ *    with combined `exact_book_text` and structured `sub_steps`.
+ * 3. Caps total questions per unit at `maxQuestions = 12` by grouping excess items cleanly into multi-step questions.
+ * @param {Array<object>} rawQuestionOutlines
+ * @param {number} [maxQuestions=12]
+ * @returns {Array<object>}
+ */
+function consolidateAndCapQuestionOutlines(rawQuestionOutlines = [], maxQuestions = 12) {
+  const cap = Math.max(1, Number(maxQuestions) || 12);
+  const filtered = (Array.isArray(rawQuestionOutlines) ? rawQuestionOutlines : [])
+    .filter(item => !isSolvedExampleOutline(item));
+
+  if (filtered.length === 0) return [];
+
+  // Phase 1: Merge consecutive (or adjacent-page explicit sub-part) outlines sharing the same main question number
+  const parentGroups = [];
+  for (let i = 0; i < filtered.length; i++) {
+    const raw = filtered[i];
+    const pageNum = Math.max(1, Number(raw.page_number) || 1);
+    const qType = String(raw.question_type || 'open_question').trim();
+    const label = String(raw.question_number_label || `שאלה ${i + 1}`).trim();
+    const exactText = String(raw.exact_book_text || raw.original_question || raw.question || label).trim();
+    const existingSubSteps = Array.isArray(raw.sub_steps) ? raw.sub_steps : [];
+    const info = parseQuestionParentInfo(label, exactText);
+
+    const entry = {
+      label,
+      page_number: pageNum,
+      question_type: qType,
+      exact_book_text: exactText,
+      sub_steps: existingSubSteps,
+      info
+    };
+
+    const prevGroup = parentGroups.length > 0 ? parentGroups[parentGroups.length - 1] : null;
+    if (info.isStandaloneSubItem && prevGroup) {
+      prevGroup.entries.push(entry);
+      prevGroup.question_type = pickHigherPriorityQuestionType(prevGroup.question_type, qType);
+      continue;
+    }
+
+    if (info.mainKey) {
+      if (prevGroup && prevGroup.mainKey === info.mainKey) {
+        prevGroup.entries.push(entry);
+        prevGroup.question_type = pickHigherPriorityQuestionType(prevGroup.question_type, qType);
+        continue;
+      }
+      if (info.hasExplicitSubPart) {
+        const matchingNearby = parentGroups.find(
+          g => g.mainKey === info.mainKey && Math.abs(g.page_number - pageNum) <= 1
+        );
+        if (matchingNearby) {
+          matchingNearby.entries.push(entry);
+          matchingNearby.question_type = pickHigherPriorityQuestionType(matchingNearby.question_type, qType);
+          continue;
+        }
+      }
+    }
+
+    parentGroups.push({
+      mainKey: info.mainKey,
+      mainNum: info.mainNum,
+      parentLabel: info.parentLabel || label,
+      page_number: pageNum,
+      question_type: qType,
+      entries: [entry]
+    });
+  }
+
+  const mergedByParent = parentGroups.map((group, gIdx) => {
+    if (group.entries.length === 1 && !group.entries[0].info.hasExplicitSubPart) {
+      const single = group.entries[0];
+      return {
+        question_number_label: single.label || `שאלה ${gIdx + 1}`,
+        page_number: single.page_number,
+        question_type: single.question_type,
+        exact_book_text: single.exact_book_text,
+        sub_steps: capMicroStepsArray(single.sub_steps),
+        _mainNum: group.mainNum
+      };
+    }
+
+    const parentLabel = group.parentLabel || group.entries[0].label || `שאלה ${gIdx + 1}`;
+    const combinedLines = [];
+    const rawMicroSteps = [];
+
+    group.entries.forEach((ent, sIdx) => {
+      const subTag = ent.info.subPart || (group.entries.length > 1 ? `חלק ${sIdx + 1}` : '');
+      const textAlreadyHasTag = subTag && ent.exact_book_text.startsWith(subTag);
+      const formattedLine = (subTag && !textAlreadyHasTag)
+        ? `${subTag}: ${ent.exact_book_text}`
+        : ent.exact_book_text;
+      if (!combinedLines.includes(formattedLine)) {
+        combinedLines.push(formattedLine);
+      }
+
+      const shortPreview = ent.exact_book_text.replace(/\s+/g, ' ').slice(0, 90);
+      rawMicroSteps.push(
+        subTag
+          ? `צעד ${sIdx + 1} (${subTag}): פתרון ורישום עבור — ${shortPreview}${ent.exact_book_text.length > 90 ? '...' : ''}`
+          : `צעד ${sIdx + 1}: ${shortPreview}${ent.exact_book_text.length > 90 ? '...' : ''}`
+      );
+    });
+
+    return {
+      question_number_label: parentLabel,
+      page_number: group.page_number,
+      question_type: group.question_type,
+      exact_book_text: combinedLines.join('\n'),
+      sub_steps: capMicroStepsArray(rawMicroSteps),
+      _mainNum: group.mainNum
+    };
+  });
+
+  if (mergedByParent.length <= cap) {
+    return mergedByParent.map(({ _mainNum, ...rest }) => rest);
+  }
+
+  // Phase 2: Cap total questions at `cap` (default 12) by grouping excess items into multi-step questions
+  const total = mergedByParent.length;
+  const baseSize = Math.floor(total / cap);
+  const extra = total % cap;
+  const capped = [];
+  let cursor = 0;
+
+  for (let bIdx = 0; bIdx < cap; bIdx++) {
+    const take = baseSize + (bIdx >= cap - extra ? 1 : 0);
+    const bucket = mergedByParent.slice(cursor, cursor + take);
+    cursor += take;
+
+    if (bucket.length === 1) {
+      const { _mainNum, ...singleClean } = bucket[0];
+      capped.push(singleClean);
+      continue;
+    }
+
+    const first = bucket[0];
+    const last = bucket[bucket.length - 1];
+    const combinedLabel = (first._mainNum && last._mainNum && first._mainNum !== last._mainNum)
+      ? `שאלות ${first._mainNum}–${last._mainNum}`
+      : `${first.question_number_label} – ${last.question_number_label}`;
+
+    let mergedType = first.question_type;
+    const textBlocks = [];
+    const stepItems = [];
+
+    bucket.forEach((qItem, idxInBucket) => {
+      mergedType = pickHigherPriorityQuestionType(mergedType, qItem.question_type);
+      textBlocks.push(`${qItem.question_number_label}:\n${qItem.exact_book_text}`);
+      const preview = qItem.exact_book_text.replace(/\s+/g, ' ').slice(0, 85);
+      stepItems.push(
+        `צעד ${idxInBucket + 1} (${qItem.question_number_label}): ${preview}${qItem.exact_book_text.length > 85 ? '...' : ''}`
+      );
+    });
+
+    capped.push({
+      question_number_label: combinedLabel,
+      page_number: first.page_number,
+      question_type: mergedType,
+      exact_book_text: textBlocks.join('\n\n'),
+      sub_steps: capMicroStepsArray(stepItems)
+    });
+  }
+
+  return capped;
+}
+
 /**
  * Groups `question_outlines` into Homework Beats (`homeworkBeats`) with 2–3 homework questions per beat.
  * Balances trailing single-item remainder into 2 + 2 when total questions >= 4.
@@ -827,7 +1168,8 @@ function groupQuestionOutlinesIntoBeats(questionOutlines = [], unitId = 'unit') 
       question_number_label: String(q.question_number_label || `שאלה ${idx + 1}`).trim(),
       page_number: Math.max(1, Number(q.page_number) || 1),
       question_type: String(q.question_type || 'open_question').trim(),
-      exact_book_text: String(q.exact_book_text || q.question_number_label || `שאלה ${idx + 1}`).trim()
+      exact_book_text: String(q.exact_book_text || q.question_number_label || `שאלה ${idx + 1}`).trim(),
+      sub_steps: capMicroStepsArray(Array.isArray(q.sub_steps) ? q.sub_steps : [])
     }));
 
   if (cleanQuestions.length === 0) {
@@ -891,39 +1233,46 @@ async function extractLessonBeatBlueprint({
   const hasNativePdfOnly = pageImages.length === 0 && Boolean(rawPdfPart && rawPdfPart.data);
   const hasAnyVisuals = pageImages.length > 0 || hasNativePdfOnly;
 
-  const systemInstruction = `אתה מומחה למיפוי ספרי לימוד ודפי עבודה בהנהלת חשבונות עבור דניאל (בחור בן 28).
-חובה לחלץ 100% מכל תתי-הנושאים, המושגים, הדוגמאות הפתורות וכל השאלות והסעיפים המופיעים בעמודים אלו — אסור לדלג על אף שאלה ואסור לאחד שאלות לשאלה אחת!
-אסור בתכלית האיסור להמציא מושגים או שאלות שלא מופיעים בעמודים המצורפים. החזר אך ורק אובייקט JSON תקני בעברית.`;
+  const systemInstruction = [
+    'You are a high-precision curriculum blueprint extractor for an Israeli accounting & business learning system tailored for Daniel (a 28-year-old learner).',
+    'CRITICAL DISTINCTION: Any worked example, demonstration table, or solved illustration that ALREADY includes its solution/explanation in the textbook page MUST be placed ONLY in "concept_outlines" (never in "question_outlines"). Place in "question_outlines" ONLY actual unsolved homework/practice exercises meant for the learner to solve.',
+    'CRITICAL GROUPING RULE: Never split rows of the same table or sub-items (סעיפים א\', ב\', ג\'...) of the same numbered textbook question into separate entries in "question_outlines"! Keep each main numbered textbook exercise (e.g. "שאלה 1", "שאלה 2") as ONE single entry in "question_outlines" containing the full text and all sub-items/rows of that exercise.',
+    'CLEAN TITLES RULE: "lesson_title" MUST be a clean, concise Hebrew topic title (max 8 words, e.g., "התהליך החשבונאי השוטף: חובה וזכות") — NEVER include internal page numbers or phrases like "מיפוי מלא של עמודים..." in "lesson_title" or "pages_summary".',
+    'STRICT LANGUAGE & GROUNDING RULE: Return ONLY a valid JSON object. Every extracted title, summary, concept, and exercise text MUST be in 100% natural Israeli Hebrew and strictly grounded in the provided textbook pages/text (zero hallucination).'
+  ].join('\n');
 
   const buildChunkBlueprintPrompt = ({ chunkText, startPage, endPage, totalPages }) => {
-    const pageRangeDesc = totalPages > 0
-      ? `עמודים ${startPage} עד ${endPage} מתוך ${totalPages}`
-      : 'חומר הלימוד המצורף';
+    const pageScope = totalPages > 0
+      ? `pages ${startPage}–${endPage} of ${totalPages}`
+      : 'the provided study material';
 
-    return `בצע מיפוי מלא ללא שום השמטה (${pageRangeDesc}) מתוך השיעור${sourceLabel ? ` "${sourceLabel}"` : ''}.
-חובה לחלץ 100% מכל תתי-הנושאים, המושגים, הדוגמאות הפתורות וכל השאלות והסעיפים המופיעים בעמודים אלו — אסור לדלג על אף שאלה ואסור לאחד שאלות לשאלה אחת!
-אם לשאלה יש סעיפים (למשל סעיף א', סעיף ב', או מספר אירועים עסקיים בטבלה/רשימה), רשום כל סעיף או שאלה עם כל הנתונים והמספרים המדויקים מתוך העמוד.
+    return `Extract the complete lesson blueprint from ${pageScope}${sourceLabel ? ` (source: "${sourceLabel}")` : ''}.
 
-${chunkText ? `טקסט שחולץ מ${pageRangeDesc}:\n"""\n${chunkText}\n"""\n` : 'קרא בקפידה את כל הטקסט, ההגדרות, הדוגמאות, הטבלאות והתרגילים מתוך צילומי העמודים המצורפים.\n'}
+MANDATORY EXTRACTION RULES:
+1. CRITICAL DISTINCTION: Any worked example, demonstration table, or solved illustration that ALREADY includes its solution/explanation in the textbook page MUST be placed ONLY in "concept_outlines" (never in "question_outlines"). Place in "question_outlines" ONLY actual unsolved homework/practice exercises meant for the learner to solve.
+2. CRITICAL GROUPING RULE: Never split rows of the same table or sub-items (סעיפים א', ב', ג'...) of the same numbered textbook question into separate entries in "question_outlines"! Keep each main numbered textbook exercise (e.g. "שאלה 1", "שאלה 2") as ONE single entry in "question_outlines" containing the full text and all sub-items/rows of that exercise.
+3. CLEAN LEARNER-FACING TITLES: "lesson_title" must be a clean, concise Hebrew topic title (max 8 words, e.g., "התהליך החשבונאי השוטף: חובה וזכות") — NEVER include internal page numbers or words like "מיפוי מלא של עמודים..." in "lesson_title" or "pages_summary".
+4. HEBREW OUTPUT: All string values (except "question_type") MUST be in 100% natural Israeli Hebrew, preserving exact textbook wording and numbers.
 
-החזר אך ורק אובייקט JSON תקני במבנה המדויק הבא:
+${chunkText ? `Extracted textbook text for ${pageScope}:\n"""\n${chunkText}\n"""\n` : `Read all definitions, worked examples, tables, and unsolved exercises directly from the attached page image(s) for ${pageScope}.\n`}
+Return ONLY a valid JSON object matching this exact schema:
 {
-  "lesson_title": "הכותרת המדויקת של השיעור או הנושא מתוך העמודים",
-  "pages_summary": "סיכום קצר וברור של מה שמופיע בעמודים אלו",
+  "lesson_title": "נושא השיעור בעברית תקנית ונקייה (עד 8 מילים)",
+  "pages_summary": "סיכום בהיר וקצר בעברית של נושאי השיעור והתרגול",
   "concept_outlines": [
     {
-      "term_name": "שם המושג / הכלל / תת-הנושא מתוך העמוד",
+      "term_name": "שם המושג / הכלל / הדוגמה הפתורה מהספר",
       "page_number": ${startPage || 1},
-      "source_section_label": "עמוד ${startPage || 1} - הגדרת ...",
-      "raw_book_excerpt": "הטקסט והדוגמה המדויקים מהעמוד (כולל המספרים והכללים כפי שמופיעים בספר)"
+      "source_section_label": "עמוד ${startPage || 1} - ...",
+      "raw_book_excerpt": "הטקסט, הכלל והדוגמה הפתורה המדויקים מתוך העמוד (כולל כל המספרים)"
     }
   ],
   "question_outlines": [
     {
-      "question_number_label": "שאלה 1 סעיף א'",
+      "question_number_label": "שאלה 1",
       "page_number": ${endPage || 1},
       "question_type": "journal_table | general_table | calculation | multiple_choice | open_question",
-      "exact_book_text": "כל נוסח השאלה, הטבלה והמספרים במדויק מתוך העמוד"
+      "exact_book_text": "כל נוסח השאלה הלא-פתורה לתרגול כולל כל הסעיפים, הטבלה והמספרים כמקשה אחת"
     }
   ]
 }`;
@@ -1029,47 +1378,101 @@ ${chunkText ? `טקסט שחולץ מ${pageRangeDesc}:\n"""\n${chunkText}\n"""\n
     const prompt = buildChunkBlueprintPrompt(ch);
     let parsedChunk = null;
 
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      if (session && session.isCancelled()) return null;
-      try {
-        if (attempt === 2) {
-          await new Promise(r => setTimeout(r, 650));
-          if (session && session.isCancelled()) return null;
-          showStudyHelpLoadingOverlay(
-            `מבצע ניסיון שני למיפוי מדויק של עמודים ${ch.startPage} עד ${ch.endPage} מתוך ${ch.totalPages}...`
-          );
-        }
+    const numPagesInChunk = Math.max(1, (Number(ch.endPage) || 1) - (Number(ch.startPage) || 1) + 1);
+    const strippedChunkBody = String(ch.chunkText || '').replace(/---\s*עמוד\s*\d+\s*---/g, '').trim();
+    const hebrewLettersMatch = strippedChunkBody.match(/[\u0590-\u05FF]/g);
+    const hebrewLettersCount = hebrewLettersMatch ? hebrewLettersMatch.length : 0;
+    const chunkHasVisuals = (Array.isArray(ch.images) && ch.images.length > 0) || Boolean(ch.rawPdf);
+    const hasRichDigitalText =
+      strippedChunkBody.length >= 350 * numPagesInChunk &&
+      hebrewLettersCount >= 50 * numPagesInChunk;
 
-        const raw = await callMultiTierAI(prompt, {
+    const hasNonEmptyBlueprintOutlines = (candidate) => Boolean(
+      candidate &&
+      typeof candidate === 'object' &&
+      ((Array.isArray(candidate.concept_outlines) && candidate.concept_outlines.length > 0) ||
+        (Array.isArray(candidate.question_outlines) && candidate.question_outlines.length > 0) ||
+        (Array.isArray(candidate.concepts) && candidate.concepts.length > 0) ||
+        (Array.isArray(candidate.questions) && candidate.questions.length > 0))
+    );
+
+    // Smart Text-First Optimization: for digital PDFs with >= 350 chars/page of structured Hebrew text,
+    // call text-only mode first (preferVision: false, inlineImages: []) so Groq/OpenRouter handles it fast & free!
+    if (hasRichDigitalText) {
+      try {
+        const textFirstRaw = await callMultiTierAI(prompt, {
           systemInstruction,
           jsonMode: true,
+          temperature: 0.2,
           maxTokens: 8192,
-          inlineImages: ch.images,
-          rawPdfPart: ch.rawPdf,
+          preferVision: false,
+          inlineImages: [],
+          rawPdfPart: null,
           abortSignal: session ? session.signal : undefined
         });
         if (session && session.isCancelled()) return null;
 
-        const candidate = parseJsonFromAIResponse(raw);
-        if (
-          candidate &&
-          typeof candidate === 'object' &&
-          (Array.isArray(candidate.concept_outlines) ||
-            Array.isArray(candidate.question_outlines) ||
-            Array.isArray(candidate.concepts) ||
-            Array.isArray(candidate.questions))
-        ) {
-          parsedChunk = candidate;
-          break;
+        const textCandidate = parseJsonFromAIResponse(textFirstRaw);
+        if (hasNonEmptyBlueprintOutlines(textCandidate)) {
+          parsedChunk = textCandidate;
         } else {
-          lastChunkError = `מבנה JSON חסר בעמודים ${ch.startPage}-${ch.endPage}`;
+          lastChunkError = `מיפוי טקסט ראשוני החזיר רשימה ריקה בעמודים ${ch.startPage}-${ch.endPage}`;
         }
       } catch (err) {
         if ((err && err.name === 'AbortError') || (session && session.isCancelled())) {
           return null;
         }
         lastChunkError = err && err.message ? err.message : String(err);
-        console.warn(`[BeatGenerator] Blueprint chunk ${cIdx + 1}/${chunks.length} attempt ${attempt} failed:`, err);
+        console.warn(`[BeatGenerator] Text-first blueprint chunk ${cIdx + 1}/${chunks.length} fallback to vision:`, err);
+      }
+    }
+
+    // Only send page images (preferVision: true) when chunkText is sparse (CamScanner) OR if text-first returned empty outlines!
+    if (!parsedChunk && (!hasRichDigitalText || chunkHasVisuals)) {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        if (session && session.isCancelled()) return null;
+        try {
+          if (attempt === 2) {
+            await new Promise(r => setTimeout(r, 650));
+            if (session && session.isCancelled()) return null;
+            showStudyHelpLoadingOverlay(
+              `מבצע ניסיון שני למיפוי מדויק של עמודים ${ch.startPage} עד ${ch.endPage} מתוך ${ch.totalPages}...`
+            );
+          }
+
+          const raw = await callMultiTierAI(prompt, {
+            systemInstruction,
+            jsonMode: true,
+            temperature: 0.2,
+            maxTokens: 8192,
+            preferVision: chunkHasVisuals,
+            inlineImages: chunkHasVisuals ? ch.images : [],
+            rawPdfPart: chunkHasVisuals ? ch.rawPdf : null,
+            abortSignal: session ? session.signal : undefined
+          });
+          if (session && session.isCancelled()) return null;
+
+          const candidate = parseJsonFromAIResponse(raw);
+          if (
+            candidate &&
+            typeof candidate === 'object' &&
+            (Array.isArray(candidate.concept_outlines) ||
+              Array.isArray(candidate.question_outlines) ||
+              Array.isArray(candidate.concepts) ||
+              Array.isArray(candidate.questions))
+          ) {
+            parsedChunk = candidate;
+            break;
+          } else {
+            lastChunkError = `מבנה JSON חסר בעמודים ${ch.startPage}-${ch.endPage}`;
+          }
+        } catch (err) {
+          if ((err && err.name === 'AbortError') || (session && session.isCancelled())) {
+            return null;
+          }
+          lastChunkError = err && err.message ? err.message : String(err);
+          console.warn(`[BeatGenerator] Blueprint chunk ${cIdx + 1}/${chunks.length} attempt ${attempt} failed:`, err);
+        }
       }
     }
 
@@ -1138,7 +1541,9 @@ ${chunkText ? `טקסט שחולץ מ${pageRangeDesc}:\n"""\n${chunkText}\n"""\n
     }
   }
 
-  if (!anyChunkSucceeded || (allConceptOutlines.length === 0 && allQuestionOutlines.length === 0)) {
+  const consolidatedQuestionOutlines = consolidateAndCapQuestionOutlines(allQuestionOutlines, 12);
+
+  if (!anyChunkSucceeded || (allConceptOutlines.length === 0 && consolidatedQuestionOutlines.length === 0)) {
     if (!isFileUpload && !hasAnyVisuals && cleanText) {
       const offlineBlueprint = buildGroundedPastedTextBlueprint({ extractedText: cleanText, sourceLabel });
       if (offlineBlueprint) return offlineBlueprint;
@@ -1147,13 +1552,16 @@ ${chunkText ? `טקסט שחולץ מ${pageRangeDesc}:\n"""\n${chunkText}\n"""\n
   }
 
   const dateLabel = getTodayHebrewDateLabel();
+  const cleanLessonTitle = sanitizeBlueprintLessonTitle(mergedTitle, sourceLabel || `שיעור יומי (${dateLabel})`);
+  const cleanSummaries = chunkSummaries.map(s => sanitizeBlueprintSummary(s)).filter(Boolean);
+
   return {
-    lesson_title: mergedTitle || sourceLabel || `שיעור יומי (${dateLabel})`,
-    pages_summary: chunkSummaries.length > 0
-      ? chunkSummaries.join(' • ')
-      : 'יחידת לימוד מלאה המבוססת ב-100% על כל העמודים, המושגים והשאלות שבקובץ השיעור.',
+    lesson_title: cleanLessonTitle || `שיעור יומי (${dateLabel})`,
+    pages_summary: cleanSummaries.length > 0
+      ? cleanSummaries.join(' • ')
+      : 'יחידת לימוד ממוקדת המבוססת במלואה על המושגים, הדוגמאות והתרגילים שבחומר השיעור.',
     concept_outlines: allConceptOutlines,
-    question_outlines: allQuestionOutlines
+    question_outlines: consolidatedQuestionOutlines
   };
 }
 
@@ -1216,12 +1624,10 @@ async function generateConceptBeatContent(unit, beatIndex, learnerAdaptationProf
     const profile = learnerAdaptationProfile || unit.learnerAdaptationProfile || createDefaultLearnerAdaptationProfile();
     const sourceLabel = unit.sourceLabel || unit.lesson_title || unit.title || 'קובץ השיעור';
     const outlines = Array.isArray(beat.conceptOutlines) ? beat.conceptOutlines : [];
-    const relevantPages = outlines.map(o => Number(o.page_number) || 1);
-    const beatImages = getSnapshotInlineImagesForPages(unit, relevantPages);
 
     const outlinesPayloadText = outlines.map((c, idx) => {
       const citation = `📍 מקור: ${sourceLabel} • עמוד ${c.page_number || 1} • ${c.source_section_label || ('עמוד ' + (c.page_number || 1))}`;
-      return `מושג ${idx + 1} בפעימה:
+      return `Concept ${idx + 1} in Beat:
 - term_name: "${c.term_name}"
 - page_number: ${c.page_number || 1}
 - source_section_label: "${c.source_section_label || ''}"
@@ -1229,29 +1635,31 @@ async function generateConceptBeatContent(unit, beatIndex, learnerAdaptationProf
 - raw_book_excerpt: """${c.raw_book_excerpt || ''}"""`;
     }).join('\n\n');
 
-    const systemInstruction = `אתה מורה פרטי ומאמן הוראה מתקנת להנהלת חשבונות הבונה את פעימת הלימוד ${beatIndex + 1} עבור דניאל (בן 28).
-כל שקופית מושג חייבת להיות מעוגנת ב-100% ב-raw_book_excerpt ובעמוד המקור מהספר ללא השמטת פרטים או מספרים, ומותאמת אישית לפרופיל הקצב של דניאל.
-החזר אך ורק אובייקט JSON תקני בעברית.`;
+    const systemInstruction = [
+      `You are a warm, expert remedial accounting tutor building Concept Beat ${beatIndex + 1} for Daniel (a 28-year-old Israeli learner with special educational needs).`,
+      `CRITICAL GROUNDING RULE: Ground 100% of explanations, rules, and worked examples strictly in each concept's "raw_book_excerpt" and source page. Never invent concepts or alter textbook numbers.`,
+      `CRITICAL LANGUAGE RULE: Return ONLY a valid JSON object. Every human-facing string value MUST be written in 100% natural, clear, encouraging Israeli Hebrew.`
+    ].join('\n');
 
-    const prompt = `בנה תוכן שקופיות עשיר ומדויק עבור פעימת המושגים ${beatIndex + 1} מתוך ${unit.conceptBeats.length} בשיעור "${unit.lesson_title || unit.title}".
+    const prompt = `Generate structured Concept Slides for Concept Beat ${beatIndex + 1} of ${unit.conceptBeats.length} in lesson "${unit.lesson_title || unit.title}".
 
-התאמה דינמית לפרופיל הלמידה הנוכחי של דניאל:
+Learner Adaptation Guidance (apply to tone, pacing, and everyday analogies):
 ${buildAdaptationGuidanceBlock(profile)}
 
-המושגים בפעימה זו (מתוך הספר):
+Source Concepts for this Beat (preserve exact order — return ${outlines.length} slide object(s) in "slides"):
 ${outlinesPayloadText}
 
-עבור **כל אחד** מ-${outlines.length} המושגים שבפעימה זו (באותו סדר בדיוק!), החזר אובייקט במערך "slides" הכולל:
-1. "paragraphs": מערך של 1-2 פסקאות קצרות ובהירות כבדולח — פסקה ראשונה נותנת את האינטואיציה הפשוטה מחיי היומיום, ופסקה שנייה מציגה את הכלל המלא מהספר ללא ויתור על עומק.
-2. "book_example": הדוגמה הפתורה מתוך העמוד שהועלה מפורקת לצעדים ברורים עם המספרים המדויקים מהספר:
+Required fields for EACH item in "slides" (all text values MUST be in natural Israeli Hebrew):
+1. "paragraphs": array of 1–2 short, crystal-clear Hebrew paragraphs — paragraph 1 gives a warm everyday intuition; paragraph 2 presents the complete accounting rule from "raw_book_excerpt".
+2. "book_example": worked textbook example broken into calm steps using the exact numbers from "raw_book_excerpt":
    { "title": "דוגמה מתוך עמוד X בספר", "exact_excerpt": "הנתונים והמספרים המדויקים מהספר", "steps": ["צעד 1...", "צעד 2..."] }
-3. "interactive_widget": מיני-בדיקה אינטראקטיבית מובנית על המסך (למשל בחירת כיוון חובה/זכות לחשבון או בדיקת איזון קצרה):
-   { "widget_type": "direction_selector | mini_balance_check", "prompt": "שאלת התנסות קצרה...", "options": ["אפשרות א", "אפשרות ב"], "correct_index": 0, "explanation": "משוב קצר ומחזק" }
-4. "bottom_questions": **בדיוק 2 שאלות בתחתית השקופית**:
-   - "mc_question": { "question": "שאלה אמריקאית על המושג והדוגמה", "options": ["תשובה 1", "תשובה 2", "תשובה 3", "תשובה 4"], "correct_index": 0, "explanation": "הסבר ברור לתשובה הנכונה" }
-   - "open_question": { "question": "שאלת הבנה פתוחה קצרה במילים של דניאל", "expected_core_idea": "הרעיון המרכזי המצופה", "hint": "רמז עדין ומכוון" }
+3. "interactive_widget": quick on-screen interactive micro-check (e.g. debit/credit direction or balance check):
+   { "widget_type": "direction_selector | mini_balance_check", "prompt": "...", "options": ["...", "..."], "correct_index": 0, "explanation": "..." }
+4. "bottom_questions": strictly 2 slide-mastery questions:
+   - "mc_question": { "question": "...", "options": ["...", "...", "...", "..."], "correct_index": 0, "explanation": "..." }
+   - "open_question": { "question": "short own-words comprehension prompt in Hebrew", "expected_core_idea": "...", "hint": "..." }
 
-החזר אך ורק JSON תקני במבנה:
+Return ONLY valid JSON matching:
 {
   "slides": [
     {
@@ -1298,8 +1706,10 @@ ${outlinesPayloadText}
         const raw = await callMultiTierAI(prompt, {
           systemInstruction,
           jsonMode: true,
+          temperature: 0.2,
           maxTokens: 8192,
-          inlineImages: beatImages,
+          inlineImages: [],
+          preferVision: false,
           abortSignal: session ? session.signal : undefined
         });
         if (session && session.isCancelled()) {
@@ -1528,30 +1938,34 @@ async function generateHomeworkBeatContent(unit, hwBeatIndex, learnerAdaptationP
     const profile = learnerAdaptationProfile || unit.learnerAdaptationProfile || createDefaultLearnerAdaptationProfile();
     const sourceLabel = unit.sourceLabel || unit.lesson_title || unit.title || 'קובץ השיעור';
     const qOutlines = Array.isArray(hwBeat.questionOutlines) ? hwBeat.questionOutlines : [];
-    const relevantPages = qOutlines.map(q => Number(q.page_number) || 1);
-    const beatImages = getSnapshotInlineImagesForPages(unit, relevantPages);
 
-    const questionsPayloadText = qOutlines.map((q, idx) => (
-      `שאלה ${idx + 1} בפעימת התרגול:
+    const questionsPayloadText = qOutlines.map((q, idx) => {
+      const subStepsHint = Array.isArray(q.sub_steps) && q.sub_steps.length > 0
+        ? `\n- outline_sub_steps: ${JSON.stringify(q.sub_steps)}`
+        : '';
+      return `Exercise ${idx + 1} in Beat:
 - question_number_label: "${q.question_number_label}"
 - page_number: ${q.page_number || 1}
 - question_type: "${q.question_type || 'open_question'}"
-- exact_book_text: """${q.exact_book_text}"""`
-    )).join('\n\n');
+- exact_book_text: """${q.exact_book_text}"""${subStepsHint}`;
+    }).join('\n\n');
 
-    const systemInstruction = `אתה מאמן אישי להנהלת חשבונות הבונה סביבת פתרון מודרכת עבור פעימת שיעורי הבית ${hwBeatIndex + 1} של דניאל (בן 28).
-שמור מילה במילה על הנוסח והמספרים מתוך exact_book_text, ובנה עבור כל שאלה תרגום ידידותי, סכמת טבלה (אם רלוונטי), אפשרויות מונחות, וידוא הבנה וסיכום להעתקה למחברת.
-החזר אך ורק אובייקט JSON תקני בעברית.`;
+    const systemInstruction = [
+      `You are a supportive remedial accounting coach building guided Homework Beat ${hwBeatIndex + 1} for Daniel (a 28-year-old Israeli learner with special educational needs).`,
+      `CRITICAL GROUNDING RULE: Preserve 100% of the exact wording and numbers from "exact_book_text" without skipping or merging exercises in this beat.`,
+      `CRITICAL MICRO-STEP RULE: Include a "sub_steps" array of 2–4 simple, reassuring Hebrew micro-steps on EVERY question, breaking complex exercises or multi-row tables into calm, manageable steps.`,
+      `CRITICAL LANGUAGE RULE: Return ONLY a valid JSON object. Every human-facing string value MUST be in 100% natural, warm Israeli Hebrew.`
+    ].join('\n');
 
-    const prompt = `בנה את נתוני הפתרון המודרכים עבור ${qOutlines.length} השאלות בפעימת התרגול ${hwBeatIndex + 1} מתוך ${unit.homeworkBeats.length} בשיעור "${unit.lesson_title || unit.title}".
+    const prompt = `Build guided homework solver objects for all ${qOutlines.length} exercise(s) in Homework Beat ${hwBeatIndex + 1} of ${unit.homeworkBeats.length} for lesson "${unit.lesson_title || unit.title}".
 
-התאמה דינמית לפרופיל הלמידה של דניאל:
+Learner Adaptation Guidance:
 ${buildAdaptationGuidanceBlock(profile)}
 
-השאלות המדויקות מהספר בפעימה זו:
+Textbook Exercises in this Beat (preserve exact order — return ${qOutlines.length} item(s) in "questions"):
 ${questionsPayloadText}
 
-עבור **כל אחת** מ-${qOutlines.length} השאלות (באותו סדר בדיוק, מבלי לאחד שאלות ומבלי לדלג!), החזר איבר במערך "questions":
+Return ONLY valid JSON (all text values MUST be in natural Israeli Hebrew; keep "question_type" as enum):
 {
   "questions": [
     {
@@ -1560,6 +1974,11 @@ ${questionsPayloadText}
       "question_type": "journal_table | general_table | calculation | multiple_choice | open_question",
       "exact_book_text": "הציטוט המדויק מהספר",
       "friendly_translation": "תרגום פשוט, חם ומונגש לדניאל: מה מבקשים בשאלה הזו ואיך ניגשים אליה ברוגע",
+      "sub_steps": [
+        "צעד 1: ...",
+        "צעד 2: ...",
+        "צעד 3: ..."
+      ],
       "table_schema": {
         "has_table": true,
         "columns": ["חובה", "זכות", "פרטים / שם החשבון"],
@@ -1598,8 +2017,10 @@ ${questionsPayloadText}
         const raw = await callMultiTierAI(prompt, {
           systemInstruction,
           jsonMode: true,
+          temperature: 0.2,
           maxTokens: 8192,
-          inlineImages: beatImages,
+          inlineImages: [],
+          preferVision: false,
           abortSignal: session ? session.signal : undefined
         });
         if (session && session.isCancelled()) {
@@ -1640,9 +2061,15 @@ ${questionsPayloadText}
         q.friendly_translation ||
         'נקרא יחד את נתוני השאלה מהעמוד בספר, נזהה את הסכומים ואת החשבונות המשתתפים ונרשום את הפתרון צעד אחר צעד.'
       ).trim();
+      const rawSubSteps = Array.isArray(q.sub_steps) && q.sub_steps.length > 0
+        ? q.sub_steps
+        : (Array.isArray(outline.sub_steps) && outline.sub_steps.length > 0
+            ? outline.sub_steps
+            : (Array.isArray(q.step_by_step_guide) ? q.step_by_step_guide : []));
+      const subSteps = capMicroStepsArray(rawSubSteps);
       const stepGuide = Array.isArray(q.step_by_step_guide) && q.step_by_step_guide.length > 0
         ? q.step_by_step_guide.map(s => String(s).trim()).filter(Boolean)
-        : ['שלב 1: קריאת הנתונים והסכומים מהעמוד בספר', 'שלב 2: רישום צד החובה וצד הזכות ובדיקת איזון'];
+        : subSteps;
 
       const builtQ = {
         ...existingQ,
@@ -1658,6 +2085,7 @@ ${questionsPayloadText}
         original_question: exactText,
         questionText: exactText,
         friendly_translation: friendlyTrans,
+        sub_steps: subSteps,
         topic_focus: friendlyTrans,
         topic: friendlyTrans,
         table_schema: q.table_schema && typeof q.table_schema === 'object'
@@ -1756,14 +2184,15 @@ async function ensureBeatReadyForLearner(unit, beatType, beatIndex, forceAdapt =
 }
 
 /**
- * Stage C — Asynchronous Background Beat Queue (`runAsyncBeatsWorker(unitId, session)`):
- * Iteratively generates remaining `Concept Beats 2..K` and all `Homework Beats 1..M`
- * in the background, saving state after each beat completes without interrupting Daniel's active screen.
+ * Stage C — 1-Beat Lookahead (`prewarmNextPendingBeat(unitId, session)`):
+ * Instead of looping through all 10–20 beats back-to-back on upload, generates ONLY the
+ * single next pending beat (1-Beat Lookahead: next pending Concept Beat, or if all Concept Beats
+ * are ready, next pending Homework Beat), saves state, updates the background status pill, and stops.
  * @param {string} unitId
  * @param {object} [session]
  * @returns {Promise<object|null>}
  */
-function runAsyncBeatsWorker(unitId, session = null) {
+function prewarmNextPendingBeat(unitId, session = null) {
   if (!unitId) return Promise.resolve(null);
   if (session && session.isCancelled()) return Promise.resolve(null);
   if (_activeBeatWorkerPromises.has(unitId)) {
@@ -1771,79 +2200,65 @@ function runAsyncBeatsWorker(unitId, session = null) {
   }
 
   const workerPromise = (async () => {
-    try {
-      const findLiveUnit = () => (Array.isArray(appState.studyHelpUnits) ? appState.studyHelpUnits : []).find(u => u && u.id === unitId);
+    const findLiveUnit = () => {
+      const fromMain = (Array.isArray(appState.studyHelpUnits) ? appState.studyHelpUnits : []).find(u => u && u.id === unitId);
+      if (fromMain) return fromMain;
+      return (Array.isArray(appState.studyHelp?.dailyCards) ? appState.studyHelp.dailyCards : []).find(u => u && u.id === unitId) || null;
+    };
 
+    try {
       let unit = findLiveUnit();
       if (!unit || (session && session.isCancelled())) return null;
 
-      unit.beatsWorkerActive = true;
-
-      // 1. Iteratively generate Concept Beats 1..K-1 (Beat 0 is already generated at launch, or resume if pending)
-      const cBeatsCount = Array.isArray(unit.conceptBeats) ? unit.conceptBeats.length : 0;
-      for (let bIdx = 0; bIdx < cBeatsCount; bIdx++) {
-        if (session && session.isCancelled()) {
-          const cancelledUnit = findLiveUnit();
-          if (cancelledUnit) cancelledUnit.beatsWorkerActive = false;
-          return null;
-        }
-        unit = findLiveUnit();
-        if (!unit) return null;
-        const cBeat = unit.conceptBeats[bIdx];
-        if (!cBeat || cBeat.status === 'ready') continue;
-
-        await generateConceptBeatContent(unit, bIdx, unit.learnerAdaptationProfile, session);
-        if (session && session.isCancelled()) {
-          const cancelledUnit = findLiveUnit();
-          if (cancelledUnit) cancelledUnit.beatsWorkerActive = false;
-          return null;
-        }
-
-        unit = findLiveUnit();
-        if (!unit) return null;
-        saveAppState();
+      if (!hasPendingBeats(unit)) {
+        unit.beatsWorkerActive = false;
+        unit.allBeatsGenerated = true;
         updateBackgroundBeatsBadgeInDom(unit);
+        return unit;
       }
 
-      // 2. Iteratively generate all Homework Beats 0..M-1
-      const hwBeatsCount = Array.isArray(unit.homeworkBeats) ? unit.homeworkBeats.length : 0;
-      for (let hwIdx = 0; hwIdx < hwBeatsCount; hwIdx++) {
-        if (session && session.isCancelled()) {
-          const cancelledUnit = findLiveUnit();
-          if (cancelledUnit) cancelledUnit.beatsWorkerActive = false;
-          return null;
-        }
-        unit = findLiveUnit();
-        if (!unit) return null;
-        const hwBeat = unit.homeworkBeats[hwIdx];
-        if (!hwBeat || hwBeat.status === 'ready') continue;
+      unit.beatsWorkerActive = true;
 
-        await generateHomeworkBeatContent(unit, hwIdx, unit.learnerAdaptationProfile, session);
-        if (session && session.isCancelled()) {
-          const cancelledUnit = findLiveUnit();
-          if (cancelledUnit) cancelledUnit.beatsWorkerActive = false;
-          return null;
-        }
+      // 1-Beat Lookahead: generate ONLY the single next pending beat!
+      let generatedOne = false;
+      const cBeats = Array.isArray(unit.conceptBeats) ? unit.conceptBeats : [];
+      const nextConceptIdx = cBeats.findIndex(b => b && b.status !== 'ready');
 
-        unit = findLiveUnit();
-        if (!unit) return null;
-        saveAppState();
-        updateBackgroundBeatsBadgeInDom(unit);
+      if (nextConceptIdx >= 0) {
+        await generateConceptBeatContent(unit, nextConceptIdx, unit.learnerAdaptationProfile, session);
+        generatedOne = true;
+      } else {
+        const hwBeats = Array.isArray(unit.homeworkBeats) ? unit.homeworkBeats : [];
+        const nextHwIdx = hwBeats.findIndex(b => b && b.status !== 'ready');
+        if (nextHwIdx >= 0) {
+          await generateHomeworkBeatContent(unit, nextHwIdx, unit.learnerAdaptationProfile, session);
+          generatedOne = true;
+        }
+      }
+
+      if (session && session.isCancelled()) {
+        const cancelledUnit = findLiveUnit();
+        if (cancelledUnit) cancelledUnit.beatsWorkerActive = false;
+        return null;
       }
 
       unit = findLiveUnit();
-      if (unit && !(session && session.isCancelled())) {
-        unit.beatsWorkerActive = false;
-        unit.allBeatsGenerated = true;
+      if (!unit) return null;
+
+      unit.beatsWorkerActive = false;
+      unit.allBeatsGenerated = !hasPendingBeats(unit);
+      if (generatedOne) {
         saveAppState();
-        updateBackgroundBeatsBadgeInDom(unit);
       }
+      updateBackgroundBeatsBadgeInDom(unit);
       return unit;
     } catch (err) {
+      const liveUnit = findLiveUnit();
+      if (liveUnit) liveUnit.beatsWorkerActive = false;
       if (err && err.name === 'AbortError') {
         return null;
       }
-      console.warn('[BeatGenerator] Background beats worker encountered an error:', err);
+      console.warn('[BeatGenerator] 1-Beat Lookahead prewarm encountered an error:', err);
       return null;
     } finally {
       _activeBeatWorkerPromises.delete(unitId);
@@ -1852,6 +2267,16 @@ function runAsyncBeatsWorker(unitId, session = null) {
 
   _activeBeatWorkerPromises.set(unitId, workerPromise);
   return workerPromise;
+}
+
+/**
+ * Backward-compatible alias delegating to 1-Beat Lookahead (`prewarmNextPendingBeat`).
+ * @param {string} unitId
+ * @param {object} [session]
+ * @returns {Promise<object|null>}
+ */
+function runAsyncBeatsWorker(unitId, session = null) {
+  return prewarmNextPendingBeat(unitId, session);
 }
 
 /**
@@ -2009,6 +2434,7 @@ async function generateDailyStudyUnitFromMaterial({
 
   const initialQuestions = normalizedQuestionOutlines.map((q, idx) => {
     const ownerHwBeatIdx = homeworkBeats.findIndex(b => Array.isArray(b.questionIndices) && b.questionIndices.includes(idx));
+    const initSubSteps = capMicroStepsArray(Array.isArray(q.sub_steps) ? q.sub_steps : []);
     return {
       id: `${unitId}_q${idx + 1}`,
       index: idx + 1,
@@ -2022,6 +2448,7 @@ async function generateDailyStudyUnitFromMaterial({
       original_question: q.exact_book_text,
       questionText: q.exact_book_text,
       friendly_translation: 'המאמן מכין את פירוק השלבים המותאם אישית לשאלה זו...',
+      sub_steps: initSubSteps,
       topic_focus: q.question_number_label,
       topic: q.question_number_label,
       table_schema: {
@@ -2034,7 +2461,7 @@ async function generateDailyStudyUnitFromMaterial({
       correct_option_index: 0,
       mfa_verification: null,
       notebook_copy_summary: '',
-      step_by_step_guide: [],
+      step_by_step_guide: initSubSteps,
       hint: '',
       expected_answer_summary: '',
       coreConcept: '',
@@ -2140,11 +2567,11 @@ async function generateDailyStudyUnitFromMaterial({
   }
 
   // Immediately open Beat 1 for Daniel!
-  openStudyHelpUnit(newUnit.id);
+  openStudyHelpUnit(newUnit.id, { skipAutoPrewarm: true });
 
-  // Launch background worker for Concept Beats 2..K and Homework Beats 1..M
+  // 1-Beat Lookahead: prewarm ONLY the single next pending beat in background
   if (hasPendingBeats(newUnit)) {
-    runAsyncBeatsWorker(newUnit.id, activeSession);
+    prewarmNextPendingBeat(newUnit.id, activeSession);
   }
 
   return newUnit;
@@ -2606,9 +3033,10 @@ const UnitBeatCursor = {
    * when entering a `PRIVATE_TUTOR_SLIDE`, then re-renders `openStudyHelpUnit(unit.id)`.
    * @param {object} unit
    * @param {number} targetSlideIdx
+   * @param {{ skipAutoPrewarm?: boolean }} [options]
    * @returns {Promise<boolean>}
    */
-  async goToSlide(unit, targetSlideIdx) {
+  async goToSlide(unit, targetSlideIdx, options = {}) {
     if (!unit) return false;
     const deck = this.getFlatSlideDeck(unit);
     if (targetSlideIdx < 0 || targetSlideIdx >= deck.length) return false;
@@ -2675,7 +3103,7 @@ const UnitBeatCursor = {
 
     unit.currentSlideIdx = targetSlideIdx;
     saveAppState();
-    openStudyHelpUnit(unit.id);
+    openStudyHelpUnit(unit.id, options);
     if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -2683,14 +3111,19 @@ const UnitBeatCursor = {
   },
 
   /**
-   * Advances to the next slide in the flat deck (`unit.currentSlideIdx + 1`).
+   * Advances to the next slide in the flat deck (`unit.currentSlideIdx + 1`)
+   * and triggers 1-Beat Lookahead (`prewarmNextPendingBeat(unit.id)`).
    * @param {object} unit
    * @returns {Promise<boolean>}
    */
   async advanceNext(unit) {
     const cur = this.getCurrentSlide(unit);
     if (!cur) return false;
-    return this.goToSlide(unit, cur.slideIndex + 1);
+    const moved = await this.goToSlide(unit, cur.slideIndex + 1, { skipAutoPrewarm: true });
+    if (moved && unit && hasPendingBeats(unit)) {
+      prewarmNextPendingBeat(unit.id);
+    }
+    return moved;
   },
 
   /**
@@ -3171,7 +3604,7 @@ ${modeDirective}
  *   - `HOMEWORK_SLIDE`s (Grounded Stage 2 Homework & Table Solver)
  * @param {string} unitId
  */
-function openStudyHelpUnit(unitId) {
+function openStudyHelpUnit(unitId, options = {}) {
   if (!Array.isArray(appState.studyHelpUnits)) {
     appState.studyHelpUnits = [];
   }
@@ -3199,9 +3632,9 @@ function openStudyHelpUnit(unitId) {
 
   ensureUnitConceptsState(unit);
 
-  // Resume background worker if any Concept Beat or Homework Beat is still pending
-  if (hasPendingBeats(unit)) {
-    runAsyncBeatsWorker(unit.id);
+  // 1-Beat Lookahead: prewarm ONLY the single next pending beat after opening a unit
+  if (!options?.skipAutoPrewarm && hasPendingBeats(unit)) {
+    prewarmNextPendingBeat(unit.id);
   }
 
   const concepts = Array.isArray(unit.concepts) ? unit.concepts : [];
@@ -4498,16 +4931,22 @@ function openStudyHelpUnit(unitId) {
             <p class="study-daniel-friendly-text">
               ${formatCoachChatHtml(currentQ.friendly_translation || '')}
             </p>
-            ${Array.isArray(currentQ.step_by_step_guide) && currentQ.step_by_step_guide.length > 0 ? `
+            ${(() => {
+              const displaySteps = (Array.isArray(currentQ.sub_steps) && currentQ.sub_steps.length > 0)
+                ? currentQ.sub_steps
+                : (Array.isArray(currentQ.step_by_step_guide) ? currentQ.step_by_step_guide : []);
+              if (displaySteps.length === 0) return '';
+              return `
               <ol class="study-guiding-stones-list">
-                ${currentQ.step_by_step_guide.map((stepStr, sIdx) => `
+                ${displaySteps.map((stepStr, sIdx) => `
                   <li class="study-guiding-stone-item">
                     <span class="stone-num">${sIdx + 1}</span>
                     <span class="stone-text">${formatCoachChatHtml(stepStr)}</span>
                   </li>
                 `).join('')}
               </ol>
-            ` : ''}
+              `;
+            })()}
           </div>
         </div>
       </section>
@@ -6398,8 +6837,10 @@ ${practicedQuestionsSummary}
 
 const BeatGenerator = {
   extractLessonBeatBlueprint,
+  consolidateAndCapQuestionOutlines,
   generateConceptBeatContent,
   generateHomeworkBeatContent,
+  prewarmNextPendingBeat,
   runAsyncBeatsWorker,
   ensureBeatReadyForLearner,
   groupConceptOutlinesIntoBeats,
@@ -6413,8 +6854,10 @@ if (typeof window !== 'undefined') {
   window.performAsyncTutorContextHandoff = performAsyncTutorContextHandoff;
   window.evaluatePrivateTutorTurnWithGroq = evaluatePrivateTutorTurnWithGroq;
   window.extractLessonBeatBlueprint = extractLessonBeatBlueprint;
+  window.consolidateAndCapQuestionOutlines = consolidateAndCapQuestionOutlines;
   window.generateConceptBeatContent = generateConceptBeatContent;
   window.generateHomeworkBeatContent = generateHomeworkBeatContent;
+  window.prewarmNextPendingBeat = prewarmNextPendingBeat;
   window.runAsyncBeatsWorker = runAsyncBeatsWorker;
   window.ensureBeatReadyForLearner = ensureBeatReadyForLearner;
   window.getTodayHebrewDateLabel = getTodayHebrewDateLabel;
