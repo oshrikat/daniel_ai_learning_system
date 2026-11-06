@@ -1,10 +1,40 @@
-// Ensure callOpenRouterAPI enforces a 25-second AbortController timeout
+function createOrchestratorAbortError(message = 'הבקשה ל-AI בוטלה על ידי המשתמש') {
+  if (typeof DOMException !== 'undefined') {
+    return new DOMException(message, 'AbortError');
+  }
+  const abortErr = new Error(message);
+  abortErr.name = 'AbortError';
+  return abortErr;
+}
+
+// Ensure callOpenRouterAPI enforces a 25-second AbortController timeout + options.abortSignal linking
 callOpenRouterAPI = async function (apiKey, prompt, explicitModel = '', options = {}) {
+  if (options.abortSignal && options.abortSignal.aborted) {
+    throw createOrchestratorAbortError();
+  }
+
   const key = cleanApiKey(apiKey);
   const model = explicitModel || appState?.apiConfig?.verifiedOpenRouterModel || 'openai/gpt-4o-mini';
   const timeoutMs = options.timeoutMs || 25000;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let timedOut = false;
+  let onExternalAbort = null;
+
+  if (controller && options.abortSignal) {
+    if (options.abortSignal.aborted) {
+      controller.abort();
+    } else if (typeof options.abortSignal.addEventListener === 'function') {
+      onExternalAbort = () => controller.abort();
+      options.abortSignal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+  }
+
+  const timer = controller
+    ? setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs)
+    : null;
 
   let res;
   try {
@@ -15,12 +45,19 @@ callOpenRouterAPI = async function (apiKey, prompt, explicitModel = '', options 
       ...(controller ? { signal: controller.signal } : {})
     });
   } catch (err) {
-    if (err && err.name === 'AbortError') {
+    if (options.abortSignal && options.abortSignal.aborted) {
+      if (err && err.name === 'AbortError') throw err;
+      throw createOrchestratorAbortError();
+    }
+    if (err && err.name === 'AbortError' && timedOut) {
       throw new Error(`OpenRouter (${model}) timed out after ${timeoutMs}ms`);
     }
     throw err;
   } finally {
     if (timer) clearTimeout(timer);
+    if (onExternalAbort && options.abortSignal && typeof options.abortSignal.removeEventListener === 'function') {
+      options.abortSignal.removeEventListener('abort', onExternalAbort);
+    }
   }
 
   if (!res.ok) throw new Error(`OpenRouter (${model}) HTTP ${res.status}`);
@@ -39,6 +76,10 @@ callOpenRouterAPI = async function (apiKey, prompt, explicitModel = '', options 
  * @returns {Promise<string>}
  */
 async function callMultiTierAI(prompt, options = {}) {
+  if (options.abortSignal?.aborted) {
+    throw createOrchestratorAbortError();
+  }
+
   let savedState = {};
   try {
     savedState = JSON.parse(localStorage.getItem('DANIEL_AI_V3_CLEAN') || '{}');
@@ -93,14 +134,23 @@ async function callMultiTierAI(prompt, options = {}) {
     ].filter(Boolean))];
 
     for (const model of geminiModelsToTry) {
+      if (options.abortSignal?.aborted) {
+        throw createOrchestratorAbortError();
+      }
       try {
         const reply = await callGeminiAPI(model, geminiKey, prompt, enrichedOptions);
+        if (options.abortSignal?.aborted) {
+          throw createOrchestratorAbortError();
+        }
         if (appState?.apiConfig) {
           appState.apiConfig.verifiedGeminiModel = model;
         }
         localStorage.setItem('verified_gemini_model', model);
         return reply;
       } catch (e) {
+        if (options.abortSignal?.aborted || (e && e.name === 'AbortError')) {
+          throw (e && e.name === 'AbortError') ? e : createOrchestratorAbortError();
+        }
         errors.push(`Gemini (${model}): ${e.message}`);
         console.warn(`[AI Tier 1] Gemini (${model}) failed, trying next Gemini candidate…`, e);
       }
@@ -128,13 +178,22 @@ async function callMultiTierAI(prompt, options = {}) {
     }
 
     for (const model of groqModelsToTry) {
+      if (options.abortSignal?.aborted) {
+        throw createOrchestratorAbortError();
+      }
       try {
         const reply = await callGrokAPI(grokKey, prompt, model, enrichedOptions);
+        if (options.abortSignal?.aborted) {
+          throw createOrchestratorAbortError();
+        }
         if (isGroq && !hasImages && appState?.apiConfig) {
           appState.apiConfig.verifiedGroqModel = model;
         }
         return reply;
       } catch (e) {
+        if (options.abortSignal?.aborted || (e && e.name === 'AbortError')) {
+          throw (e && e.name === 'AbortError') ? e : createOrchestratorAbortError();
+        }
         errors.push(`Groq/Grok (${model}): ${e.message}`);
         console.warn(`[AI Tier 2] Groq/Grok (${model}) failed, trying next…`, e);
       }
@@ -150,17 +209,30 @@ async function callMultiTierAI(prompt, options = {}) {
     ].filter(Boolean))];
 
     for (const model of orModels) {
+      if (options.abortSignal?.aborted) {
+        throw createOrchestratorAbortError();
+      }
       try {
         const reply = await callOpenRouterAPI(orKey, prompt, model, enrichedOptions);
+        if (options.abortSignal?.aborted) {
+          throw createOrchestratorAbortError();
+        }
         if (appState?.apiConfig) {
           appState.apiConfig.verifiedOpenRouterModel = model;
         }
         return reply;
       } catch (e) {
+        if (options.abortSignal?.aborted || (e && e.name === 'AbortError')) {
+          throw (e && e.name === 'AbortError') ? e : createOrchestratorAbortError();
+        }
         errors.push(`OpenRouter (${model}): ${e.message}`);
         console.warn(`[AI Tier 3] OpenRouter (${model}) failed, trying next…`, e);
       }
     }
+  }
+
+  if (options.abortSignal?.aborted) {
+    throw createOrchestratorAbortError();
   }
 
   // TIER 4: All Failed -> Console Error + Toast Error + Offline Fallback
@@ -178,6 +250,10 @@ async function callMultiTierAI(prompt, options = {}) {
  * @returns {Promise<string>}
  */
 async function callGroqPreferredAI(prompt, options = {}) {
+  if (options.abortSignal?.aborted) {
+    throw createOrchestratorAbortError();
+  }
+
   let savedState = {};
   try {
     savedState = JSON.parse(localStorage.getItem('DANIEL_AI_V3_CLEAN') || '{}');
@@ -210,13 +286,22 @@ async function callGroqPreferredAI(prompt, options = {}) {
     };
 
     for (const model of groqModelsToTry) {
+      if (options.abortSignal?.aborted) {
+        throw createOrchestratorAbortError();
+      }
       try {
         const reply = await callGrokAPI(grokKey, prompt, model, fastOptions);
+        if (options.abortSignal?.aborted) {
+          throw createOrchestratorAbortError();
+        }
         if (isGroq && appState?.apiConfig) {
           appState.apiConfig.verifiedGroqModel = model;
         }
         return reply;
       } catch (err) {
+        if (options.abortSignal?.aborted || (err && err.name === 'AbortError')) {
+          throw (err && err.name === 'AbortError') ? err : createOrchestratorAbortError();
+        }
         console.warn(`[callGroqPreferredAI] Groq (${model}) failed, trying next…`, err);
       }
     }

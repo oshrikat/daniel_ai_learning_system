@@ -72,12 +72,44 @@ async function callGeminiAPI(model, apiKey, prompt, options = {}) {
   }
 
   const timeoutMs = options.timeoutMs || 35000;
+  const createGeminiAbortError = () => {
+    if (typeof DOMException !== 'undefined') {
+      return new DOMException('הבקשה ל-AI בוטלה על ידי המשתמש', 'AbortError');
+    }
+    const abortErr = new Error('הבקשה ל-AI בוטלה על ידי המשתמש');
+    abortErr.name = 'AbortError';
+    return abortErr;
+  };
+
+  if (options.abortSignal && options.abortSignal.aborted) {
+    throw createGeminiAbortError();
+  }
+
   const fetchWithTimeout = async (bodyPayload) => {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    let timedOut = false;
+    let onExternalAbort = null;
+
+    if (controller && options.abortSignal) {
+      if (options.abortSignal.aborted) {
+        controller.abort();
+      } else if (typeof options.abortSignal.addEventListener === 'function') {
+        onExternalAbort = () => controller.abort();
+        options.abortSignal.addEventListener('abort', onExternalAbort, { once: true });
+      }
+    }
+
     const timer = controller
-      ? setTimeout(() => controller.abort(), timeoutMs)
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs)
       : null;
+
     try {
+      if (options.abortSignal && options.abortSignal.aborted) {
+        throw createGeminiAbortError();
+      }
       return await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -85,16 +117,27 @@ async function callGeminiAPI(model, apiKey, prompt, options = {}) {
         ...(controller ? { signal: controller.signal } : {})
       });
     } catch (err) {
-      if (err && err.name === 'AbortError') {
+      if (options.abortSignal && options.abortSignal.aborted) {
+        if (err && err.name === 'AbortError') throw err;
+        throw createGeminiAbortError();
+      }
+      if (err && err.name === 'AbortError' && timedOut) {
         throw new Error(`Gemini ${model} timed out after ${timeoutMs}ms`);
       }
       throw err;
     } finally {
       if (timer) clearTimeout(timer);
+      if (onExternalAbort && options.abortSignal && typeof options.abortSignal.removeEventListener === 'function') {
+        options.abortSignal.removeEventListener('abort', onExternalAbort);
+      }
     }
   };
 
   let res = await fetchWithTimeout({ contents: [{ parts }], generationConfig });
+
+  if (options.abortSignal && options.abortSignal.aborted) {
+    throw createGeminiAbortError();
+  }
 
   if (res.status === 400 && generationConfig.responseMimeType) {
     const fallbackConfig = {

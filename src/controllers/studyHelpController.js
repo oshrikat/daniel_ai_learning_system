@@ -16,6 +16,96 @@ let _loadingStepTimer = null;
 let _lastUploadRetryContext = null;
 
 /**
+ * Singleton managing active upload & AI unit generation cancellation via `AbortController` + monotonic `runId` token.
+ */
+const StudyGenerationCancelManager = {
+  _currentRunId: 0,
+  _currentAbortController: null,
+  _partialUnitId: null,
+
+  startNewSession() {
+    if (this._currentAbortController) {
+      try {
+        this._currentAbortController.abort();
+      } catch (_) {}
+    }
+    this._currentRunId += 1;
+    this._partialUnitId = null;
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    this._currentAbortController = controller;
+
+    const runId = this._currentRunId;
+    const signal = controller ? controller.signal : null;
+    return {
+      runId,
+      signal,
+      isCancelled: () => Boolean((signal && signal.aborted) || this._currentRunId !== runId)
+    };
+  },
+
+  cancelActiveSession() {
+    if (this._currentAbortController) {
+      try {
+        this._currentAbortController.abort();
+      } catch (_) {}
+      this._currentAbortController = null;
+    }
+    this._currentRunId += 1;
+
+    const partialId = this._partialUnitId;
+    this._partialUnitId = null;
+
+    if (partialId) {
+      let stateChanged = false;
+      if (typeof appState !== 'undefined' && appState) {
+        if (Array.isArray(appState.studyHelpUnits)) {
+          const prevLen = appState.studyHelpUnits.length;
+          appState.studyHelpUnits = appState.studyHelpUnits.filter(u => u && u.id !== partialId);
+          if (appState.studyHelpUnits.length !== prevLen) stateChanged = true;
+        }
+        if (appState.studyHelp && Array.isArray(appState.studyHelp.dailyCards)) {
+          const prevCardsLen = appState.studyHelp.dailyCards.length;
+          appState.studyHelp.dailyCards = appState.studyHelp.dailyCards.filter(u => u && u.id !== partialId);
+          if (appState.studyHelp.dailyCards.length !== prevCardsLen) stateChanged = true;
+          if (appState.studyHelp.activeCardId === partialId) {
+            appState.studyHelp.activeCardId = null;
+          }
+        }
+      }
+      if (stateChanged && typeof saveAppState === 'function') {
+        saveAppState();
+      }
+
+      const idbStore = typeof StudySnapshotsIDB !== 'undefined'
+        ? StudySnapshotsIDB
+        : (typeof window !== 'undefined' ? window.StudySnapshotsIDB : null);
+      if (idbStore) {
+        if (typeof idbStore.deleteUnitSnapshots === 'function') {
+          Promise.resolve(idbStore.deleteUnitSnapshots(partialId)).catch(() => {});
+        } else if (typeof idbStore.deleteSnapshots === 'function') {
+          Promise.resolve(idbStore.deleteSnapshots(partialId)).catch(() => {});
+        } else if (typeof idbStore.delete === 'function') {
+          Promise.resolve(idbStore.delete(partialId)).catch(() => {});
+        }
+      }
+    }
+
+    hideStudyHelpLoadingOverlay();
+    if (typeof document !== 'undefined' && typeof document.getElementById === 'function') {
+      const retryModal = document.getElementById('study-help-retry-modal');
+      if (retryModal && typeof retryModal.remove === 'function') {
+        retryModal.remove();
+      }
+    }
+
+    if (typeof showToast === 'function') {
+      showToast('העלאת הקובץ ויצירת היחידה בוטלו. היחידות הקיימות נשמרו ללא שינוי 🛑', 'info');
+    }
+  }
+};
+
+/**
  * Escapes HTML special characters and converts newlines / bold markdown to safe HTML.
  * @param {string} str
  * @returns {string}
@@ -283,6 +373,16 @@ function showStudyHelpLoadingOverlay(statusText = 'קורא את הדפים שה
         <p class="study-calming-subtitle">
           קח נשימה רגועה, דניאל 💙 עוד כמה שניות הכל יהיה מונגש ומסודר צעד אחר צעד.
         </p>
+        <div class="study-calming-cancel-wrap" style="margin-top: 1.15rem;">
+          <button
+            type="button"
+            id="btn-cancel-study-generation"
+            class="secondary-btn study-cancel-generation-btn"
+            style="border: 2px solid #ef4444; color: #b91c1c; background: #fef2f2; font-weight: 800; padding: 0.65rem 1.35rem; border-radius: 12px; cursor: pointer;"
+          >
+            <span>🛑 בטל העלאה ויצירת יחידה</span>
+          </button>
+        </div>
       </div>
     `;
     document.body.appendChild(overlay);
@@ -291,6 +391,13 @@ function showStudyHelpLoadingOverlay(statusText = 'קורא את הדפים שה
     overlay.classList.add('active');
     const statusEl = overlay.querySelector('#study-help-loading-status');
     if (statusEl) statusEl.textContent = statusText;
+  }
+
+  const cancelBtn = overlay.querySelector('#btn-cancel-study-generation');
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      StudyGenerationCancelManager.cancelActiveSession();
+    };
   }
 
   const updateActiveStepPill = (text) => {
@@ -772,8 +879,11 @@ async function extractLessonBeatBlueprint({
   inlineImages = [],
   rawPdfPart = null,
   sourceLabel = '',
-  isFileUpload = false
+  isFileUpload = false,
+  session = null
 } = {}) {
+  if (session && session.isCancelled()) return null;
+
   const cleanText = String(extractedText || '').trim();
   const pageImages = (Array.isArray(inlineImages) ? inlineImages : []).filter(
     img => img && !img.isNativePdf && img.mimeType !== 'application/pdf'
@@ -901,6 +1011,8 @@ ${chunkText ? `טקסט שחולץ מ${pageRangeDesc}:\n"""\n${chunkText}\n"""\n
   let anyChunkSucceeded = false;
 
   for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
+    if (session && session.isCancelled()) return null;
+
     const ch = chunks[cIdx];
     if (pageImages.length > 3 || chunks.length > 1) {
       showStudyHelpLoadingOverlay(
@@ -918,9 +1030,11 @@ ${chunkText ? `טקסט שחולץ מ${pageRangeDesc}:\n"""\n${chunkText}\n"""\n
     let parsedChunk = null;
 
     for (let attempt = 1; attempt <= 2; attempt++) {
+      if (session && session.isCancelled()) return null;
       try {
         if (attempt === 2) {
           await new Promise(r => setTimeout(r, 650));
+          if (session && session.isCancelled()) return null;
           showStudyHelpLoadingOverlay(
             `מבצע ניסיון שני למיפוי מדויק של עמודים ${ch.startPage} עד ${ch.endPage} מתוך ${ch.totalPages}...`
           );
@@ -931,8 +1045,10 @@ ${chunkText ? `טקסט שחולץ מ${pageRangeDesc}:\n"""\n${chunkText}\n"""\n
           jsonMode: true,
           maxTokens: 8192,
           inlineImages: ch.images,
-          rawPdfPart: ch.rawPdf
+          rawPdfPart: ch.rawPdf,
+          abortSignal: session ? session.signal : undefined
         });
+        if (session && session.isCancelled()) return null;
 
         const candidate = parseJsonFromAIResponse(raw);
         if (
@@ -949,10 +1065,15 @@ ${chunkText ? `טקסט שחולץ מ${pageRangeDesc}:\n"""\n${chunkText}\n"""\n
           lastChunkError = `מבנה JSON חסר בעמודים ${ch.startPage}-${ch.endPage}`;
         }
       } catch (err) {
+        if ((err && err.name === 'AbortError') || (session && session.isCancelled())) {
+          return null;
+        }
         lastChunkError = err && err.message ? err.message : String(err);
         console.warn(`[BeatGenerator] Blueprint chunk ${cIdx + 1}/${chunks.length} attempt ${attempt} failed:`, err);
       }
     }
+
+    if (session && session.isCancelled()) return null;
 
     if (!parsedChunk) {
       if (isFileUpload || hasAnyVisuals) {
@@ -1075,8 +1196,11 @@ function buildAdaptationGuidanceBlock(profile) {
  * @param {object} [learnerAdaptationProfile]
  * @returns {Promise<object|null>}
  */
-async function generateConceptBeatContent(unit, beatIndex, learnerAdaptationProfile = null) {
+async function generateConceptBeatContent(unit, beatIndex, learnerAdaptationProfile = null, session = null) {
   if (!unit || !Array.isArray(unit.conceptBeats) || !unit.conceptBeats[beatIndex]) {
+    return null;
+  }
+  if (session && session.isCancelled()) {
     return null;
   }
 
@@ -1166,21 +1290,39 @@ ${outlinesPayloadText}
 
     let parsed = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
+      if (session && session.isCancelled()) {
+        beat.status = 'pending';
+        return null;
+      }
       try {
         const raw = await callMultiTierAI(prompt, {
           systemInstruction,
           jsonMode: true,
           maxTokens: 8192,
-          inlineImages: beatImages
+          inlineImages: beatImages,
+          abortSignal: session ? session.signal : undefined
         });
+        if (session && session.isCancelled()) {
+          beat.status = 'pending';
+          return null;
+        }
         const candidate = parseJsonFromAIResponse(raw);
         if (candidate && Array.isArray(candidate.slides) && candidate.slides.length > 0) {
           parsed = candidate;
           break;
         }
       } catch (err) {
+        if ((err && err.name === 'AbortError') || (session && session.isCancelled())) {
+          beat.status = 'pending';
+          return null;
+        }
         console.warn(`[BeatGenerator] Concept Beat ${beatIndex} attempt ${attempt} failed:`, err);
       }
+    }
+
+    if (session && session.isCancelled()) {
+      beat.status = 'pending';
+      return null;
     }
 
     const rawSlides = parsed && Array.isArray(parsed.slides) ? parsed.slides : [];
@@ -1366,8 +1508,11 @@ ${outlinesPayloadText}
  * @param {object} [learnerAdaptationProfile]
  * @returns {Promise<object|null>}
  */
-async function generateHomeworkBeatContent(unit, hwBeatIndex, learnerAdaptationProfile = null) {
+async function generateHomeworkBeatContent(unit, hwBeatIndex, learnerAdaptationProfile = null, session = null) {
   if (!unit || !Array.isArray(unit.homeworkBeats) || !unit.homeworkBeats[hwBeatIndex]) {
+    return null;
+  }
+  if (session && session.isCancelled()) {
     return null;
   }
 
@@ -1445,21 +1590,39 @@ ${questionsPayloadText}
 
     let parsed = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
+      if (session && session.isCancelled()) {
+        hwBeat.status = 'pending';
+        return null;
+      }
       try {
         const raw = await callMultiTierAI(prompt, {
           systemInstruction,
           jsonMode: true,
           maxTokens: 8192,
-          inlineImages: beatImages
+          inlineImages: beatImages,
+          abortSignal: session ? session.signal : undefined
         });
+        if (session && session.isCancelled()) {
+          hwBeat.status = 'pending';
+          return null;
+        }
         const candidate = parseJsonFromAIResponse(raw);
         if (candidate && Array.isArray(candidate.questions) && candidate.questions.length > 0) {
           parsed = candidate;
           break;
         }
       } catch (err) {
+        if ((err && err.name === 'AbortError') || (session && session.isCancelled())) {
+          hwBeat.status = 'pending';
+          return null;
+        }
         console.warn(`[BeatGenerator] Homework Beat ${hwBeatIndex} attempt ${attempt} failed:`, err);
       }
+    }
+
+    if (session && session.isCancelled()) {
+      hwBeat.status = 'pending';
+      return null;
     }
 
     const aiQuestions = parsed && Array.isArray(parsed.questions) ? parsed.questions : [];
@@ -1577,13 +1740,15 @@ async function ensureBeatReadyForLearner(unit, beatType, beatIndex, forceAdapt =
     return;
   }
 
+  const session = StudyGenerationCancelManager.startNewSession();
   showStudyHelpLoadingOverlay('בונה עבורך את הפעימה הבאה בהתאמה אישית לקצב שלך...');
   try {
     if (beatType === 'homework') {
-      await generateHomeworkBeatContent(unit, beatIndex, unit.learnerAdaptationProfile);
+      await generateHomeworkBeatContent(unit, beatIndex, unit.learnerAdaptationProfile, session);
     } else {
-      await generateConceptBeatContent(unit, beatIndex, unit.learnerAdaptationProfile);
+      await generateConceptBeatContent(unit, beatIndex, unit.learnerAdaptationProfile, session);
     }
+    if (session.isCancelled()) return;
     saveAppState();
   } finally {
     hideStudyHelpLoadingOverlay();
@@ -1591,14 +1756,16 @@ async function ensureBeatReadyForLearner(unit, beatType, beatIndex, forceAdapt =
 }
 
 /**
- * Stage C — Asynchronous Background Beat Queue (`runAsyncBeatsWorker(unitId)`):
+ * Stage C — Asynchronous Background Beat Queue (`runAsyncBeatsWorker(unitId, session)`):
  * Iteratively generates remaining `Concept Beats 2..K` and all `Homework Beats 1..M`
  * in the background, saving state after each beat completes without interrupting Daniel's active screen.
  * @param {string} unitId
- * @returns {Promise<void>}
+ * @param {object} [session]
+ * @returns {Promise<object|null>}
  */
-function runAsyncBeatsWorker(unitId) {
-  if (!unitId) return Promise.resolve();
+function runAsyncBeatsWorker(unitId, session = null) {
+  if (!unitId) return Promise.resolve(null);
+  if (session && session.isCancelled()) return Promise.resolve(null);
   if (_activeBeatWorkerPromises.has(unitId)) {
     return _activeBeatWorkerPromises.get(unitId);
   }
@@ -1608,22 +1775,32 @@ function runAsyncBeatsWorker(unitId) {
       const findLiveUnit = () => (Array.isArray(appState.studyHelpUnits) ? appState.studyHelpUnits : []).find(u => u && u.id === unitId);
 
       let unit = findLiveUnit();
-      if (!unit) return;
+      if (!unit || (session && session.isCancelled())) return null;
 
       unit.beatsWorkerActive = true;
 
       // 1. Iteratively generate Concept Beats 1..K-1 (Beat 0 is already generated at launch, or resume if pending)
       const cBeatsCount = Array.isArray(unit.conceptBeats) ? unit.conceptBeats.length : 0;
       for (let bIdx = 0; bIdx < cBeatsCount; bIdx++) {
+        if (session && session.isCancelled()) {
+          const cancelledUnit = findLiveUnit();
+          if (cancelledUnit) cancelledUnit.beatsWorkerActive = false;
+          return null;
+        }
         unit = findLiveUnit();
-        if (!unit) return;
+        if (!unit) return null;
         const cBeat = unit.conceptBeats[bIdx];
         if (!cBeat || cBeat.status === 'ready') continue;
 
-        await generateConceptBeatContent(unit, bIdx, unit.learnerAdaptationProfile);
+        await generateConceptBeatContent(unit, bIdx, unit.learnerAdaptationProfile, session);
+        if (session && session.isCancelled()) {
+          const cancelledUnit = findLiveUnit();
+          if (cancelledUnit) cancelledUnit.beatsWorkerActive = false;
+          return null;
+        }
 
         unit = findLiveUnit();
-        if (!unit) return;
+        if (!unit) return null;
         saveAppState();
         updateBackgroundBeatsBadgeInDom(unit);
       }
@@ -1631,28 +1808,43 @@ function runAsyncBeatsWorker(unitId) {
       // 2. Iteratively generate all Homework Beats 0..M-1
       const hwBeatsCount = Array.isArray(unit.homeworkBeats) ? unit.homeworkBeats.length : 0;
       for (let hwIdx = 0; hwIdx < hwBeatsCount; hwIdx++) {
+        if (session && session.isCancelled()) {
+          const cancelledUnit = findLiveUnit();
+          if (cancelledUnit) cancelledUnit.beatsWorkerActive = false;
+          return null;
+        }
         unit = findLiveUnit();
-        if (!unit) return;
+        if (!unit) return null;
         const hwBeat = unit.homeworkBeats[hwIdx];
         if (!hwBeat || hwBeat.status === 'ready') continue;
 
-        await generateHomeworkBeatContent(unit, hwIdx, unit.learnerAdaptationProfile);
+        await generateHomeworkBeatContent(unit, hwIdx, unit.learnerAdaptationProfile, session);
+        if (session && session.isCancelled()) {
+          const cancelledUnit = findLiveUnit();
+          if (cancelledUnit) cancelledUnit.beatsWorkerActive = false;
+          return null;
+        }
 
         unit = findLiveUnit();
-        if (!unit) return;
+        if (!unit) return null;
         saveAppState();
         updateBackgroundBeatsBadgeInDom(unit);
       }
 
       unit = findLiveUnit();
-      if (unit) {
+      if (unit && !(session && session.isCancelled())) {
         unit.beatsWorkerActive = false;
         unit.allBeatsGenerated = true;
         saveAppState();
         updateBackgroundBeatsBadgeInDom(unit);
       }
+      return unit;
     } catch (err) {
+      if (err && err.name === 'AbortError') {
+        return null;
+      }
       console.warn('[BeatGenerator] Background beats worker encountered an error:', err);
+      return null;
     } finally {
       _activeBeatWorkerPromises.delete(unitId);
     }
@@ -1702,8 +1894,12 @@ async function generateDailyStudyUnitFromMaterial({
   rawPdfPart = null,
   sourceLabel = '',
   sourceFileName = '',
-  isFileUpload = false
+  isFileUpload = false,
+  session = null
 } = {}) {
+  const activeSession = session || StudyGenerationCancelManager.startNewSession();
+  if (activeSession.isCancelled()) return null;
+
   _lastUploadRetryContext = {
     extractedText,
     inlineImages,
@@ -1721,9 +1917,13 @@ async function generateDailyStudyUnitFromMaterial({
       inlineImages,
       rawPdfPart,
       sourceLabel,
-      isFileUpload
+      isFileUpload,
+      session: activeSession
     });
   } catch (blueprintErr) {
+    if ((blueprintErr && blueprintErr.name === 'AbortError') || activeSession.isCancelled()) {
+      return null;
+    }
     const diag = blueprintErr && blueprintErr.message ? blueprintErr.message : String(blueprintErr);
     showStudyHelpRetryModal(diag, async () => {
       if (_lastUploadRetryContext) {
@@ -1733,7 +1933,12 @@ async function generateDailyStudyUnitFromMaterial({
     return null;
   }
 
+  if (!blueprint || activeSession.isCancelled()) {
+    return null;
+  }
+
   const unitId = `sh_unit_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  StudyGenerationCancelManager._partialUnitId = unitId;
   const dateLabel = getTodayHebrewDateLabel();
   const cleanSourceLabel = String(sourceLabel || blueprint.lesson_title || `שיעור יומי (${dateLabel})`).trim();
   const lessonTitle = String(blueprint.lesson_title || cleanSourceLabel).trim();
@@ -1887,10 +2092,13 @@ async function generateDailyStudyUnitFromMaterial({
   };
 
   // Stage B + C: Immediately generate Concept Beat 1 (`beatIndex = 0`) so Daniel starts right away!
+  if (activeSession.isCancelled()) return null;
   showStudyHelpLoadingOverlay(
     `בונה את פעימת הלימוד הראשונה (1 מתוך ${conceptBeats.length}) מתוך עמודי השיעור...`
   );
-  await generateConceptBeatContent(newUnit, 0, newUnit.learnerAdaptationProfile);
+  await generateConceptBeatContent(newUnit, 0, newUnit.learnerAdaptationProfile, activeSession);
+  if (activeSession.isCancelled()) return null;
+
   newUnit.introAndRules = [pagesSummary, ...(newUnit.goldenRules || [])];
 
   if (!Array.isArray(appState.studyHelpUnits)) {
@@ -1906,6 +2114,10 @@ async function generateDailyStudyUnitFromMaterial({
   }
   appState.studyHelp.dailyCards.push(newUnit);
   appState.studyHelp.activeCardId = newUnit.id;
+
+  if (StudyGenerationCancelManager._partialUnitId === newUnit.id) {
+    StudyGenerationCancelManager._partialUnitId = null;
+  }
 
   saveAppState();
   if (typeof window !== 'undefined' && window.DatabaseManager && typeof window.DatabaseManager.add === 'function') {
@@ -1932,7 +2144,7 @@ async function generateDailyStudyUnitFromMaterial({
 
   // Launch background worker for Concept Beats 2..K and Homework Beats 1..M
   if (hasPendingBeats(newUnit)) {
-    runAsyncBeatsWorker(newUnit.id);
+    runAsyncBeatsWorker(newUnit.id, activeSession);
   }
 
   return newUnit;
@@ -5561,8 +5773,9 @@ function renderStudyHelpRoadmap(container) {
 
     fileInput.onchange = async (e) => {
       const files = Array.from(e.target.files || []);
-      if (files.length === 0) return;
+      if (files.length === 0) return null;
 
+      const session = StudyGenerationCancelManager.startNewSession();
       showStudyHelpLoadingOverlay('קורא וסורק את עמודי קובץ השיעור...');
       try {
         const sourceFileName = files.map(f => f.name).join(', ');
@@ -5576,27 +5789,40 @@ function renderStudyHelpRoadmap(container) {
         };
 
         if (typeof window !== 'undefined' && window.PDFExtractor && typeof window.PDFExtractor.extractFromFiles === 'function') {
-          extracted = await window.PDFExtractor.extractFromFiles(files, (progressText) => {
-            showStudyHelpLoadingOverlay(progressText);
-          });
+          extracted = await window.PDFExtractor.extractFromFiles(
+            files,
+            (progressText) => {
+              if (!session.isCancelled()) {
+                showStudyHelpLoadingOverlay(progressText);
+              }
+            },
+            session.signal
+          );
         }
 
-        await generateDailyStudyUnitFromMaterial({
+        if (session.isCancelled()) return null;
+
+        return await generateDailyStudyUnitFromMaterial({
           extractedText: extracted.extractedText,
           inlineImages: extracted.inlineImages,
           pageSnapshots: extracted.pageSnapshots,
           rawPdfPart: extracted.rawPdfPart,
           sourceLabel,
           sourceFileName,
-          isFileUpload: true
+          isFileUpload: true,
+          session
         });
       } catch (err) {
+        if ((err && err.name === 'AbortError') || session.isCancelled()) {
+          return null;
+        }
         console.error('[StudyHelp] Error processing uploaded files:', err);
         showStudyHelpRetryModal(err && err.message ? err.message : String(err), async () => {
           if (_lastUploadRetryContext) {
             await generateDailyStudyUnitFromMaterial(_lastUploadRetryContext);
           }
         });
+        return null;
       }
     };
   }
@@ -5629,13 +5855,15 @@ function renderStudyHelpRoadmap(container) {
         return;
       }
 
+      const session = StudyGenerationCancelManager.startNewSession();
       await generateDailyStudyUnitFromMaterial({
         extractedText: rawText,
         inlineImages: [],
         pageSnapshots: [],
         rawPdfPart: null,
         sourceLabel: `תרגול יומי (${todayLabel})`,
-        isFileUpload: false
+        isFileUpload: false,
+        session
       });
     };
   }
@@ -6179,6 +6407,7 @@ const BeatGenerator = {
 };
 
 if (typeof window !== 'undefined') {
+  window.StudyGenerationCancelManager = StudyGenerationCancelManager;
   window.BeatGenerator = BeatGenerator;
   window.UnitBeatCursor = UnitBeatCursor;
   window.performAsyncTutorContextHandoff = performAsyncTutorContextHandoff;

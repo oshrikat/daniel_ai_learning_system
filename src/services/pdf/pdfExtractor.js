@@ -2,9 +2,20 @@
  * Multimodal PDF & Image Extractor Service - Daniel AI Learning System
  * Dynamically loads Mozilla PDF.js (v3.11.174) when needed, extracts embedded text,
  * reads native PDF base64 payloads, and renders up to 15 scanned CamScanner PDF pages
- * & images into high-clarity JPEG snapshots (`scale: 1.35`, `quality: 0.78`)
- * for Gemini Vision multimodal processing.
+ * & images into high-clarity JPEG snapshots (`scale: 1.15`, `quality: 0.72`)
+ * for Gemini Vision multimodal processing with full `AbortSignal` cancellation support.
  */
+
+function throwIfUploadAborted(abortSignal) {
+  if (abortSignal && abortSignal.aborted) {
+    if (typeof DOMException !== 'undefined') {
+      throw new DOMException('העלאת הקובץ בוטלה על ידי המשתמש', 'AbortError');
+    }
+    const err = new Error('העלאת הקובץ בוטלה על ידי המשתמש');
+    err.name = 'AbortError';
+    throw err;
+  }
+}
 
 const PDFJS_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 const PDFJS_WORKER_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -89,13 +100,28 @@ function readFileAsRawBase64(file) {
  * @param {number} pageNumber
  * @returns {Promise<{ mimeType: string, data: string, pageNumber: number, dataUrl: string }>}
  */
-function processImageFileToBase64(file, pageNumber) {
+function processImageFileToBase64(file, pageNumber, abortSignal = null) {
   return new Promise((resolve, reject) => {
+    try {
+      throwIfUploadAborted(abortSignal);
+    } catch (abortErr) {
+      reject(abortErr);
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
+      try {
+        throwIfUploadAborted(abortSignal);
+      } catch (abortErr) {
+        reject(abortErr);
+        return;
+      }
+
       const img = new Image();
       img.onload = () => {
         try {
+          throwIfUploadAborted(abortSignal);
           const maxDim = 1600;
           let width = img.naturalWidth || img.width || 1200;
           let height = img.naturalHeight || img.height || 1600;
@@ -118,7 +144,7 @@ function processImageFileToBase64(file, pageNumber) {
           ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, 0, 0, width, height);
 
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
           const base64WithoutPrefix = dataUrl.replace(/^data:image\/jpeg;base64,/, '');
           resolve({
             mimeType: 'image/jpeg',
@@ -149,13 +175,17 @@ function processImageFileToBase64(file, pageNumber) {
  * @param {function} [onProgress]
  * @returns {Promise<{ text: string, images: Array, pageSnapshots: Array, rawPdfPart: object|null, pagesProcessed: number }>}
  */
-async function processPdfFile(file, startPageOffset = 0, maxPagesRemaining = 15, onProgress = null) {
+async function processPdfFile(file, startPageOffset = 0, maxPagesRemaining = 15, onProgress = null, abortSignal = null) {
+  throwIfUploadAborted(abortSignal);
+
   let rawPdfBase64 = '';
   try {
     rawPdfBase64 = await readFileAsRawBase64(file);
   } catch (readErr) {
     console.warn('[PDFExtractor] Could not read raw PDF base64:', readErr);
   }
+
+  throwIfUploadAborted(abortSignal);
 
   const rawPdfPart = rawPdfBase64
     ? {
@@ -170,6 +200,7 @@ async function processPdfFile(file, startPageOffset = 0, maxPagesRemaining = 15,
   try {
     pdfjsLib = await ensurePdfJsLoaded();
   } catch (cdnErr) {
+    throwIfUploadAborted(abortSignal);
     console.warn('[PDFExtractor] PDF.js CDN unavailable, falling back to native PDF payload:', cdnErr);
     const fallbackImages = rawPdfPart ? [rawPdfPart] : [];
     return {
@@ -181,9 +212,13 @@ async function processPdfFile(file, startPageOffset = 0, maxPagesRemaining = 15,
     };
   }
 
+  throwIfUploadAborted(abortSignal);
+
+  let loadingTask = null;
   try {
     const arrayBuffer = await readFileAsArrayBuffer(file);
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    throwIfUploadAborted(abortSignal);
+    loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
     const pdfDoc = await loadingTask.promise;
 
     const numPages = Math.min(pdfDoc.numPages, maxPagesRemaining);
@@ -191,12 +226,20 @@ async function processPdfFile(file, startPageOffset = 0, maxPagesRemaining = 15,
     const pageSnapshots = [];
 
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      if (abortSignal && abortSignal.aborted) {
+        if (loadingTask && typeof loadingTask.destroy === 'function') {
+          try { loadingTask.destroy(); } catch (_) {}
+        }
+        throwIfUploadAborted(abortSignal);
+      }
+
       const globalPageNumber = startPageOffset + pageNum;
       if (typeof onProgress === 'function') {
         onProgress(`קורא וסורק עמוד ${pageNum} מתוך ${numPages} בקובץ השיעור...`);
       }
 
       const page = await pdfDoc.getPage(pageNum);
+      throwIfUploadAborted(abortSignal);
 
       // 1. Extract selectable/embedded text while preserving line breaks, table rows & numbered questions
       try {
@@ -251,9 +294,12 @@ async function processPdfFile(file, startPageOffset = 0, maxPagesRemaining = 15,
         console.warn(`[PDFExtractor] Failed extracting text from page ${pageNum}:`, textErr);
       }
 
-      // 2. Render page onto offscreen canvas (scale 1.35, JPEG quality 0.78) for optimal Hebrew table/text clarity
+      // Check abortSignal immediately before rendering each page to canvas
+      throwIfUploadAborted(abortSignal);
+
+      // 2. Render page onto offscreen canvas (scale 1.15, JPEG quality 0.72) — ~40% smaller payload & crisp Hebrew text
       try {
-        const viewport = page.getViewport({ scale: 1.35 });
+        const viewport = page.getViewport({ scale: 1.15 });
         const canvas = document.createElement('canvas');
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
@@ -262,7 +308,9 @@ async function processPdfFile(file, startPageOffset = 0, maxPagesRemaining = 15,
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         await page.render({ canvasContext: ctx, viewport }).promise;
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
+        throwIfUploadAborted(abortSignal);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
         const base64WithoutPrefix = dataUrl.replace(/^data:image\/jpeg;base64,/, '');
 
         pageSnapshots.push({
@@ -272,6 +320,9 @@ async function processPdfFile(file, startPageOffset = 0, maxPagesRemaining = 15,
           dataUrl: 'data:image/jpeg;base64,' + base64WithoutPrefix
         });
       } catch (renderErr) {
+        if ((renderErr && renderErr.name === 'AbortError') || (abortSignal && abortSignal.aborted)) {
+          throw renderErr;
+        }
         console.warn(`[PDFExtractor] Failed rendering page ${pageNum} to image:`, renderErr);
       }
     }
@@ -292,6 +343,12 @@ async function processPdfFile(file, startPageOffset = 0, maxPagesRemaining = 15,
       pagesProcessed: numPages
     };
   } catch (pdfParseErr) {
+    if ((pdfParseErr && pdfParseErr.name === 'AbortError') || (abortSignal && abortSignal.aborted)) {
+      if (loadingTask && typeof loadingTask.destroy === 'function') {
+        try { loadingTask.destroy(); } catch (_) {}
+      }
+      throw pdfParseErr;
+    }
     console.warn('[PDFExtractor] Error parsing PDF with PDF.js, using native PDF fallback:', pdfParseErr);
     const fallbackImages = rawPdfPart ? [rawPdfPart] : [];
     return {
@@ -306,14 +363,17 @@ async function processPdfFile(file, startPageOffset = 0, maxPagesRemaining = 15,
 
 const PDFExtractor = {
   /**
-   * Accepts one or more uploaded files (.pdf or .jpg/.jpeg/.png/.webp) and an optional
-   * `onProgress(statusText)` callback, extracting embedded text, rendered page snapshots,
-   * and native PDF base64 payloads for up to 15 pages in sequential order.
+   * Accepts one or more uploaded files (.pdf or .jpg/.jpeg/.png/.webp), an optional
+   * `onProgress(statusText)` callback, and an optional `abortSignal`, extracting embedded text,
+   * rendered page snapshots, and native PDF base64 payloads for up to 15 pages in sequential order.
    * @param {FileList|Array<File>} fileList
    * @param {function} [onProgress]
+   * @param {AbortSignal} [abortSignal]
    * @returns {Promise<{ extractedText: string, inlineImages: Array, pageSnapshots: Array, rawPdfPart: object|null, pageCount: number }>}
    */
-  async extractFromFiles(fileList, onProgress = null) {
+  async extractFromFiles(fileList, onProgress = null, abortSignal = null) {
+    throwIfUploadAborted(abortSignal);
+
     const files = Array.from(fileList || []);
     if (files.length === 0) {
       return {
@@ -333,6 +393,7 @@ const PDFExtractor = {
     let totalPages = 0;
 
     for (const file of files) {
+      throwIfUploadAborted(abortSignal);
       if (totalPages >= MAX_TOTAL_PAGES) break;
 
       const fileName = (file.name || '').toLowerCase();
@@ -344,7 +405,8 @@ const PDFExtractor = {
 
       if (isPdf) {
         const remaining = MAX_TOTAL_PAGES - totalPages;
-        const pdfResult = await processPdfFile(file, totalPages, remaining, onProgress);
+        const pdfResult = await processPdfFile(file, totalPages, remaining, onProgress, abortSignal);
+        throwIfUploadAborted(abortSignal);
         if (pdfResult.text) {
           textChunks.push(pdfResult.text);
         }
@@ -363,7 +425,8 @@ const PDFExtractor = {
         if (typeof onProgress === 'function') {
           onProgress(`קורא וסורק תמונה ${totalPages}...`);
         }
-        const imgObj = await processImageFileToBase64(file, totalPages);
+        const imgObj = await processImageFileToBase64(file, totalPages, abortSignal);
+        throwIfUploadAborted(abortSignal);
         pageSnapshots.push(imgObj);
         inlineImages.push(imgObj);
       }

@@ -43,8 +43,38 @@ async function callGrokAPI(apiKey, prompt, explicitModel = '', options = {}) {
   ];
 
   const timeoutMs = options.timeoutMs || 25000;
+  const createGroqAbortError = () => {
+    if (typeof DOMException !== 'undefined') {
+      return new DOMException('הבקשה ל-AI בוטלה על ידי המשתמש', 'AbortError');
+    }
+    const abortErr = new Error('הבקשה ל-AI בוטלה על ידי המשתמש');
+    abortErr.name = 'AbortError';
+    return abortErr;
+  };
+
+  if (options.abortSignal && options.abortSignal.aborted) {
+    throw createGroqAbortError();
+  }
+
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let timedOut = false;
+  let onExternalAbort = null;
+
+  if (controller && options.abortSignal) {
+    if (options.abortSignal.aborted) {
+      controller.abort();
+    } else if (typeof options.abortSignal.addEventListener === 'function') {
+      onExternalAbort = () => controller.abort();
+      options.abortSignal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+  }
+
+  const timer = controller
+    ? setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs)
+    : null;
 
   let res;
   try {
@@ -55,12 +85,19 @@ async function callGrokAPI(apiKey, prompt, explicitModel = '', options = {}) {
       ...(controller ? { signal: controller.signal } : {})
     });
   } catch (err) {
-    if (err && err.name === 'AbortError') {
+    if (options.abortSignal && options.abortSignal.aborted) {
+      if (err && err.name === 'AbortError') throw err;
+      throw createGroqAbortError();
+    }
+    if (err && err.name === 'AbortError' && timedOut) {
       throw new Error(`Groq/Grok (${model}) timed out after ${timeoutMs}ms`);
     }
     throw err;
   } finally {
     if (timer) clearTimeout(timer);
+    if (onExternalAbort && options.abortSignal && typeof options.abortSignal.removeEventListener === 'function') {
+      options.abortSignal.removeEventListener('abort', onExternalAbort);
+    }
   }
 
   if (!res.ok) throw new Error(`Groq/Grok (${model}) HTTP ${res.status}`);
