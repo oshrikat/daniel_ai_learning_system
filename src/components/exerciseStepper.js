@@ -1,5 +1,5 @@
 /**
- * Exercise Stepper Block Component - Daniel AI Learning System
+ * Exercise Stepper Block Component - Adaptive AI Learning System
  */
 
 /**
@@ -12,7 +12,7 @@ function renderExerciseBlock(container, block, onAnsweredCorrectly) {
         <span class="exercise-badge">🎯 שאלת בדיקה עצמית</span>
         <h4 class="exercise-question">${block.question || ''}</h4>
         ${block.hint ? `
-          <button type="button" class="secondary-btn exercise-hint-btn" style="margin-top:0.6rem;">💡 רמז לדניאל</button>
+          <button type="button" class="secondary-btn exercise-hint-btn" style="margin-top:0.6rem;">💡 הצג רמז</button>
           <div class="exercise-hint-box" style="display:none; margin-top:0.5rem;">${block.hint}</div>
         ` : ''}
       </div>

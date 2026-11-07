@@ -76,11 +76,27 @@ callOpenRouterAPI = async function (apiKey, prompt, explicitModel = '', options 
       }, timeoutMs)
     : null;
 
+  const rawImages = Array.isArray(options.inlineImages) && options.inlineImages.length > 0
+    ? options.inlineImages
+    : (Array.isArray(options.images) ? options.images : []);
+  const imageList = rawImages.filter(img => img && (img.data || img.dataUrl) && !img.isNativePdf && img.mimeType !== 'application/pdf');
+
   const messages = [];
   if (options.systemInstruction && typeof options.systemInstruction === 'string' && options.systemInstruction.trim()) {
     messages.push({ role: 'system', content: options.systemInstruction.trim() });
   }
-  messages.push({ role: 'user', content: prompt });
+  const userContent = imageList.length > 0
+    ? [
+        { type: 'text', text: prompt },
+        ...imageList.map(img => {
+          const rawStr = String(img.dataUrl || img.data || '');
+          const mime = img.mimeType || img.mime_type || 'image/jpeg';
+          const url = rawStr.startsWith('data:') ? rawStr : `data:${mime};base64,${rawStr}`;
+          return { type: 'image_url', image_url: { url } };
+        })
+      ]
+    : prompt;
+  messages.push({ role: 'user', content: userContent });
 
   const requestBody = {
     model,
@@ -163,6 +179,7 @@ async function callMultiTierAI(prompt, options = {}) {
     ? options.inlineImages
     : (Array.isArray(options.images) ? options.images : []);
   const hasImages = normalizedImages.length > 0 || Boolean(options.rawPdfPart && options.rawPdfPart.data);
+  const isVisionTask = hasImages || options.preferVision === true;
   const enrichedOptions = {
     ...options,
     maxTokens: options.maxTokens || 8192,
@@ -170,56 +187,15 @@ async function callMultiTierAI(prompt, options = {}) {
     ...(hasImages ? { inlineImages: normalizedImages, images: normalizedImages } : {})
   };
 
-  // TIER 1 (PRIMARY — Google Gemini First)
-  if (geminiKey) {
-    const baseGemini = (typeof AIService !== 'undefined' && Array.isArray(AIService.geminiModels))
-      ? AIService.geminiModels
-      : ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-flash-lite-latest'];
-    const geminiModelsToTry = [...new Set([
-      localStorage.getItem('verified_gemini_model'),
-      cfg.verifiedGeminiModel,
-      'gemini-3.6-flash',
-      'gemini-3.5-flash',
-      'gemini-flash-latest',
-      'gemini-3.1-flash-lite',
-      'gemini-3.8-flash',
-      'gemini-3.7-flash',
-      ...baseGemini
-    ].filter(Boolean))];
-
-    for (const model of geminiModelsToTry) {
-      if (options.abortSignal?.aborted) {
-        throw createOrchestratorAbortError();
-      }
-      try {
-        const reply = await callGeminiAPI(model, geminiKey, prompt, enrichedOptions);
-        if (options.abortSignal?.aborted) {
-          throw createOrchestratorAbortError();
-        }
-        if (appState?.apiConfig) {
-          appState.apiConfig.verifiedGeminiModel = model;
-        }
-        localStorage.setItem('verified_gemini_model', model);
-        return reply;
-      } catch (e) {
-        if (options.abortSignal?.aborted || (e && e.name === 'AbortError')) {
-          throw (e && e.name === 'AbortError') ? e : createOrchestratorAbortError();
-        }
-        errors.push(`Gemini (${model}): ${e.message}`);
-        console.warn(`[AI Tier 1] Gemini (${model}) failed, trying next Gemini candidate…`, e);
-      }
-    }
-  }
-
-  // TIER 2 (SECONDARY — Groq / Grok Second)
-  if (grokKey) {
+  const tryGroqTier = async () => {
+    if (!grokKey) return null;
     const isGroq = grokKey.startsWith('gsk_');
     let groqModelsToTry = [];
     if (hasImages && isGroq) {
-      groqModelsToTry = [
+      groqModelsToTry = [...new Set([
         cfg.verifiedGroqVisionModel,
         'meta-llama/llama-4-scout-17b-16e-instruct'
-      ].filter(Boolean);
+      ].filter(Boolean))];
     } else if (isGroq) {
       groqModelsToTry = [...new Set([
         'llama-3.3-70b-versatile',
@@ -250,18 +226,25 @@ async function callMultiTierAI(prompt, options = {}) {
           throw (e && e.name === 'AbortError') ? e : createOrchestratorAbortError();
         }
         errors.push(`Groq/Grok (${model}): ${e.message}`);
-        console.warn(`[AI Tier 2] Groq/Grok (${model}) failed, trying next…`, e);
+        console.warn(`[AI Groq Tier] Groq/Grok (${model}) failed, trying next…`, e);
       }
     }
-  }
+    return null;
+  };
 
-  // TIER 3 (FINAL BACKUP — OpenRouter Third)
-  if (orKey && !hasImages) {
-    const orModels = [...new Set([
-      cfg.verifiedOpenRouterModel,
-      'openai/gpt-4o-mini',
-      'openai/gpt-3.5-turbo'
-    ].filter(Boolean))];
+  const tryOpenRouterTier = async () => {
+    if (!orKey) return null;
+    const orModels = hasImages
+      ? [...new Set([
+          cfg.verifiedOpenRouterModel,
+          'openai/gpt-4o-mini',
+          'google/gemini-2.0-flash-001'
+        ].filter(Boolean))]
+      : [...new Set([
+          cfg.verifiedOpenRouterModel,
+          'openai/gpt-4o-mini',
+          'openai/gpt-3.5-turbo'
+        ].filter(Boolean))];
 
     for (const model of orModels) {
       if (options.abortSignal?.aborted) {
@@ -281,9 +264,61 @@ async function callMultiTierAI(prompt, options = {}) {
           throw (e && e.name === 'AbortError') ? e : createOrchestratorAbortError();
         }
         errors.push(`OpenRouter (${model}): ${e.message}`);
-        console.warn(`[AI Tier 3] OpenRouter (${model}) failed, trying next…`, e);
+        console.warn(`[AI OpenRouter Tier] OpenRouter (${model}) failed, trying next…`, e);
       }
     }
+    return null;
+  };
+
+  const tryGeminiTier = async () => {
+    if (!geminiKey) return null;
+    const baseGemini = (typeof AIService !== 'undefined' && Array.isArray(AIService.geminiModels))
+      ? AIService.geminiModels
+      : ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-flash-lite-latest'];
+    const geminiModelsToTry = [...new Set([
+      localStorage.getItem('verified_gemini_model'),
+      cfg.verifiedGeminiModel,
+      ...(isVisionTask
+        ? ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest']
+        : ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest']),
+      ...baseGemini
+    ].filter(Boolean))];
+
+    for (const model of geminiModelsToTry) {
+      if (options.abortSignal?.aborted) {
+        throw createOrchestratorAbortError();
+      }
+      try {
+        const reply = await callGeminiAPI(model, geminiKey, prompt, enrichedOptions);
+        if (options.abortSignal?.aborted) {
+          throw createOrchestratorAbortError();
+        }
+        if (appState?.apiConfig) {
+          appState.apiConfig.verifiedGeminiModel = model;
+        }
+        localStorage.setItem('verified_gemini_model', model);
+        return reply;
+      } catch (e) {
+        if (options.abortSignal?.aborted || (e && e.name === 'AbortError')) {
+          throw (e && e.name === 'AbortError') ? e : createOrchestratorAbortError();
+        }
+        errors.push(`Gemini (${model}): ${e.message}`);
+        console.warn(`[AI Gemini Tier] Gemini (${model}) failed, trying next Gemini candidate…`, e);
+      }
+    }
+    return null;
+  };
+
+  // Smart Task Routing:
+  // - Vision / PDF Blueprint tasks (`isVisionTask === true`): Gemini -> Groq Vision -> OpenRouter Multimodal
+  // - Text / Beat / Chat tasks (`isVisionTask === false`): Groq -> OpenRouter -> Gemini
+  const tierRunners = isVisionTask
+    ? [tryGeminiTier, tryGroqTier, tryOpenRouterTier]
+    : [tryGroqTier, tryOpenRouterTier, tryGeminiTier];
+
+  for (const runTier of tierRunners) {
+    const result = await runTier();
+    if (result) return result;
   }
 
   if (options.abortSignal?.aborted) {
@@ -376,19 +411,24 @@ async function callGroqPreferredAI(prompt, options = {}) {
     }
   }
 
-  // Tier 2: OpenRouter (`openai/gpt-4o-mini`)
-  if (orKey && !hasImages) {
+  // Tier 2: OpenRouter (`openai/gpt-4o-mini` — supports both text and multimodal images)
+  if (orKey) {
     const orModelsToTry = [...new Set([
       'openai/gpt-4o-mini',
       cfg.verifiedOpenRouterModel
     ].filter(Boolean))];
+
+    const orOptions = {
+      ...fastOptions,
+      ...(hasImages ? { inlineImages: normalizedImages, images: normalizedImages } : {})
+    };
 
     for (const model of orModelsToTry) {
       if (options.abortSignal?.aborted) {
         throw createOrchestratorAbortError();
       }
       try {
-        const reply = await callOpenRouterAPI(orKey, prompt, model, fastOptions);
+        const reply = await callOpenRouterAPI(orKey, prompt, model, orOptions);
         if (options.abortSignal?.aborted) {
           throw createOrchestratorAbortError();
         }
@@ -566,7 +606,10 @@ const AIService = {
     let candidateModels = [...this.geminiModels];
     try {
       if (progressCb) progressCb('מגלה מודלים פעילים ב-Google Gemini...');
-      const listResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+      const listResp = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+        method: 'GET',
+        headers: { 'x-goog-api-key': key }
+      });
       if (listResp.ok) {
         const listData = await listResp.json();
         const availableIds = (listData?.models || [])
@@ -597,10 +640,13 @@ const AIService = {
     for (const model of candidateModels) {
       if (progressCb) progressCb(`בודק מודל ${model}...`);
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
         const resp = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': key
+          },
           body: JSON.stringify({
             contents: [{ parts: [{ text: 'שלום! ענה במילה אחת בלבד: "פעיל".' }] }]
           })
@@ -735,20 +781,110 @@ const AIService = {
 
   cleanAndParseJSON(text) {
     if (!text || typeof text !== 'string') return null;
+
+    const repairHebrewJsonString = (rawJson) => {
+      // 1. Escape unescaped Hebrew abbreviation gershayim (e.g. מע"מ, עו"ש, בע"מ, דו"ח, סה"כ, חו"ז, ש"ח)
+      let fixed = rawJson
+        .replace(/([\u0590-\u05FF])"([\u0590-\u05FF])/g, '$1\\"$2')
+        .replace(/([\u0590-\u05FF])"([\u0590-\u05FF])/g, '$1\\"$2');
+
+      // 2. Remove trailing commas before closing } or ]
+      fixed = fixed.replace(/,\s*([}\]])/g, '$1');
+
+      // 3. State-machine pass: escape raw control chars & stray unescaped quotes inside string values
+      let out = '';
+      let inStr = false;
+      let escaped = false;
+      for (let i = 0; i < fixed.length; i++) {
+        const ch = fixed[i];
+        if (!inStr) {
+          if (ch === '"') inStr = true;
+          out += ch;
+          continue;
+        }
+        if (escaped) {
+          escaped = false;
+          out += ch;
+          continue;
+        }
+        if (ch === '\\') {
+          escaped = true;
+          out += ch;
+          continue;
+        }
+        if (ch === '\n') {
+          out += '\\n';
+          continue;
+        }
+        if (ch === '\r') {
+          out += '\\r';
+          continue;
+        }
+        if (ch === '\t') {
+          out += '\\t';
+          continue;
+        }
+        if (ch === '"') {
+          // Check next non-whitespace token to decide if this quote closes the JSON string
+          let j = i + 1;
+          while (j < fixed.length && /\s/.test(fixed[j])) j++;
+          const nextCh = j < fixed.length ? fixed[j] : '';
+          if (nextCh === ':' || nextCh === '}' || nextCh === ']' || nextCh === '') {
+            inStr = false;
+            out += ch;
+          } else if (nextCh === ',') {
+            // After comma in JSON object/array, valid next non-ws char is ", {, [, }, ], -, digit, t, f, n
+            let k = j + 1;
+            while (k < fixed.length && /\s/.test(fixed[k])) k++;
+            const afterComma = k < fixed.length ? fixed[k] : '';
+            if (!afterComma || /^["{\[\]}\-0-9tfn]$/.test(afterComma)) {
+              inStr = false;
+              out += ch;
+            } else {
+              out += '\\"';
+            }
+          } else {
+            out += '\\"';
+          }
+          continue;
+        }
+        out += ch;
+      }
+      return out.replace(/,\s*([}\]])/g, '$1');
+    };
+
     try {
       let clean = stripThinkTags(text).trim();
       if (clean.includes('```')) {
         clean = clean.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
       }
-      const start = clean.indexOf('{');
-      const end = clean.lastIndexOf('}');
+      const objStart = clean.indexOf('{');
+      const objEnd = clean.lastIndexOf('}');
+      const arrStart = clean.indexOf('[');
+      const arrEnd = clean.lastIndexOf(']');
+
+      let start = objStart;
+      let end = objEnd;
+      if (arrStart !== -1 && (objStart === -1 || arrStart < objStart) && arrEnd > arrStart) {
+        start = arrStart;
+        end = arrEnd;
+      }
+
       if (start !== -1 && end !== -1 && end > start) {
         clean = clean.substring(start, end + 1);
         try {
           return JSON.parse(clean);
-        } catch (innerErr) {
-          const sanitized = clean.replace(/,\s*([}\]])/g, '$1');
-          return JSON.parse(sanitized);
+        } catch (_firstErr) {
+          const fastSanitized = clean
+            .replace(/([\u0590-\u05FF])"([\u0590-\u05FF])/g, '$1\\"$2')
+            .replace(/([\u0590-\u05FF])"([\u0590-\u05FF])/g, '$1\\"$2')
+            .replace(/,\s*([}\]])/g, '$1');
+          try {
+            return JSON.parse(fastSanitized);
+          } catch (_secondErr) {
+            const deepRepaired = repairHebrewJsonString(clean);
+            return JSON.parse(deepRepaired);
+          }
         }
       }
     } catch (e) {

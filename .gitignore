@@ -1,6 +1,7 @@
 .env
 data/daniel_state.json
 daniel_state.json
+src/key/
 __pycache__/
 archive/
 .DS_Store

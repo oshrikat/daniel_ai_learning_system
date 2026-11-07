@@ -494,8 +494,18 @@ function showStudyHelpRetryModal(diagnosticReason, onRetry) {
  * @param {object} unit
  * @param {number} pageNumber
  */
-function openLessonPageViewerModal(unit, pageNumber = 1) {
-  const snapshots = Array.isArray(unit && unit.pageSnapshots) ? unit.pageSnapshots : [];
+async function openLessonPageViewerModal(unit, pageNumber = 1) {
+  let snapshots = Array.isArray(unit && unit.pageSnapshots) ? unit.pageSnapshots : [];
+  if (snapshots.length === 0 && unit && !unit.imagesPurged && typeof StudySnapshotsIDB !== 'undefined') {
+    const uid = String(unit.id || unit.unit_id || '').trim();
+    if (uid) {
+      const stored = await StudySnapshotsIDB.getUnitSnapshots(uid);
+      if (stored && Array.isArray(stored.pageSnapshots) && stored.pageSnapshots.length > 0) {
+        unit.pageSnapshots = stored.pageSnapshots;
+        snapshots = stored.pageSnapshots;
+      }
+    }
+  }
   if (snapshots.length === 0) {
     if (typeof showToast === 'function') {
       showToast('צילום העמוד מתוך הקובץ אינו זמין ביחידה זו.', 'warning');

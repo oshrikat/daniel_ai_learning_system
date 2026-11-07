@@ -83,7 +83,7 @@ function renderUnitPlayer(unitId) {
                   </button>
                 </div>
                 <div class="exercise-stepper-complete" style="display:none; margin-top:1rem; padding:1rem; border-radius:12px; background:rgba(16,185,129,0.12); color:#065f46; font-weight:700; text-align:center;">
-                  🎉 כל הכבוד דניאל! השלמת בהצלחה את כל ${total} שאלות התרגול ביחידה זו! ⭐
+                  🎉 כל הכבוד! השלמת בהצלחה את כל ${total} שאלות התרגול ביחידה זו! ⭐
                 </div>
               `;
 
@@ -130,10 +130,10 @@ function renderUnitPlayer(unitId) {
           <div class="block-completed-box" style="display: ${unit.isCompleted ? 'block' : 'none'}; margin-top: 1.2rem;">
             <div class="completed-ribbon" style="display: flex;">
               <span class="ribbon-icon">⭐</span>
-              <span class="ribbon-text">כל הכבוד דניאל! היחידה הושלמה בהצלחה!</span>
+              <span class="ribbon-text">כל הכבוד! היחידה הושלמה בהצלחה!</span>
             </div>
             <button class="share-whatsapp-btn block-wa-share-btn" style="margin-top: 1rem;">
-              <span>שלח עדכון לאבא ב-WhatsApp 📲</span>
+              <span>שלח עדכון ב-WhatsApp 📲</span>
             </button>
           </div>
         </div>
@@ -166,7 +166,7 @@ function renderUnitPlayer(unitId) {
           unit.isNewExam = false;
           saveAppState();
           SoundService.playSuccessSound();
-          showToast(`כל הכבוד דניאל! יחידה "${unit.title}" הושלמה בהצלחה! 🌟`);
+          showToast(`כל הכבוד! יחידה "${unit.title}" הושלמה בהצלחה! 🌟`);
           if (compBox) compBox.style.display = 'block';
           compBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         };
@@ -174,7 +174,7 @@ function renderUnitPlayer(unitId) {
 
       if (waBtn) {
         waBtn.onclick = () => {
-          const msg = encodeURIComponent(`שלום אבא! סיימתי עכשיו בהצלחה את יחידת "${unit.title}" במסלול ${activeTrack.label}! ⭐`);
+          const msg = encodeURIComponent(`שלום! סיימתי עכשיו בהצלחה את יחידת "${unit.title}" במסלול ${activeTrack.label}! ⭐`);
           window.open(`https://wa.me/?text=${msg}`, '_blank');
         };
       }
@@ -290,7 +290,7 @@ function renderUnitPlayer(unitId) {
 
         if (quizFeedbackBox) {
           quizFeedbackBox.className = 'quiz-feedback-box success';
-          quizFeedbackBox.innerHTML = `<span>מעולה דניאל! ${opt.explanation || 'בחירה נכונה של אסטרטגיה!'} משימת הביצוע נפתחה כעת למטה! 🌟</span>`;
+          quizFeedbackBox.innerHTML = `<span>מעולה! ${opt.explanation || 'בחירה נכונה של אסטרטגיה!'} משימת הביצוע נפתחה כעת למטה! 🌟</span>`;
           quizFeedbackBox.style.display = 'block';
         }
 
@@ -387,7 +387,7 @@ function renderUnitPlayer(unitId) {
           SoundService.playSuccessSound();
           if (compFeedback) {
             compFeedback.className = 'quiz-feedback-box success';
-            compFeedback.innerHTML = '<span>בול דניאל! הבנת מצוין מה ביקשנו! חלק 3 נפתח כעת! 🎯</span>';
+            compFeedback.innerHTML = '<span>בול! הבנת מצוין מה ביקשנו! חלק 3 נפתח כעת! 🎯</span>';
             compFeedback.style.display = 'block';
           }
           if (part3) {
@@ -443,7 +443,7 @@ function renderUnitPlayer(unitId) {
     if (waBtn) {
       waBtn.style.display = 'inline-flex';
       waBtn.onclick = () => {
-        shareProgressToWhatsApp(`היי אבא! הרגע סיימתי בהצלחה את יחידה "${unit.title}" במערכת AI! 🎉`);
+        shareProgressToWhatsApp(`שלום! הרגע סיימתי בהצלחה את יחידה "${unit.title}" במערכת AI! 🎉`);
       };
     }
   } else {
@@ -478,7 +478,7 @@ function renderUnitPlayer(unitId) {
           });
 
           SoundService.playSuccessSound();
-          showToast(`כל הכבוד דניאל! היחידה "${unit.title}" הושלמה! ⭐`);
+          showToast(`כל הכבוד! היחידה "${unit.title}" הושלמה! ⭐`);
           saveAppState();
           renderUnitPlayer(unit.id);
         };
@@ -640,14 +640,14 @@ function finishCheckpointTest() {
         </h2>
         <p style="font-size: 1.15rem; color: var(--text-secondary); max-width: 500px; margin: 0 auto 1.5rem auto;">
           ${passed 
-            ? 'כל הכבוד דניאל! עברת את מבחן השלב בהצלחה מרובה! השלב הבא במסלול נפתח עבורך כעת.'
+            ? 'כל הכבוד! עברת את מבחן השלב בהצלחה מרובה! השלב הבא במסלול נפתח עבורך כעת.'
             : `קיבלת ציון ${finalScore}. כדי להמשיך לשלב הבא יש לקבל 85 ומעלה. לא נורא, מכל ניסיון לומדים! לחץ למטה ונעשה את המבחן שוב עם סיטואציות חדשות.`}
         </p>
 
         ${passed ? `
           <div style="margin: 1.5rem 0;">
-            <button class="share-whatsapp-btn" onclick="shareProgressToWhatsApp('היי אבא! עברתי בהצלחה את ${currentCheckpoint.title} בציון ${finalScore}! 🏆 השלבים הבאים נפתחו!')">
-              <span>שלח עדכון לאבא ב-WhatsApp 📲</span>
+            <button class="share-whatsapp-btn" onclick="shareProgressToWhatsApp('שלום! עברתי בהצלחה את ${currentCheckpoint.title} בציון ${finalScore}! 🏆 השלבים הבאים נפתחו!')">
+              <span>שלח עדכון ב-WhatsApp 📲</span>
             </button>
           </div>
         ` : ''}
@@ -662,7 +662,7 @@ function finishCheckpointTest() {
   }
 
   SoundService.speakText(passed 
-    ? `כל הכבוד דניאל! קיבלת ציון ${finalScore} ועברת בהצלחה! השלב הבא נפתח כעת.`
+    ? `כל הכבוד! קיבלת ציון ${finalScore} ועברת בהצלחה! השלב הבא נפתח כעת.`
     : `קיבלת ציון ${finalScore}. כדי להמשיך צריך 85 ומעלה. ננסה שוב ונעבור יחד!`
   );
 }
@@ -989,7 +989,7 @@ async function submitAccountingSummaryExam() {
   const unansweredIdx = questions.findIndex((q, idx) => !isAccountingQuestionAnswered(q, idx, userAnswers));
 
   if (unansweredIdx !== -1) {
-    showToast(`דניאל, נותרה שאלה ${unansweredIdx + 1} ללא תשובה. השלם אותה לפני הגשת המבחן! ✍️`);
+    showToast(`נותרה שאלה ${unansweredIdx + 1} ללא תשובה. השלם אותה לפני הגשת המבחן! ✍️`);
     currentAccountingExamIdx = unansweredIdx;
     renderAccountingExamQuestion();
     return;
@@ -1059,7 +1059,7 @@ function renderAccountingExamResults(evaluation, questions, userAnswers, examTit
           <div class="exam-score-icon">${passed ? '🏆 ⭐ 🎉' : '💪 📈'}</div>
           <div class="exam-score-badge">${evaluation.score}%</div>
           <h2 class="exam-score-title">
-            ${passed ? 'כל הכבוד דניאל! עברת בהצלחה את המבחן המסכם בהנהלת חשבונות!' : 'ניסיון מצוין דניאל! בוא נעבור על הפתרונות וננסה שוב'}
+            ${passed ? 'כל הכבוד! עברת בהצלחה את המבחן המסכם בהנהלת חשבונות!' : 'ניסיון מצוין! בוא נעבור על הפתרונות וננסה שוב'}
           </h2>
           <p class="exam-score-feedback">${evaluation.overallFeedback || ''}</p>
           <div class="exam-score-stats">
@@ -1068,8 +1068,8 @@ function renderAccountingExamResults(evaluation, questions, userAnswers, examTit
           </div>
           ${passed ? `
             <div style="margin-top: 1.15rem;">
-              <button type="button" class="share-whatsapp-btn" onclick="shareProgressToWhatsApp('היי אבא ואושרי! סיימתי בהצלחה את ${safeExamLabel} בציון ${evaluation.score}%! 🏆📊')">
-                <span>שלח עדכון משמח לאבא ואושרי ב-WhatsApp 📲</span>
+              <button type="button" class="share-whatsapp-btn" onclick="shareProgressToWhatsApp('שלום! סיימתי בהצלחה את ${safeExamLabel} בציון ${evaluation.score}%! 🏆📊')">
+                <span>שלח עדכון משמח ב-WhatsApp 📲</span>
               </button>
             </div>
           ` : ''}
@@ -1310,17 +1310,17 @@ function renderDailyStudyCardView(card) {
           ${currentQ.chatHistory.length === 0 ? `
             <div class="study-msg-bubble assistant-msg">
               <div class="study-msg-header">
-                <span class="study-msg-author">🤖 המאמן הסוקרטי של דניאל</span>
+                <span class="study-msg-author">🤖 המאמן הסוקרטי האישי</span>
               </div>
               <div class="study-msg-content">
-                שלום דניאל! קרא בנחת את <strong>שאלה ${currentDailyQuestionIdx + 1}</strong> למעלה. 
+                שלום! 👋 קרא בנחת את <strong>שאלה ${currentDailyQuestionIdx + 1}</strong> למעלה. 
                 אפשר לכתוב לי איך אתה חושב שפותרים אותה, או ללחוץ על אחד מכפתורי העזרה המהירה למטה ונתקדם יחד צעד אחר צעד! 🌱
               </div>
             </div>
           ` : currentQ.chatHistory.map((msg, mIdx) => `
             <div class="study-msg-bubble ${msg.role === 'user' ? 'user-msg' : 'assistant-msg'}" data-chat-idx="${mIdx}">
               <div class="study-msg-header">
-                <span class="study-msg-author">${msg.role === 'user' ? '👤 דניאל' : '🤖 המאמן הסוקרטי'}</span>
+                <span class="study-msg-author">${msg.role === 'user' ? '👤 הלומד' : '🤖 המאמן הסוקרטי'}</span>
               </div>
               <div class="study-msg-content">${typeof formatStudyMessageHtml === 'function' ? formatStudyMessageHtml(msg.text) : msg.text}</div>
             </div>
@@ -1363,7 +1363,7 @@ function renderDailyStudyCardView(card) {
         ${currentQ.isCompleted ? `
           <div class="daily-q-solved-banner" id="daily-q-solved-banner">
             <div class="daily-solved-text">
-              🎉 כל הכבוד דניאל! פתרת בהצלחה את שאלה ${currentDailyQuestionIdx + 1}!
+              🎉 כל הכבוד! פתרת בהצלחה את שאלה ${currentDailyQuestionIdx + 1}!
             </div>
             ${!isLastQuestion ? `
               <button type="button" id="daily-q-next-btn" class="primary-btn daily-next-q-btn">
@@ -1379,14 +1379,14 @@ function renderDailyStudyCardView(card) {
 
         ${allCompleted || card.isCompleted ? `
           <div class="daily-card-all-completed-box" id="daily-card-all-completed-box">
-            <h4>🏆 אלוף דניאל! השלמת את כל ${totalQ} השאלות ביחידה היומית הזו! ⭐</h4>
+            <h4>🏆 כל הכבוד! השלמת את כל ${totalQ} השאלות ביחידה היומית הזו! ⭐</h4>
             <p>כל התשובות והשיחות נשמרו בהצלחה בכרטיס היומי שלך.</p>
           </div>
           <div class="homework-completion-modal" id="homework-completion-modal" role="dialog" aria-modal="true" aria-labelledby="hw-completion-modal-title">
             <div class="homework-completion-modal-card">
               <div class="homework-completion-confetti">🎉 🏆 🌟</div>
               <h3 class="homework-completion-title" id="hw-completion-modal-title">
-                🎉 כל הכבוד דניאל! סיימת את כל שאלות דף העבודה!
+                🎉 כל הכבוד! סיימת את כל שאלות דף העבודה!
               </h3>
               <p class="homework-completion-desc">
                 השלמת בהצלחה את כל השאלות ביחידה <strong>"${card.title}"</strong>!<br>
@@ -1484,7 +1484,7 @@ function renderDailyStudyCardView(card) {
     submitBtn.onclick = () => {
       const val = answerInput.value.trim();
       if (!val) {
-        showToast('דניאל, כתוב את התשובה שלך או לחץ על אחד מכפתורי העזרה למעלה ✍️', 'warning');
+        showToast('כתוב את התשובה שלך או לחץ על אחד מכפתורי העזרה למעלה ✍️', 'warning');
         answerInput.focus();
         return;
       }
@@ -1508,7 +1508,7 @@ function renderDailyStudyCardView(card) {
       if (typeof SoundService !== 'undefined') {
         SoundService.playSuccessSound();
       }
-      showToast('כל הכבוד דניאל! סיימת את כל שאלות דף העבודה של היום ונוצר עבורך מבחן מסכם! 🏆', 'success');
+      showToast('כל הכבוד! סיימת את כל שאלות דף העבודה של היום ונוצר עבורך מבחן מסכם! 🏆', 'success');
       renderDailyStudyCardView(card);
     };
   }

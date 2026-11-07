@@ -7,6 +7,43 @@
  *   when hosted statically on GitHub Pages.
  */
 
+/**
+ * Determines whether the app is currently running on a local Python development host (`localhost` / `127.0.0.1`),
+ * preventing `/api/env` and `/api/state` 404/405 network calls on static hosts such as `oshrikat.github.io`.
+ * @param {string} [explicitHost]
+ * @returns {boolean}
+ */
+function isLocalPythonServerHost(explicitHost) {
+  let host = '';
+  if (typeof explicitHost === 'string') {
+    host = explicitHost.trim().toLowerCase();
+  } else if (typeof window !== 'undefined' && window.location && typeof window.location.hostname === 'string') {
+    if (window.location.protocol === 'file:') return false;
+    host = window.location.hostname.trim().toLowerCase();
+  } else if (typeof location !== 'undefined' && typeof location.hostname === 'string') {
+    if (location.protocol === 'file:') return false;
+    host = location.hostname.trim().toLowerCase();
+  }
+  if (!host) return false;
+  const cleanHost = host.startsWith('[')
+    ? host.replace(/^(\[[^\]]+\])(?::\d+)?$/, '$1')
+    : host.replace(/:\d+$/, '');
+  return (
+    cleanHost === 'localhost' ||
+    cleanHost === '127.0.0.1' ||
+    cleanHost === '::1' ||
+    cleanHost === '[::1]' ||
+    cleanHost === '0.0.0.0'
+  );
+}
+
+if (typeof window !== 'undefined') {
+  window.isLocalPythonServerHost = isLocalPythonServerHost;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.isLocalPythonServerHost = isLocalPythonServerHost;
+}
+
 class LocalRepo extends IDatabaseRepo {
   /**
    * @param {object} config
@@ -61,8 +98,11 @@ class LocalRepo extends IDatabaseRepo {
     if (!state || typeof state !== 'object') return updatedAt;
     try {
       state._updatedAt = updatedAt;
+      const toSerialize = (typeof StudySnapshotsIDB !== 'undefined' && typeof StudySnapshotsIDB.extractAndStripSnapshotsForStorage === 'function')
+        ? StudySnapshotsIDB.extractAndStripSnapshotsForStorage(state)
+        : state;
       if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(this.storageKey, JSON.stringify(state));
+        localStorage.setItem(this.storageKey, JSON.stringify(toSerialize));
       }
     } catch (err) {
       console.warn('[LocalRepo] localStorage write warning (quota or restricted mode):', err);
@@ -72,11 +112,15 @@ class LocalRepo extends IDatabaseRepo {
 
   /**
    * Non-blocking async mirror to `server/server.py` (`POST /api/state`).
-   * Silently degrades on static hosts (GitHub Pages).
+   * Strictly guarded by `isLocalPythonServerHost()` so static hosts (`oshrikat.github.io`) never call `/api/state`.
    * @param {object} state
    * @returns {Promise<boolean>}
    */
   async _mirrorToLocalServerAsync(state) {
+    if (!isLocalPythonServerHost()) {
+      this.serverAvailable = false;
+      return false;
+    }
     if (typeof fetch !== 'function') return false;
     try {
       const res = await IDatabaseRepo.fetchWithTimeout(
@@ -103,9 +147,14 @@ class LocalRepo extends IDatabaseRepo {
 
   /**
    * Probes `GET /api/state` on `server/server.py` if available.
+   * Strictly guarded by `isLocalPythonServerHost()` so static hosts (`oshrikat.github.io`) never call `/api/state`.
    * @returns {Promise<object|null>}
    */
   async _fetchFromLocalServer() {
+    if (!isLocalPythonServerHost()) {
+      this.serverAvailable = false;
+      return null;
+    }
     if (typeof fetch !== 'function') return null;
     try {
       const res = await IDatabaseRepo.fetchWithTimeout(

@@ -331,6 +331,55 @@ const DatabaseManager = {
   },
 
   /**
+   * Strips sensitive credentials (`apiConfig`, `dbConfig`, raw tokens) and heavy base64 snapshots
+   * before any cloud persistence (`github`, `firebase`, `custom`), while preserving 100% of
+   * `studyHelpUnits`, curriculum progress, checkpoints, exams, and learner stats.
+   * Does NOT mutate the input `rawState`.
+   * @param {object} rawState
+   * @returns {object}
+   */
+  sanitizeStateForCloudStorage(rawState) {
+    if (!rawState || typeof rawState !== 'object') return {};
+    const sanitized = JSON.parse(JSON.stringify(rawState));
+
+    // Completely strip credential & DB config objects so secrets never leak to cloud storage
+    delete sanitized.apiConfig;
+    delete sanitized.dbConfig;
+    delete sanitized.geminiKey;
+    delete sanitized.groqKey;
+    delete sanitized.openrouterKey;
+    delete sanitized.githubToken;
+    delete sanitized.firebaseSecret;
+    delete sanitized.customApiKey;
+
+    const stripHeavyUnitBlobs = (unit) => {
+      if (!unit || typeof unit !== 'object') return;
+      if (Array.isArray(unit.pageSnapshots) && unit.pageSnapshots.length > 0) {
+        unit.pageCount = Number(unit.pageCount) || unit.pageSnapshots.length;
+        unit.pageSnapshots = [];
+      }
+      if (unit.sourceContext && Array.isArray(unit.sourceContext.pageSnapshots) && unit.sourceContext.pageSnapshots.length > 0) {
+        unit.pageCount = Number(unit.pageCount) || unit.sourceContext.pageSnapshots.length;
+        unit.sourceContext.pageSnapshots = [];
+      }
+      if (Array.isArray(unit.inlineImages) && unit.inlineImages.length > 0) {
+        unit.inlineImages = [];
+      }
+      if ('rawPdfPart' in unit) delete unit.rawPdfPart;
+      if ('rawPdfBase64' in unit) delete unit.rawPdfBase64;
+    };
+
+    if (Array.isArray(sanitized.studyHelpUnits)) {
+      sanitized.studyHelpUnits.forEach(stripHeavyUnitBlobs);
+    }
+    if (sanitized.studyHelp && Array.isArray(sanitized.studyHelp.dailyCards)) {
+      sanitized.studyHelp.dailyCards.forEach(stripHeavyUnitBlobs);
+    }
+
+    return sanitized;
+  },
+
+  /**
    * Immediately pushes `state` to the active cloud provider (`github`, `firebase`, or `custom`).
    * @param {object} state
    * @returns {Promise<{ ok: boolean, provider: string, updatedAt: string }>}
@@ -349,7 +398,8 @@ const DatabaseManager = {
     try {
       this._emitStatus({ state: 'syncing', lastError: null });
       await activeRepo.init(this.providerConfigs[this.activeProviderType] || {});
-      const cloudRes = await activeRepo.saveFullState(state);
+      const cloudSafeState = this.sanitizeStateForCloudStorage(state);
+      const cloudRes = await activeRepo.saveFullState(cloudSafeState);
 
       // Persist auto-created gistId if GithubRepo created one on first save
       if (this.activeProviderType === 'github' && activeRepo.config?.gistId) {
@@ -535,10 +585,13 @@ const DatabaseManager = {
       ? appState
       : (this.localCacheRepo.readLocalSync() || {});
 
-    // 3. Push full state to target provider immediately
+    // 3. Push full state to target provider immediately (secret-stripped for cloud providers)
     try {
       await targetRepo.init(this.providerConfigs[newProviderType] || newConfig);
-      const saveResult = await targetRepo.saveFullState(currentState);
+      const payloadToSave = newProviderType === 'local'
+        ? currentState
+        : this.sanitizeStateForCloudStorage(currentState);
+      const saveResult = await targetRepo.saveFullState(payloadToSave);
 
       if (newProviderType === 'github' && targetRepo.config?.gistId) {
         this.providerConfigs.github.gistId = targetRepo.config.gistId;
@@ -561,7 +614,7 @@ const DatabaseManager = {
           ...(testResult.metadata || {}),
           ...(targetRepo.config?.gistId ? { gistId: targetRepo.config.gistId } : {})
         },
-        message: `המעבר לספק '${newProviderType}' הושלם בהצלחה! כל הנתונים של דניאל הועברו וסונכרנו ב-100%.`
+        message: `המעבר לספק '${newProviderType}' הושלם בהצלחה! כל הנתונים הועברו וסונכרנו ב-100%.`
       };
     } catch (err) {
       return {

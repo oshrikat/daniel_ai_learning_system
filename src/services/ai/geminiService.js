@@ -19,7 +19,7 @@ function stripThinkTags(text) {
  */
 async function callGeminiAPI(model, apiKey, prompt, options = {}) {
   const key = cleanApiKey(apiKey);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const fullPrompt = (options.systemInstruction && !prompt.includes(options.systemInstruction))
     ? `${options.systemInstruction}\n\n${prompt}`
     : prompt;
@@ -112,7 +112,10 @@ async function callGeminiAPI(model, apiKey, prompt, options = {}) {
       }
       return await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': key
+        },
         body: JSON.stringify(bodyPayload),
         ...(controller ? { signal: controller.signal } : {})
       });

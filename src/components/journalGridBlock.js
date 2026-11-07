@@ -1,5 +1,5 @@
 /**
- * Journal Grid Block Component - Daniel AI Learning System
+ * Journal Grid Block Component - Adaptive AI Learning System
  */
 
 /**
@@ -118,7 +118,7 @@ function renderJournalGridBlock(container, block) {
 
       if (enteredRows.some(r => !r.account)) {
         fbMsg.className = 'journal-feedback-msg warning';
-        fbMsg.textContent = 'דניאל, אנא בחר שם חשבון מהרשימה עבור כל שורה בטבלה לפני הבדיקה.';
+        fbMsg.textContent = 'אנא בחר שם חשבון מהרשימה עבור כל שורה בטבלה לפני הבדיקה.';
         return;
       }
 
@@ -148,7 +148,7 @@ function renderJournalGridBlock(container, block) {
 
       if (dSum > 0 && dSum === cSum && allRowsMatch) {
         fbMsg.className = 'journal-feedback-msg success';
-        fbMsg.textContent = 'מצוין, דניאל! הפקודה מאוזנת ונכונה לחלוטין! כל החשבונות והסכומים בחובה ובזכות מדויקים ✓';
+        fbMsg.textContent = 'מצוין! הפקודה מאוזנת ונכונה לחלוטין! כל החשבונות והסכומים בחובה ובזכות מדויקים ✓';
         SoundService.playSuccessSound();
       } else if (dSum > 0 && dSum === cSum) {
         fbMsg.className = 'journal-feedback-msg warning';

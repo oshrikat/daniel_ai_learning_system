@@ -252,7 +252,45 @@ function cleanApiKey(val) {
   return val.trim().replace(/^["']+|["']+$/g, '').trim();
 }
 
+/**
+ * Static-host guard: returns `true` ONLY on local Python dev server hosts (`localhost`, `127.0.0.1`, `::1`, `0.0.0.0`),
+ * and `false` on GitHub Pages (`oshrikat.github.io`), `file://`, or any external static host.
+ * @param {string} [explicitHost]
+ * @returns {boolean}
+ */
+function isLocalPythonServerHost(explicitHost) {
+  let host = '';
+  if (typeof explicitHost === 'string') {
+    host = explicitHost.trim().toLowerCase();
+  } else if (typeof window !== 'undefined' && window.location && typeof window.location.hostname === 'string') {
+    if (window.location.protocol === 'file:') return false;
+    host = window.location.hostname.trim().toLowerCase();
+  } else if (typeof location !== 'undefined' && typeof location.hostname === 'string') {
+    if (location.protocol === 'file:') return false;
+    host = location.hostname.trim().toLowerCase();
+  }
+  if (!host) return false;
+  const cleanHost = host.startsWith('[')
+    ? host.replace(/^(\[[^\]]+\])(?::\d+)?$/, '$1')
+    : host.replace(/:\d+$/, '');
+  return (
+    cleanHost === 'localhost' ||
+    cleanHost === '127.0.0.1' ||
+    cleanHost === '::1' ||
+    cleanHost === '[::1]' ||
+    cleanHost === '0.0.0.0'
+  );
+}
+
+if (typeof window !== 'undefined') {
+  window.isLocalPythonServerHost = isLocalPythonServerHost;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.isLocalPythonServerHost = isLocalPythonServerHost;
+}
+
 async function syncEnvKeysFromServer() {
+  if (!isLocalPythonServerHost()) return false;
   try {
     const res = await fetch('/api/env', { cache: 'no-store' });
     if (!res.ok) return;
@@ -415,6 +453,311 @@ function bridgeDatabaseManager() {
 
 bridgeDatabaseManager();
 
+// ============================================================================
+// 1c. IndexedDB Snapshot Store (`StudySnapshotsIDB`) — Prevents localStorage QuotaExceededError
+// ============================================================================
+
+const StudySnapshotsIDB = {
+  _dbName: 'DanielAiStudySnapshotsDB',
+  _storeName: 'unitSnapshots',
+  _dbVersion: 1,
+  _dbPromise: null,
+  _memoryStore: new Map(),
+
+  _openDb() {
+    if (typeof indexedDB === 'undefined' || !indexedDB || typeof indexedDB.open !== 'function') {
+      return Promise.resolve(null);
+    }
+    if (this._dbPromise) return this._dbPromise;
+
+    this._dbPromise = new Promise((resolve) => {
+      try {
+        const req = indexedDB.open(this._dbName, this._dbVersion);
+        req.onupgradeneeded = (event) => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains(this._storeName)) {
+            db.createObjectStore(this._storeName, { keyPath: 'unitId' });
+          }
+        };
+        req.onsuccess = (event) => resolve(event.target.result);
+        req.onerror = () => {
+          this._dbPromise = null;
+          resolve(null);
+        };
+      } catch (_err) {
+        this._dbPromise = null;
+        resolve(null);
+      }
+    });
+    return this._dbPromise;
+  },
+
+  /**
+   * Saves heavy base64 `pageSnapshots` / `inlineImages` for a unit into `_memoryStore` (0ms)
+   * and persists asynchronously to browser `indexedDB`.
+   * @param {string} unitId
+   * @param {object|Array} payload
+   * @returns {Promise<object|null>}
+   */
+  async saveUnitSnapshots(unitId, payload) {
+    const key = String(unitId || '').trim();
+    if (!key) return null;
+
+    const pageSnapshots = Array.isArray(payload)
+      ? payload
+      : (Array.isArray(payload?.pageSnapshots) ? payload.pageSnapshots : []);
+    const inlineImages = (!Array.isArray(payload) && Array.isArray(payload?.inlineImages))
+      ? payload.inlineImages
+      : [];
+
+    const record = {
+      unitId: key,
+      pageSnapshots: JSON.parse(JSON.stringify(pageSnapshots)),
+      inlineImages: JSON.parse(JSON.stringify(inlineImages)),
+      updatedAt: new Date().toISOString()
+    };
+
+    // Instant 0ms write into memory store
+    this._memoryStore.set(key, record);
+
+    const db = await this._openDb();
+    if (db) {
+      await new Promise((resolve) => {
+        try {
+          const tx = db.transaction(this._storeName, 'readwrite');
+          const store = tx.objectStore(this._storeName);
+          store.put(record);
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        } catch (_e) {
+          resolve(false);
+        }
+      });
+    }
+    return record;
+  },
+
+  saveSnapshots(unitId, pageSnapshots) {
+    return this.saveUnitSnapshots(unitId, pageSnapshots);
+  },
+
+  put(unitId, payload) {
+    return this.saveUnitSnapshots(unitId, payload);
+  },
+
+  getUnitSnapshotsSync(unitId) {
+    const key = String(unitId || '').trim();
+    return key ? (this._memoryStore.get(key) || null) : null;
+  },
+
+  has(unitId) {
+    return this._memoryStore.has(String(unitId || '').trim());
+  },
+
+  /**
+   * Retrieves stored snapshots record `{ unitId, pageSnapshots, inlineImages, updatedAt }`
+   * from `_memoryStore` or `indexedDB`.
+   * @param {string} unitId
+   * @returns {Promise<object|null>}
+   */
+  async getUnitSnapshots(unitId) {
+    const key = String(unitId || '').trim();
+    if (!key) return null;
+
+    if (this._memoryStore.has(key)) {
+      return this._memoryStore.get(key);
+    }
+
+    const db = await this._openDb();
+    if (!db) return null;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(this._storeName, 'readonly');
+        const store = tx.objectStore(this._storeName);
+        const req = store.get(key);
+        req.onsuccess = () => {
+          const found = req.result || null;
+          if (found) this._memoryStore.set(key, found);
+          resolve(found);
+        };
+        req.onerror = () => resolve(null);
+      } catch (_e) {
+        resolve(null);
+      }
+    });
+  },
+
+  async getSnapshots(unitId) {
+    const rec = await this.getUnitSnapshots(unitId);
+    return rec ? rec.pageSnapshots : [];
+  },
+
+  get(unitId) {
+    return this.getUnitSnapshots(unitId);
+  },
+
+  /**
+   * Deletes stored snapshots for a unit from both `_memoryStore` and `indexedDB`.
+   * @param {string} unitId
+   * @returns {Promise<boolean>}
+   */
+  async deleteUnitSnapshots(unitId) {
+    const key = String(unitId || '').trim();
+    if (!key) return false;
+    this._memoryStore.delete(key);
+
+    const db = await this._openDb();
+    if (db) {
+      await new Promise((resolve) => {
+        try {
+          const tx = db.transaction(this._storeName, 'readwrite');
+          const store = tx.objectStore(this._storeName);
+          store.delete(key);
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        } catch (_e) {
+          resolve(false);
+        }
+      });
+    }
+    return true;
+  },
+
+  deleteSnapshots(unitId) {
+    return this.deleteUnitSnapshots(unitId);
+  },
+
+  delete(unitId) {
+    return this.deleteUnitSnapshots(unitId);
+  },
+
+  /**
+   * Offloads heavy base64 `pageSnapshots` / `inlineImages` from active units into `StudySnapshotsIDB`
+   * and returns a lightweight clone safe for `localStorage` serialization (preventing `QuotaExceededError`)
+   * without mutating the live in-memory `stateObj`.
+   * @param {object} stateObj
+   * @returns {object}
+   */
+  extractAndStripSnapshotsForStorage(stateObj) {
+    if (!stateObj || typeof stateObj !== 'object') return stateObj;
+
+    const processUnitList = (units) => {
+      if (!Array.isArray(units)) return units;
+      return units.map((unit) => {
+        if (!unit || typeof unit !== 'object') return unit;
+        const uid = String(unit.id || unit.unit_id || '').trim();
+        const isDone = Boolean(unit.completed === true || unit.isCompleted === true || unit.imagesPurged === true);
+        const hasTopSnaps = Array.isArray(unit.pageSnapshots) && unit.pageSnapshots.length > 0;
+        const hasCtxSnaps = Boolean(unit.sourceContext && Array.isArray(unit.sourceContext.pageSnapshots) && unit.sourceContext.pageSnapshots.length > 0);
+        const effectiveSnaps = hasTopSnaps
+          ? unit.pageSnapshots
+          : (hasCtxSnaps ? unit.sourceContext.pageSnapshots : []);
+        const hasSnaps = effectiveSnaps.length > 0;
+        const hasInline = Array.isArray(unit.inlineImages) && unit.inlineImages.length > 0;
+
+        if (uid) {
+          if (isDone) {
+            this.deleteUnitSnapshots(uid).catch(() => {});
+          } else if (hasSnaps || hasInline) {
+            this.saveUnitSnapshots(uid, {
+              pageSnapshots: effectiveSnaps,
+              inlineImages: unit.inlineImages || []
+            }).catch(() => {});
+          }
+        }
+
+        const pageCount = Number(unit.pageCount) ||
+          (hasSnaps ? effectiveSnaps.length : 0) ||
+          (hasInline ? unit.inlineImages.length : 0) ||
+          0;
+
+        const shallowCopy = {
+          ...unit,
+          ...(pageCount > 0 ? { pageCount } : {}),
+          ...(!isDone && (hasSnaps || hasInline || unit.hasStoredSnapshots || (uid && this._memoryStore.has(uid)))
+            ? { hasStoredSnapshots: true }
+            : {}),
+          ...(unit.sourceContext && typeof unit.sourceContext === 'object'
+            ? {
+                sourceContext: {
+                  ...unit.sourceContext,
+                  ...(Array.isArray(unit.sourceContext.pageSnapshots) ? { pageSnapshots: [] } : {})
+                }
+              }
+            : {}),
+          pageSnapshots: [],
+          inlineImages: []
+        };
+        delete shallowCopy.rawPdfPart;
+        delete shallowCopy.rawPdfBase64;
+        return shallowCopy;
+      });
+    };
+
+    const lightweight = {
+      ...stateObj,
+      ...(Array.isArray(stateObj.studyHelpUnits)
+        ? { studyHelpUnits: processUnitList(stateObj.studyHelpUnits) }
+        : {}),
+      ...(stateObj.studyHelp && typeof stateObj.studyHelp === 'object'
+        ? {
+            studyHelp: {
+              ...stateObj.studyHelp,
+              ...(Array.isArray(stateObj.studyHelp.dailyCards)
+                ? { dailyCards: processUnitList(stateObj.studyHelp.dailyCards) }
+                : {})
+            }
+          }
+        : {})
+    };
+
+    return lightweight;
+  },
+
+  /**
+   * Restores `pageSnapshots` and `inlineImages` from `StudySnapshotsIDB` onto active unpurged units in memory.
+   * @param {object} stateObj
+   * @returns {Promise<number>}
+   */
+  async hydrateStateSnapshots(stateObj) {
+    if (!stateObj || typeof stateObj !== 'object') return 0;
+    let hydratedCount = 0;
+
+    const hydrateList = async (units) => {
+      if (!Array.isArray(units)) return;
+      for (const unit of units) {
+        if (!unit || typeof unit !== 'object') continue;
+        if (unit.completed === true || unit.isCompleted === true || unit.imagesPurged === true) continue;
+        if (Array.isArray(unit.pageSnapshots) && unit.pageSnapshots.length > 0) continue;
+        const uid = String(unit.id || unit.unit_id || '').trim();
+        if (!uid) continue;
+        const stored = await this.getUnitSnapshots(uid);
+        if (stored && Array.isArray(stored.pageSnapshots) && stored.pageSnapshots.length > 0) {
+          unit.pageSnapshots = stored.pageSnapshots;
+          if ((!Array.isArray(unit.inlineImages) || unit.inlineImages.length === 0) && Array.isArray(stored.inlineImages) && stored.inlineImages.length > 0) {
+            unit.inlineImages = stored.inlineImages;
+          }
+          hydratedCount++;
+        }
+      }
+    };
+
+    await hydrateList(stateObj.studyHelpUnits);
+    if (stateObj.studyHelp && Array.isArray(stateObj.studyHelp.dailyCards)) {
+      await hydrateList(stateObj.studyHelp.dailyCards);
+    }
+    return hydratedCount;
+  }
+};
+
+if (typeof window !== 'undefined') {
+  window.StudySnapshotsIDB = StudySnapshotsIDB;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.StudySnapshotsIDB = StudySnapshotsIDB;
+}
+
 /**
  * ניקוי אוטומטי של תמונות Base64 כבדות (pageSnapshots / inlineImages)
  * מיחידות לימוד שהושלמו, תוך שימור מראה המקום המדויק (sourceReferenceLabel & pageCount).
@@ -426,6 +769,12 @@ function purgeCompletedUnitHeavyImages(stateObj) {
   const stripUnit = (unit) => {
     if (!unit || typeof unit !== 'object') return;
     if (!(unit.completed === true || unit.isCompleted === true)) return;
+
+    const uid = String(unit.id || unit.unit_id || '').trim();
+    if (uid) {
+      StudySnapshotsIDB.deleteUnitSnapshots(uid).catch(() => {});
+    }
+    unit.hasStoredSnapshots = false;
 
     const hadSnapshots = Array.isArray(unit.pageSnapshots) && unit.pageSnapshots.length > 0;
     const hadInline = Array.isArray(unit.inlineImages) && unit.inlineImages.length > 0;
@@ -612,6 +961,7 @@ function performSmartMergeAndMigration(options = {}) {
           skipTimestampBump: true,
           skipCloudSync: options.skipCloudSync !== false
         });
+        StudySnapshotsIDB.hydrateStateSnapshots(appState).catch(() => {});
         return;
       }
     }
@@ -673,18 +1023,22 @@ function saveAppState(options = {}) {
       appState._updatedAt = new Date().toISOString();
     }
 
-    // 3. Instant 0ms synchronous write to localStorage
+    // 3. Offload heavy base64 `pageSnapshots` / `inlineImages` into `StudySnapshotsIDB`
+    //    so serialized `localStorage` JSON stays tiny and never throws `QuotaExceededError`.
+    const lightweightState = StudySnapshotsIDB.extractAndStripSnapshotsForStorage(appState);
+
+    // 4. Instant 0ms synchronous write of lightweight JSON to localStorage
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweightState));
     } catch (e) {
       console.warn('LocalStorage save failed:', e);
     }
 
-    // 4. Delegate to DatabaseManager (write-through local server + debounced cloud sync)
+    // 5. Delegate lightweight state to DatabaseManager (write-through local server + debounced secret-stripped cloud sync)
     if (!options.skipCloudSync) {
       const dm = bridgeDatabaseManager();
       if (dm && typeof dm.saveState === 'function') {
-        dm.saveState(appState).catch(err => {
+        dm.saveState(lightweightState).catch(err => {
           console.warn('[Store] DatabaseManager.saveState background warning:', err);
         });
       }

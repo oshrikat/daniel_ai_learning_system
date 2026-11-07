@@ -1,5 +1,5 @@
 // ============================================================================
-// 6. תצוגת מסלול המיומנויות של דניאל (Roadmap & Gatekeeping)
+// 6. תצוגת מסלול הלמידה האישי (Roadmap & Gatekeeping)
 // ============================================================================
 
 /**
@@ -214,7 +214,7 @@ function renderStudyHelpWorkspace(container) {
       <!-- Daily Cards List (Below the Upload Box) -->
       <div class="study-daily-cards-section">
         <div class="study-daily-cards-header">
-          <h3 class="study-daily-cards-title">🗂️ יחידות התרגול היומיות של דניאל (${dailyCards.length})</h3>
+          <h3 class="study-daily-cards-title">🗂️ יחידות התרגול היומיות (${dailyCards.length})</h3>
         </div>
 
         <div id="study-daily-cards-list" class="study-daily-cards-list">
@@ -322,7 +322,7 @@ function renderStudyHelpWorkspace(container) {
     createFromTextBtn.onclick = async () => {
       const pasted = pasteTextarea.value.trim();
       if (!pasted) {
-        showToast('דניאל, הדבק או כתוב תחילה את השאלות והחומר בתיבת הטקסט ✍️', 'warning');
+        showToast('הדבק או כתוב תחילה את השאלות והחומר בתיבת הטקסט ✍️', 'warning');
         pasteTextarea.focus();
         return;
       }
@@ -415,7 +415,7 @@ function renderRoadmap() {
     if (cpBadgeBox) cpBadgeBox.style.display = '';
 
     const titleEl = document.querySelector('.roadmap-title');
-    if (titleEl) titleEl.textContent = 'המסלול האישי של דניאל 🚀';
+    if (titleEl) titleEl.textContent = 'מסלול הלמידה האישי 🚀';
     const subEl = document.querySelector('.roadmap-subtitle');
     if (subEl) subEl.textContent = 'מיומנויות AI מעשיות לחיים ולעבודה • צעד אחר צעד • מבחן שלב כל 2 יחידות';
 
