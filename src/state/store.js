@@ -1,9 +1,9 @@
 /**
- * מאמן ה-AI של דניאל v3.0 - מנוע האפליקציה המלא והמודולרי
+ * מאמן ה-AI האישי ללמידה מותאמת v3.0 - מנוע האפליקציה המלא והמודולרי
  * 
  * ארכיטקטורה מנותקת תלויות (Decoupled Scalable Architecture):
  * 1. שכבת הנתונים נשלפת מ-curriculum_data.js (Single Source of Truth).
- * 2. מנגנון Preserve & Merge חכם: משמר 100% מההתקדמות והציונים של דניאל מ-localStorage,
+ * 2. מנגנון Preserve & Merge חכם: משמר 100% מההתקדמות והציונים של הלומד מ-localStorage,
  *    וממזג אוטומטית יחידות חדשות שנוספות ב-Git מבלי לדרוס שום היסטוריה.
  * 3. פדגוגיית 4 השלבים המשודרגת:
  *    - שלב 1: המחשה מוחשית Side-by-Side.
@@ -179,8 +179,7 @@ let appState = {
   activeTrackId: 'general',
   activeUnitId: 'unit_1',
   user: {
-    name: 'דניאל',
-    age: 28
+    name: 'הלומד'
   },
   clusters: getBaseClusters(),
   curriculumUnits: getBaseCurriculum(),
@@ -218,9 +217,9 @@ let appState = {
   caregiverNotes: [
     {
       id: 'note_1',
-      author: 'אבא ואושרי',
+      author: 'צוות הליווי',
       date: '2026-10-04',
-      text: 'דניאל מתקדם בצורה נפלאה, עצמאית ובטוחה. המערכת מותאמת בדיוק לצרכים שלו עם חיזוקים חיוביים ומבחני שלב.'
+      text: 'התקדמות נפלאה, עצמאית ובטוחה. המערכת מותאמת לצרכי הלמידה עם חיזוקים חיוביים ומבחני שלב.'
     }
   ],
   dbConfig: {
@@ -556,7 +555,7 @@ function performSmartMergeAndMigration(options = {}) {
 
         // מיזוג חכם של היחידות:
         // לוקחים תמיד את כל היחידות המעודכנות מ-curriculum_data.js (כולל יחידות חדשות שנוספו ב-Git)
-        // ומשמרים את הסטטוס (isCompleted, feedback) של יחידות שדניאל כבר ביצע!
+        // ומשמרים את הסטטוס (isCompleted, feedback) של יחידות שהלומד כבר ביצע!
         const completedMap = new Map();
         if (Array.isArray(parsed.curriculumUnits)) {
           parsed.curriculumUnits.forEach(u => {
@@ -1353,7 +1352,7 @@ function openUniversalUnitQuickEditor(trackId, unitId) {
                 <button type="button" class="secondary-btn uqe-del-question-btn" data-q-idx="${idx}" style="padding: 0.35rem 0.65rem; font-size: 0.82rem; color: #dc2626;">🗑️ מחק שאלה</button>
               </div>
               <textarea class="styled-textarea uqe-q-text" rows="2" placeholder="נוסח השאלה המלא..." style="margin-bottom: 0.4rem;">${escapeStoreHtml(q.exact_book_text || q.original_question || q.questionText || '')}</textarea>
-              <input type="text" class="styled-input uqe-q-trans" value="${escapeStoreHtml(q.friendly_translation || '')}" placeholder="תרגום / הסבר מונגש לדניאל (אופציונלי)">
+              <input type="text" class="styled-input uqe-q-trans" value="${escapeStoreHtml(q.friendly_translation || '')}" placeholder="תרגום / הסבר מונגש ללומד (אופציונלי)">
             </div>
           `).join('')}
         </div>

@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bypassBtn.onclick = () => {
       const pin = prompt('הקש קוד מלווה למעקף שבת לצורכי בדיקה:');
       const expected = appState.apiConfig.adminPin || ADMIN_PIN_DEFAULT;
-      if (pin === expected || pin === ADMIN_PIN_DEFAULT || pin === 'דניאל' || pin === '') {
+      if (pin === expected || pin === ADMIN_PIN_DEFAULT || pin === '') {
         shabbatBypassed = true;
         checkAndApplyShabbatLock();
         showToast('מצב שבת הוקפא זמנית לבדיקה.');
@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const globalTtsBtn = document.getElementById('global-tts-btn');
   if (globalTtsBtn) {
     globalTtsBtn.onclick = () => {
-      let text = 'מאמן ה-AI האישי של דניאל. לומדים צעד אחר צעד בקצב שלך.';
+      let text = 'מאמן ה-AI האישי ללמידה מותאמת. לומדים צעד אחר צעד בקצב שלך.';
       if (appState.currentView === 'unit') {
         const u = appState.curriculumUnits.find(x => x.id === appState.activeUnitId);
         if (u) text = `${u.title}. ${u.goal}`;
@@ -54,5 +54,5 @@ document.addEventListener('DOMContentLoaded', () => {
     GlobalAiAssistant.init();
   }
 
-  showToast('ברוך הבא דניאל! גרסה 3 של המערכת נטענה בהצלחה ✨');
+  showToast('שלום! 👋 המערכת נטענה בהצלחה ✨');
 });

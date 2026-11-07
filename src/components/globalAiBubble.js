@@ -1,5 +1,5 @@
 // ============================================================================
-// בועת עוזר ה-AI הצפה הכלל-מערכתית של דניאל (Global Floating AI Assistant Bubble v5.0)
+// בועת עוזר ה-AI הצפה הכלל-מערכתית ללמידה מותאמת (Global Floating AI Assistant Bubble v5.0)
 // כוללת סנכרון הקשר אסינכרוני (Async Context Handoff) עם דיאלוג טעינה גלוי,
 // חיבור לערוץ Groq המהיר (עם גיבוי Gemini -> OpenRouter), ושמירה קפדנית על טוהר בחינות.
 // ============================================================================
@@ -15,9 +15,10 @@ const GlobalAiAssistant = {
   chatHistory: [],
 
   quickStarterChips: [
-    '💡 תסביר לי את המושג שעל המסך במילים פשוטות',
-    '🔍 מה אני צריך לעשות בשלב הזה?',
-    '🧮 תעזור לי להבין את החישוב כאן'
+    '💡 הסבר במילים פשוטות',
+    '🪜 פרק לצעדים קטנים',
+    '🔍 מה מבקשים בשאלה?',
+    '✨ תן דוגמה יומיומית'
   ],
 
   /**
@@ -48,12 +49,12 @@ const GlobalAiAssistant = {
       fabBtn.type = 'button';
       fabBtn.className = 'global-ai-fab-btn';
       fabBtn.setAttribute('dir', 'rtl');
-      fabBtn.setAttribute('aria-label', '🤖 עוזר ה-AI של דניאל • שאל אותי הכל!');
+      fabBtn.setAttribute('aria-label', '🤖 עוזר ה-AI האישי • שאל אותי הכל!');
       fabBtn.setAttribute('aria-expanded', 'false');
       fabBtn.setAttribute('aria-controls', 'global-ai-assistant-drawer');
       fabBtn.innerHTML = `
         <span class="global-ai-fab-pulse" aria-hidden="true"></span>
-        <span class="global-ai-fab-label">🤖 עוזר ה-AI של דניאל • שאל אותי הכל!</span>
+        <span class="global-ai-fab-label">🤖 עוזר ה-AI האישי • שאל אותי הכל!</span>
       `;
       document.body.appendChild(fabBtn);
     }
@@ -73,7 +74,7 @@ const GlobalAiAssistant = {
       drawer.setAttribute('dir', 'rtl');
       drawer.setAttribute('role', 'dialog');
       drawer.setAttribute('aria-modal', 'false');
-      drawer.setAttribute('aria-label', 'עוזר ה-AI האישי של דניאל');
+      drawer.setAttribute('aria-label', 'מאמן ה-AI האישי ללמידה מותאמת');
       drawer.setAttribute('aria-hidden', 'true');
 
       const chipsHtml = this.quickStarterChips
@@ -94,7 +95,7 @@ const GlobalAiAssistant = {
           <div class="global-ai-header-brand">
             <span class="global-ai-avatar" aria-hidden="true">🤖</span>
             <div class="global-ai-header-titles">
-              <h3 class="global-ai-title">עוזר ה-AI של דניאל</h3>
+              <h3 class="global-ai-title">עוזר ה-AI האישי</h3>
               <span class="global-ai-subtitle">ליווי אישי, מהיר ובגובה העיניים בכל מסך ✨</span>
             </div>
           </div>
@@ -162,7 +163,7 @@ const GlobalAiAssistant = {
             id="global-ai-input"
             class="global-ai-input"
             rows="2"
-            placeholder="שאל אותי הכל דניאל — על המושג במסך, על הוראה לא ברורה, או כל שאלה אחרת..."
+            placeholder="שאל אותי הכל — על המושג במסך, על הוראה לא ברורה, או כל שאלה אחרת..."
             aria-label="הקלד שאלה לעוזר ה-AI"
           ></textarea>
           <button
@@ -208,7 +209,8 @@ const GlobalAiAssistant = {
     }
 
     if (backdrop) {
-      backdrop.onclick = () => this.close();
+      backdrop.style.display = 'none';
+      backdrop.onclick = null;
     }
 
     if (clearBtn) {
@@ -298,6 +300,9 @@ const GlobalAiAssistant = {
     const backdrop = document.getElementById('global-ai-assistant-backdrop');
 
     this.isOpen = true;
+    if (typeof document !== 'undefined' && document.body && document.body.classList) {
+      document.body.classList.toggle('global-ai-split-active', this.isOpen);
+    }
     if (drawer) {
       if (drawer.classList) drawer.classList.add('open');
       drawer.setAttribute('aria-hidden', 'false');
@@ -307,7 +312,7 @@ const GlobalAiAssistant = {
       fabBtn.setAttribute('aria-expanded', 'true');
     }
     if (backdrop) {
-      backdrop.style.display = 'block';
+      backdrop.style.display = 'none';
     }
 
     await this.syncActiveScreenContext(options);
@@ -319,7 +324,7 @@ const GlobalAiAssistant = {
   },
 
   /**
-   * סגירת מגירת העוזר והחזרת פוקוס לכפתור הצף
+   * סגירת חלונית העוזר ושחרור מצב Split-View
    */
   close() {
     const drawer = document.getElementById('global-ai-assistant-drawer');
@@ -327,6 +332,9 @@ const GlobalAiAssistant = {
     const backdrop = document.getElementById('global-ai-assistant-backdrop');
 
     this.isOpen = false;
+    if (typeof document !== 'undefined' && document.body && document.body.classList) {
+      document.body.classList.toggle('global-ai-split-active', this.isOpen);
+    }
     if (drawer) {
       if (drawer.classList) drawer.classList.remove('open');
       drawer.setAttribute('aria-hidden', 'true');
@@ -446,7 +454,10 @@ const GlobalAiAssistant = {
       const summaryExamUnit = summaryExams.find(e => e && (e.unit_id === activeId || e.id === activeId));
 
       if (studyUnit) {
-        unitTitle = studyUnit.lesson_title || studyUnit.title || 'יחידת לימוד יומית';
+        const rawUnitTitle = studyUnit.lesson_title || studyUnit.title || 'יחידת לימוד יומית';
+        unitTitle = typeof cleanLearnerVisibleTitle === 'function'
+          ? cleanLearnerVisibleTitle(rawUnitTitle)
+          : rawUnitTitle;
         const slide = (typeof UnitBeatCursor !== 'undefined' && UnitBeatCursor && typeof UnitBeatCursor.getCurrentSlide === 'function')
           ? UnitBeatCursor.getCurrentSlide(studyUnit)
           : null;
@@ -495,7 +506,7 @@ const GlobalAiAssistant = {
               ? beat.tutorSlide.required_terms_checklist
               : [];
             const recentTutorMsgs = Array.isArray(beat?.tutorSlide?.chatHistory)
-              ? beat.tutorSlide.chatHistory.slice(-4).map(m => `${m.role === 'user' ? 'דניאל' : 'המורה הפרטי'}: ${m.text}`).join('\n')
+              ? beat.tutorSlide.chatHistory.slice(-4).map(m => `${m.role === 'user' ? 'הלומד' : 'המורה הפרטי'}: ${m.text}`).join('\n')
               : '';
             slideLabel = `שיחה עם המורה הפרטי (קבוצה ${(slide.beatIndex || 0) + 1})`;
             activeContentText = [
@@ -531,7 +542,7 @@ const GlobalAiAssistant = {
           ? studyUnit.learnerAdaptationProfile.recentMisconceptions.slice(-3)
           : [];
         recentInteractionLog = [
-          logEntries.length > 0 ? `פעולות אחרונות של דניאל: ${logEntries.join(' ; ')}` : '',
+          logEntries.length > 0 ? `פעולות אחרונות של הלומד: ${logEntries.join(' ; ')}` : '',
           misconceptions.length > 0 ? `נקודות לחיזוק עדין: ${misconceptions.join(' ; ')}` : ''
         ].filter(Boolean).join('\n');
       } else if (summaryExamUnit) {
@@ -577,7 +588,7 @@ const GlobalAiAssistant = {
       const roadmapPreview = this._readCleanDomText(['#study-help-hub-wrapper', '#roadmap-days-container'], 900);
       activeContentText = [
         `מסך ראשי: מפת הלמידה במסלול "${activeTrackLabel}".`,
-        stats.totalStars !== undefined ? `כוכבי שליטה של דניאל: ${stats.totalStars || 0} ⭐, רצף למידה: ${stats.streakDays || 1} ימים 🔥.` : '',
+        stats.totalStars !== undefined ? `כוכבי שליטה של הלומד: ${stats.totalStars || 0} ⭐, רצף למידה: ${stats.streakDays || 1} ימים 🔥.` : '',
         roadmapPreview ? `תצוגה נוכחית במסך:\n${roadmapPreview}` : ''
       ].filter(Boolean).join('\n');
     }
@@ -616,7 +627,7 @@ const GlobalAiAssistant = {
     if (!this.activeContext) {
       await this.syncActiveScreenContext({ delayMs: 60 });
     } else {
-      // עדכון שקט של נתוני המסך במידה ודניאל עבר שקופית כשהמגירה כבר פתוחה
+      // עדכון שקט של נתוני המסך במידה והלומד עבר שקופית כשהחלונית כבר פתוחה
       const fresh = this.collectActiveScreenContext();
       if (fresh.contextKey !== this.lastContextKey) {
         this.activeContext = fresh;
@@ -711,16 +722,16 @@ const GlobalAiAssistant = {
   },
 
   /**
-   * בניית הודעת פתיחה חמה המותאמת אוטומטית למסך הנוכחי של דניאל
+   * בניית הודעת פתיחה חמה המותאמת אוטומטית למסך הנוכחי של הלומד
    */
   _buildContextualWelcome(ctx) {
     if (ctx.isExamOrCheckpoint) {
-      return `היי דניאל אלוף! 👋 אני מחובר עכשיו למסך **"${ctx.badgeLabel}"**.\n\nמאחר שאתה באמצע מבחן, לא אגלה את התשובות הסופיות 😉 — אבל אשמח להסביר לך במילים פשוטות כל מילה, מושג או הוראה בשאלה כדי שתפתור בביטחון!`;
+      return `שלום! 👋 אני מחובר עכשיו למסך **"${ctx.badgeLabel}"**.\n\nמאחר שאתה באמצע מבחן, לא אגלה את התשובות הסופיות 😉 — אבל אשמח להסביר לך במילים פשוטות כל מילה, מושג או הוראה בשאלה כדי שתפתור בביטחון!`;
     }
     if (ctx.currentView === 'unit' && ctx.slideLabel) {
-      return `היי דניאל! 👋 אני מסונכרן ב-100% לשקופית שלך: **"${ctx.badgeLabel}"**.\n\nאפשר ללחוץ על אחד הכפתורים המהירים למטה או לשאול אותי במילים שלך כל דבר שלא ברור על המסך! 💬`;
+      return `שלום! 👋 אני מסונכרן ב-100% לשקופית שלך: **"${ctx.badgeLabel}"**.\n\nאפשר ללחוץ על אחד הכפתורים המהירים למטה או לשאול אותי במילים שלך כל דבר שלא ברור על המסך! 💬`;
     }
-    return `היי דניאל! 👋 אני עוזר ה-AI האישי שלך, ואני מחובר עכשיו אל **"${ctx.badgeLabel}"**.\n\nאפשר לשאול אותי כל שאלה על החומר, על מה עושים בשלב הבא, או כל מושג שתרצה שנפרק יחד במילים פשוטות! ✨`;
+    return `שלום! 👋 אני עוזר ה-AI האישי שלך, ואני מחובר עכשיו אל **"${ctx.badgeLabel}"**.\n\nאפשר לשאול אותי כל שאלה על החומר, על מה עושים בשלב הבא, או כל מושג שתרצה שנפרק יחד במילים פשוטות! ✨`;
   },
 
   /**
@@ -754,7 +765,7 @@ const GlobalAiAssistant = {
   },
 
   /**
-   * הוספת שורת עדכון הקשר עדינה בתוך הפיד כאשר דניאל מרענן הקשר או עובר מסך
+   * הוספת שורת עדכון הקשר עדינה בתוך הפיד בעת רענון הקשר או מעבר מסך
    */
   _appendContextNotice(noticeText) {
     this.chatHistory.push({
@@ -813,7 +824,7 @@ const GlobalAiAssistant = {
           <div class="global-ai-msg-row ${isUser ? 'user-row' : 'assistant-row'}">
             <div class="global-ai-msg-bubble ${isUser ? 'user-bubble' : 'assistant-bubble'}">
               <div class="global-ai-msg-header">
-                <span class="global-ai-msg-author">${isUser ? '👤 דניאל' : '🤖 עוזר ה-AI'}</span>
+                <span class="global-ai-msg-author">${isUser ? '👤 הלומד' : '🤖 עוזר ה-AI'}</span>
                 ${
                   !isUser
                     ? `<button type="button" class="global-ai-tts-btn" data-msg-idx="${idx}" title="הקרא בקול">🔊 הקרא</button>`

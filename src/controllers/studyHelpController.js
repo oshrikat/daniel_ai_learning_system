@@ -145,7 +145,7 @@ function getTodayHebrewDateLabel(dateObj = new Date()) {
 
 /**
  * Ensures `appState.studyHelpStats` is initialized, updates `streakDays` automatically
- * whenever Daniel studies on a new day, and syncs `lessonsCompleted`.
+ * whenever the learner studies on a new day, and syncs `lessonsCompleted`.
  * @returns {{ streakDays: number, lastStudyDate: string, totalStars: number, lessonsCompleted: number }}
  */
 function ensureStudyHelpStats() {
@@ -221,11 +221,11 @@ function awardStudyHelpStars(starsToAdd = 1, reasonLabel = '') {
 function buildHabitMomentumBarHtml() {
   const stats = ensureStudyHelpStats();
   return `
-    <section class="study-habit-momentum-bar" aria-label="מדד התמדה וכוכבי שליטה של דניאל">
+    <section class="study-habit-momentum-bar" aria-label="מדד התמדה וכוכבי שליטה">
       <div class="study-habit-greeting-row">
         <span class="study-habit-wave-icon" aria-hidden="true">🌟</span>
         <p class="study-habit-greeting-text">
-          איזה כיף שחזרת דניאל! כל מושג ושאלה שאתה מפצח היום מקדמים אותך לצבירת כוכבים ולשליטה מלאה בחומר 🌟
+          שלום! 👋 איזה כיף שחזרת! כל מושג ושאלה שאתה מפצח היום מקדמים אותך לצבירת כוכבים ולשליטה מלאה בחומר 🌟
         </p>
       </div>
       <div class="study-habit-counters-row">
@@ -349,7 +349,7 @@ function buildGuidingStonesTimelineHtml(unit) {
 }
 
 /**
- * Displays the soothing full-screen Calming Async Loading Overlay for Daniel.
+ * Displays the soothing full-screen Calming Async Loading Overlay for the learner.
  * @param {string} [statusText]
  */
 function showStudyHelpLoadingOverlay(statusText = 'קורא את הדפים שהעלית...') {
@@ -371,7 +371,7 @@ function showStudyHelpLoadingOverlay(statusText = 'קורא את הדפים שה
           <div class="study-calming-step-pill" data-step="3">3. מכין את השקופית ואת שיחת המורה הפרטי...</div>
         </div>
         <p class="study-calming-subtitle">
-          קח נשימה רגועה, דניאל 💙 עוד כמה שניות הכל יהיה מונגש ומסודר צעד אחר צעד.
+          קח נשימה רגועה 💙 עוד כמה שניות הכל יהיה מונגש ומסודר צעד אחר צעד.
         </p>
         <div class="study-calming-cancel-wrap" style="margin-top: 1.15rem;">
           <button
@@ -455,7 +455,7 @@ function showStudyHelpRetryModal(diagnosticReason, onRetry) {
       <div style="font-size:2.8rem; margin-bottom:0.6rem;">📄🔍</div>
       <h3 class="study-calming-title">לא הצלחנו להשלים את קריאת קובץ השיעור בניסיון הראשון</h3>
       <p class="study-calming-subtitle" style="margin-bottom:1rem;">
-        אל דאגה דניאל! לפעמים קובץ PDF מרובה עמודים לוקח עוד רגע לפענוח מלא מול השרת. אנחנו לא ממציאים שאלות שלא מופיעות בקובץ שלך.
+        אל דאגה! לפעמים קובץ PDF מרובה עמודים לוקח עוד רגע לפענוח מלא מול השרת. אנחנו לא ממציאים שאלות שלא מופיעות בקובץ שלך.
       </p>
       <div class="study-retry-diagnostic-box">
         <small>פרטי אבחון טכניים: ${formatCoachChatHtml(diagnosticReason || 'שגיאת תקשורת או פענוח JSON')}</small>
@@ -521,7 +521,7 @@ function openLessonPageViewerModal(unit, pageNumber = 1) {
         <div class="study-page-viewer-header">
           <div>
             <h3 class="study-page-viewer-title">📄 עמוד ${currentSnap.pageNumber} מתוך קובץ השיעור</h3>
-            <span class="study-page-viewer-sub">${unit.title || ''}</span>
+            <span class="study-page-viewer-sub">${cleanLearnerVisibleTitle(unit.lesson_title || unit.title || '')}</span>
           </div>
           <div class="study-page-viewer-nav">
             ${snapshots.map(s => `
@@ -597,7 +597,7 @@ function parseJsonFromAIResponse(rawResponse) {
 
 /**
  * Creates the default dynamic learner adaptation profile tracked per unit.
- * Updated continuously as Daniel answers Beat questions or requests simpler analogies.
+ * Updated continuously as the learner answers Beat questions or requests simpler analogies.
  * @returns {object}
  */
 function createDefaultLearnerAdaptationProfile() {
@@ -682,7 +682,7 @@ function getSnapshotInlineImagesForPages(unit, pageNumbers = []) {
 
 /**
  * Grounded offline blueprint builder for direct pasted text when cloud AI is unreachable.
- * Uses ONLY Daniel's pasted text — NEVER injects fake hardcoded questions!
+ * Uses ONLY the learner's pasted text — NEVER injects fake hardcoded questions!
  * @param {object} params
  * @returns {object|null}
  */
@@ -726,7 +726,7 @@ function buildGroundedPastedTextBlueprint({ extractedText = '', sourceLabel = ''
 
 /**
  * Groups `concept_outlines` into Concept Beats (`conceptBeats`), each containing 1 to 3 related concepts
- * (`beatIndex: 0, 1, 2...`). Ensures at least 1 Concept Beat exists so Stage 1 always prepares Daniel.
+ * (`beatIndex: 0, 1, 2...`). Ensures at least 1 Concept Beat exists so Stage 1 always prepares the learner.
  * @param {Array<object>} conceptOutlines
  * @param {string} unitId
  * @param {object} fallbackContext
@@ -829,18 +829,47 @@ function pickHigherPriorityQuestionType(typeA, typeB) {
   return scoreB > scoreA ? b : a;
 }
 
-function sanitizeBlueprintLessonTitle(rawTitle, fallbackTitle = '') {
-  const cleanStr = (val) => String(val || '')
-    .replace(/מיפוי\s+מלא\s+של\s+עמודים[^-–—:•|]*/gi, '')
-    .replace(/(?:מתוך\s+)?עמוד(?:ים)?\s*\d+(?:\s*(?:עד|-|–)\s*\d+)?(?:\s*מתוך\s*\d+)?/gi, '')
+/**
+ * Strips internal mapping metadata (e.g., "| מיפוי מלא של עמודים...", "מיפוי מלא ללא שום השמטה...",
+ * or raw page-range dumps) from learner-facing unit titles.
+ * @param {string} rawTitle
+ * @param {string} [fallbackTitle='']
+ * @returns {string}
+ */
+function cleanLearnerVisibleTitle(rawTitle, fallbackTitle = '') {
+  const stripMapping = (val) => String(val || '')
+    .replace(/(?:\s*(?:\||•|[-–—:])\s*)?מיפוי\s+מלא[^|•\n]*/gi, '')
+    .replace(/\(\s*(?:מתוך\s+|ב)?עמ(?:וד(?:ים)?|['׳])?\s*\d+(?:\s*(?:עד|[-–—,/])\s*\d+)*(?:\s*מתוך\s*\d+)?\s*\)/gi, '')
+    .replace(/(?:\s*(?:\||•|[-–—:])\s*)?(?:מתוך\s+|ב)?עמ(?:וד(?:ים)?|['׳])?\s+\d+(?:\s*(?:עד|[-–—,/])\s*\d+)*(?:\s*מתוך\s*\d+)?/gi, '')
+    .replace(/\s*[|•]\s*(?=[|•]|$)/g, '')
     .replace(/^[\s\-–—:•|.,]+|[\s\-–—:•|.,]+$/g, '')
-    .replace(/\s+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
     .trim();
 
-  let cleaned = cleanStr(rawTitle);
-  if (!cleaned) {
-    cleaned = cleanStr(fallbackTitle);
-  }
+  const cleaned = stripMapping(rawTitle);
+  if (cleaned) return cleaned;
+  const cleanFallback = stripMapping(fallbackTitle);
+  return cleanFallback || '';
+}
+
+/**
+ * Strips internal mapping metadata and raw page-range dumps from learner-facing summaries.
+ * @param {string} rawSummary
+ * @returns {string}
+ */
+function cleanLearnerVisibleSummary(rawSummary) {
+  return String(rawSummary || '')
+    .replace(/(?:\s*(?:\||•)\s*)?מיפוי\s+מלא[^|.!\n]*[.!]?/gi, '')
+    .replace(/\(\s*(?:מתוך\s+|ב)?עמ(?:וד(?:ים)?|['׳])?\s*\d+(?:\s*(?:עד|[-–—,/])\s*\d+)*(?:\s*מתוך\s*\d+)?\s*\)/gi, '')
+    .replace(/(?:מתוך\s+|ב)?עמ(?:וד(?:ים)?|['׳])?\s+\d+(?:\s*(?:עד|[-–—,/])\s*\d+)*(?:\s*מתוך\s*\d+)?\s*[:\-–—|•]?/gi, '')
+    .replace(/\s*[|•]\s*(?=[|•]|$)/g, '')
+    .replace(/^[\s\-–—:•|.,]+|[\s\-–—:•|]+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function sanitizeBlueprintLessonTitle(rawTitle, fallbackTitle = '') {
+  let cleaned = cleanLearnerVisibleTitle(rawTitle, fallbackTitle);
   const words = cleaned.split(/\s+/).filter(Boolean);
   if (words.length > 8) {
     cleaned = words.slice(0, 8).join(' ').replace(/[,:;–—\-]+$/, '');
@@ -849,12 +878,7 @@ function sanitizeBlueprintLessonTitle(rawTitle, fallbackTitle = '') {
 }
 
 function sanitizeBlueprintSummary(rawSummary) {
-  return String(rawSummary || '')
-    .replace(/מיפוי\s+מלא\s+של\s+עמודים\s*\d+(?:\s*(?:עד|-|–)\s*\d+)?(?:\s*מתוך\s*\d+)?\s*[:\-–—]?/gi, '')
-    .replace(/\bבעמודים\s+\d+\s*(?:עד|-|–)\s*\d+(?:\s+מתוך\s+\d+)?\b/gi, '')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/^[\s\-–—:•|.,]+/, '')
-    .trim();
+  return cleanLearnerVisibleSummary(rawSummary);
 }
 
 function isSolvedExampleOutline(item) {
@@ -1234,10 +1258,10 @@ async function extractLessonBeatBlueprint({
   const hasAnyVisuals = pageImages.length > 0 || hasNativePdfOnly;
 
   const systemInstruction = [
-    'You are a high-precision curriculum blueprint extractor for an Israeli accounting & business learning system tailored for Daniel (a 28-year-old learner).',
+    'You are a high-precision curriculum blueprint extractor for an adaptive Israeli accounting & business learning system.',
     'CRITICAL DISTINCTION: Any worked example, demonstration table, or solved illustration that ALREADY includes its solution/explanation in the textbook page MUST be placed ONLY in "concept_outlines" (never in "question_outlines"). Place in "question_outlines" ONLY actual unsolved homework/practice exercises meant for the learner to solve.',
     'CRITICAL GROUPING RULE: Never split rows of the same table or sub-items (סעיפים א\', ב\', ג\'...) of the same numbered textbook question into separate entries in "question_outlines"! Keep each main numbered textbook exercise (e.g. "שאלה 1", "שאלה 2") as ONE single entry in "question_outlines" containing the full text and all sub-items/rows of that exercise.',
-    'CLEAN TITLES RULE: "lesson_title" MUST be a clean, concise Hebrew topic title (max 8 words, e.g., "התהליך החשבונאי השוטף: חובה וזכות") — NEVER include internal page numbers or phrases like "מיפוי מלא של עמודים..." in "lesson_title" or "pages_summary".',
+    'CLEAN TITLES RULE: "lesson_title" MUST be a clean, concise Hebrew topic title (max 8 words, e.g., "התהליך החשבונאי השוטף: חובה וזכות") — NEVER include internal page numbers or internal mapping labels in "lesson_title" or "pages_summary".',
     'STRICT LANGUAGE & GROUNDING RULE: Return ONLY a valid JSON object. Every extracted title, summary, concept, and exercise text MUST be in 100% natural Israeli Hebrew and strictly grounded in the provided textbook pages/text (zero hallucination).'
   ].join('\n');
 
@@ -1251,7 +1275,7 @@ async function extractLessonBeatBlueprint({
 MANDATORY EXTRACTION RULES:
 1. CRITICAL DISTINCTION: Any worked example, demonstration table, or solved illustration that ALREADY includes its solution/explanation in the textbook page MUST be placed ONLY in "concept_outlines" (never in "question_outlines"). Place in "question_outlines" ONLY actual unsolved homework/practice exercises meant for the learner to solve.
 2. CRITICAL GROUPING RULE: Never split rows of the same table or sub-items (סעיפים א', ב', ג'...) of the same numbered textbook question into separate entries in "question_outlines"! Keep each main numbered textbook exercise (e.g. "שאלה 1", "שאלה 2") as ONE single entry in "question_outlines" containing the full text and all sub-items/rows of that exercise.
-3. CLEAN LEARNER-FACING TITLES: "lesson_title" must be a clean, concise Hebrew topic title (max 8 words, e.g., "התהליך החשבונאי השוטף: חובה וזכות") — NEVER include internal page numbers or words like "מיפוי מלא של עמודים..." in "lesson_title" or "pages_summary".
+3. CLEAN LEARNER-FACING TITLES: "lesson_title" must be a clean, concise Hebrew topic title (max 8 words, e.g., "התהליך החשבונאי השוטף: חובה וזכות") — NEVER include internal page numbers or internal mapping labels in "lesson_title" or "pages_summary".
 4. HEBREW OUTPUT: All string values (except "question_type") MUST be in 100% natural Israeli Hebrew, preserving exact textbook wording and numbers.
 
 ${chunkText ? `Extracted textbook text for ${pageScope}:\n"""\n${chunkText}\n"""\n` : `Read all definitions, worked examples, tables, and unsolved exercises directly from the attached page image(s) for ${pageScope}.\n`}
@@ -1481,7 +1505,7 @@ Return ONLY a valid JSON object matching this exact schema:
     if (!parsedChunk) {
       if (isFileUpload || hasAnyVisuals) {
         throw new Error(
-          `לא הצלחנו להשלים מיפוי מלא של עמודים ${ch.startPage}-${ch.endPage} (${lastChunkError || 'שגיאת תקשורת'}). נסה שוב כדי להבטיח 0% השמטת חומר.`
+          `לא הצלחנו להשלים את קריאת עמודים ${ch.startPage}-${ch.endPage} (${lastChunkError || 'שגיאת תקשורת'}). נסה שוב כדי להבטיח כיסוי מלא של החומר.`
         );
       }
       continue;
@@ -1566,7 +1590,7 @@ Return ONLY a valid JSON object matching this exact schema:
 }
 
 /**
- * Formats an adaptation guidance paragraph injected into Beat prompts based on Daniel's live interaction signals.
+ * Formats an adaptation guidance paragraph injected into Beat prompts based on the learner's live interaction signals.
  * @param {object} profile
  * @returns {string}
  */
@@ -1575,7 +1599,7 @@ function buildAdaptationGuidanceBlock(profile) {
   const lines = [];
 
   if (p.askedForSimplerAnalogyCount > 0 || p.wrongMcAttemptsCount >= 2 || p.pace === 'careful_step_by_step') {
-    lines.push('- דניאל ביקש הסברים פשוטים ומוחשיים יותר בפעימה הקודמת: השתמש בדוגמאות יומיומיות קצרות (כמו ארנק, קופה בסופר או חשבון בנק אישי) ופרק כל חישוב לשלבים קטנים וממוספרים.');
+    lines.push('- הלומד ביקש הסברים פשוטים ומוחשיים יותר בפעימה הקודמת: השתמש בדוגמאות יומיומיות קצרות (כמו ארנק, קופה בסופר או חשבון בנק אישי) ופרק כל חישוב לשלבים קטנים וממוספרים.');
   } else {
     lines.push('- שמור על טון חם, מעודד ובגובה העיניים: פסקה ראשונה אינטואיטיבית ויומיומית, ופסקה שנייה המציגה את הכלל החשבונאי המלא מהספר בדיוק מקצועי.');
   }
@@ -1584,10 +1608,10 @@ function buildAdaptationGuidanceBlock(profile) {
     lines.push(`- מושגים שדרשו חיזוק לאחרונה (קשר אליהם בעדינות אם רלוונטי): ${p.challengingTerms.slice(-4).join(', ')}.`);
   }
   if (Array.isArray(p.masteredTerms) && p.masteredTerms.length > 0) {
-    lines.push(`- מושגים שדניאל כבר פיצח בהצלחה וניתן להישען עליהם בביטחון: ${p.masteredTerms.slice(-5).join(', ')}.`);
+    lines.push(`- מושגים שהלומד כבר פיצח בהצלחה וניתן להישען עליהם בביטחון: ${p.masteredTerms.slice(-5).join(', ')}.`);
   }
   if (Array.isArray(p.recentLearnerNotes) && p.recentLearnerNotes.length > 0) {
-    lines.push(`- סגנון הניסוח האישי של דניאל בתשובותיו הפתוחות: "${p.recentLearnerNotes.slice(-2).join(' | ')}".`);
+    lines.push(`- סגנון הניסוח האישי של הלומד בתשובותיו הפתוחות: "${p.recentLearnerNotes.slice(-2).join(' | ')}".`);
   }
 
   return lines.join('\n');
@@ -1636,9 +1660,9 @@ async function generateConceptBeatContent(unit, beatIndex, learnerAdaptationProf
     }).join('\n\n');
 
     const systemInstruction = [
-      `You are a warm, expert remedial accounting tutor building Concept Beat ${beatIndex + 1} for Daniel (a 28-year-old Israeli learner with special educational needs).`,
+      `You are a warm, expert remedial accounting tutor building Concept Beat ${beatIndex + 1} for an Israeli learner who benefits from clear, accessible, step-by-step instruction.`,
       `CRITICAL GROUNDING RULE: Ground 100% of explanations, rules, and worked examples strictly in each concept's "raw_book_excerpt" and source page. Never invent concepts or alter textbook numbers.`,
-      `CRITICAL LANGUAGE RULE: Return ONLY a valid JSON object. Every human-facing string value MUST be written in 100% natural, clear, encouraging Israeli Hebrew.`
+      `CRITICAL LANGUAGE RULE: Return ONLY a valid JSON object. Every human-facing string value MUST be written in 100% natural, clear, encouraging Israeli Hebrew (second-person phrasing, no hardcoded personal names).`
     ].join('\n');
 
     const prompt = `Generate structured Concept Slides for Concept Beat ${beatIndex + 1} of ${unit.conceptBeats.length} in lesson "${unit.lesson_title || unit.title}".
@@ -1951,10 +1975,10 @@ async function generateHomeworkBeatContent(unit, hwBeatIndex, learnerAdaptationP
     }).join('\n\n');
 
     const systemInstruction = [
-      `You are a supportive remedial accounting coach building guided Homework Beat ${hwBeatIndex + 1} for Daniel (a 28-year-old Israeli learner with special educational needs).`,
+      `You are a supportive remedial accounting coach building guided Homework Beat ${hwBeatIndex + 1} for an Israeli learner who benefits from clear, accessible, step-by-step instruction.`,
       `CRITICAL GROUNDING RULE: Preserve 100% of the exact wording and numbers from "exact_book_text" without skipping or merging exercises in this beat.`,
       `CRITICAL MICRO-STEP RULE: Include a "sub_steps" array of 2–4 simple, reassuring Hebrew micro-steps on EVERY question, breaking complex exercises or multi-row tables into calm, manageable steps.`,
-      `CRITICAL LANGUAGE RULE: Return ONLY a valid JSON object. Every human-facing string value MUST be in 100% natural, warm Israeli Hebrew.`
+      `CRITICAL LANGUAGE RULE: Return ONLY a valid JSON object. Every human-facing string value MUST be in 100% natural, warm Israeli Hebrew (second-person phrasing, no hardcoded personal names).`
     ].join('\n');
 
     const prompt = `Build guided homework solver objects for all ${qOutlines.length} exercise(s) in Homework Beat ${hwBeatIndex + 1} of ${unit.homeworkBeats.length} for lesson "${unit.lesson_title || unit.title}".
@@ -1973,7 +1997,7 @@ Return ONLY valid JSON (all text values MUST be in natural Israeli Hebrew; keep 
       "page_number": 4,
       "question_type": "journal_table | general_table | calculation | multiple_choice | open_question",
       "exact_book_text": "הציטוט המדויק מהספר",
-      "friendly_translation": "תרגום פשוט, חם ומונגש לדניאל: מה מבקשים בשאלה הזו ואיך ניגשים אליה ברוגע",
+      "friendly_translation": "תרגום פשוט, חם ומונגש ללומד: מה מבקשים בשאלה הזו ואיך ניגשים אליה ברוגע",
       "sub_steps": [
         "צעד 1: ...",
         "צעד 2: ...",
@@ -1999,7 +2023,7 @@ Return ONLY valid JSON (all text values MUST be in natural Israeli Hebrew; keep 
         "options": ["הנימוק הנכון והפשוט", "נימוק שגוי"],
         "correct_index": 0
       },
-      "notebook_copy_summary": "הניסוח המדויק והמסודר שדניאל יעתיק למחברת",
+      "notebook_copy_summary": "הניסוח המדויק והמסודר שהלומד יעתיק למחברת",
       "step_by_step_guide": ["שלב 1...", "שלב 2..."],
       "hint": "רמז עדין ומכוון",
       "expected_answer_summary": "הפתרון המלא והמדויק"
@@ -2108,7 +2132,7 @@ Return ONLY valid JSON (all text values MUST be in natural Israeli Hebrew; keep 
         chatHistory: Array.isArray(existingQ.chatHistory) ? existingQ.chatHistory : []
       };
 
-      // Reset auto-seeded placeholder chat message if Daniel hasn't typed anything yet so friendly_translation appears!
+      // Reset auto-seeded placeholder chat message if the learner hasn't typed anything yet so friendly_translation appears!
       if (Array.isArray(unit.chatHistory) && Array.isArray(unit.chatHistory[globalQIdx])) {
         const hasUserTurn = unit.chatHistory[globalQIdx].some(m => m && m.role === 'user');
         if (!hasUserTurn) {
@@ -2518,7 +2542,7 @@ async function generateDailyStudyUnitFromMaterial({
     summaryExamId: null
   };
 
-  // Stage B + C: Immediately generate Concept Beat 1 (`beatIndex = 0`) so Daniel starts right away!
+  // Stage B + C: Immediately generate Concept Beat 1 (`beatIndex = 0`) so the learner starts right away!
   if (activeSession.isCancelled()) return null;
   showStudyHelpLoadingOverlay(
     `בונה את פעימת הלימוד הראשונה (1 מתוך ${conceptBeats.length}) מתוך עמודי השיעור...`
@@ -2566,7 +2590,7 @@ async function generateDailyStudyUnitFromMaterial({
     renderRoadmap();
   }
 
-  // Immediately open Beat 1 for Daniel!
+  // Immediately open Beat 1 for the learner!
   openStudyHelpUnit(newUnit.id, { skipAutoPrewarm: true });
 
   // 1-Beat Lookahead: prewarm ONLY the single next pending beat in background
@@ -2920,11 +2944,12 @@ const UnitBeatCursor = {
     const solvedArr = Array.isArray(unit.solvedQuestions) ? unit.solvedQuestions : [];
 
     // Slide 0: PROMO_OVERVIEW_SLIDE
+    const cleanDeckTitle = cleanLearnerVisibleTitle(unit.lesson_title || unit.title || '') || 'שיעור יומי';
     deck.push({
       slideIndex: 0,
       type: 'PROMO_OVERVIEW_SLIDE',
       shortLabel: 'פתיחה',
-      fullTitle: `פתיחת השיעור: ${unit.lesson_title || unit.title || ''}`,
+      fullTitle: `פתיחת השיעור: ${cleanDeckTitle}`,
       isUnlocked: true,
       isCompleted: Boolean(unit.promoCompleted || (unit.currentSlideIdx || 0) > 0 || unit.completed)
     });
@@ -3481,7 +3506,7 @@ function ensureUnitQuestionChatState(unit, qIdx) {
     const qText = qObj.exact_book_text || qObj.original_question || qObj.questionText || '';
     const friendly = qObj.friendly_translation || '';
     const openingText =
-      `שלום דניאל! 👋 אנחנו ב**${qObj.question_number_label || `שאלה ${qIdx + 1}`}** מתוך ${questions.length}:\n` +
+      `שלום! 👋 אנחנו ב**${qObj.question_number_label || `שאלה ${qIdx + 1}`}** מתוך ${questions.length}:\n` +
       `"**${qText}**"\n\n` +
       (friendly ? `💡 **במילים פשוטות:** ${friendly}\n\n` : '') +
       `בוא נסתכל יחד על השאלה הזו. מה לדעתך הפעולה הראשונה שקורה כאן, או איזה צד מקבל ואיזה צד נותן?`;
@@ -3496,7 +3521,7 @@ function ensureUnitQuestionChatState(unit, qIdx) {
 }
 
 /**
- * Calls `callMultiTierAI` (with `jsonMode: true`) to evaluate Daniel's reply or quick-assist request
+ * Calls `callMultiTierAI` (with `jsonMode: true`) to evaluate the learner's reply or quick-assist request
  * for the active question in Socratic style.
  * @param {object} params
  * @returns {Promise<{ is_question_solved: boolean, coach_reply: string }>}
@@ -3581,7 +3606,7 @@ Return ONLY valid JSON:
   if (assistMode === 'hint') {
     return {
       is_question_solved: false,
-      coach_reply: `בשמחה דניאל! 💡 הנה רמז כיוון:\n${hintText}\n\nאיזה חשבון לדעתך מקבל כאן ערך (חובה)?`
+      coach_reply: `בשמחה! 💡 הנה רמז כיוון:\n${hintText}\n\nאיזה חשבון לדעתך מקבל כאן ערך (חובה)?`
     };
   }
   if (assistMode === 'steps') {
@@ -3592,7 +3617,7 @@ Return ONLY valid JSON:
     ]).map((s, i) => `${i + 1}. ${s}`).join('\n');
     return {
       is_question_solved: false,
-      coach_reply: `בטח דניאל, בוא נפרק את זה לשלבים קטנים ונוחים 🔍:\n${stepsFormatted}\n\nבוא נתחיל רק משלב 1 — מהם הנתונים והסכומים שאתה מזהה בשאלה?`
+      coach_reply: `בשמחה, בוא נפרק את זה לשלבים קטנים ונוחים 🔍:\n${stepsFormatted}\n\nבוא נתחיל רק משלב 1 — מהם הנתונים והסכומים שאתה מזהה בשאלה?`
     };
   }
   if (assistMode === 'explain') {
@@ -3607,13 +3632,13 @@ Return ONLY valid JSON:
   if (hasAccountingTerms && cleanUser.length >= 6) {
     return {
       is_question_solved: true,
-      coach_reply: `כל הכבוד דניאל! 🌟 כתבת: "${cleanUser}" — זיהית נכון את כיוון הפעולה החשבונאית ואת שיוך החשבונות.\n📌 **סיכום הפתרון:** ${expectedAnswer}`
+      coach_reply: `כל הכבוד! 🌟 כתבת: "${cleanUser}" — זיהית נכון את כיוון הפעולה החשבונאית ואת שיוך החשבונות.\n📌 **סיכום הפתרון:** ${expectedAnswer}`
     };
   }
 
   return {
     is_question_solved: false,
-    coach_reply: `תודה על התשובה דניאל ("${cleanUser}")! 👍 אתה בכיוון טוב. כדי שנשלים את הפתרון המדויק: ציין איזה חשבון נרשם ב**חובה**, איזה חשבון נרשם ב**זכות**, ומה הסכום של כל צד.`
+    coach_reply: `תודה על התשובה ("${cleanUser}")! 👍 אתה בכיוון טוב. כדי שנשלים את הפתרון המדויק: ציין איזה חשבון נרשם ב**חובה**, איזה חשבון נרשם ב**זכות**, ומה הסכום של כל צד.`
   };
 }
 
@@ -3772,13 +3797,15 @@ function openStudyHelpUnit(unitId, options = {}) {
   const goalDescEl = document.getElementById('unit-goal-desc');
 
   const dateLabel = unit.createdAtLabel || unit.dateLabel || getTodayHebrewDateLabel();
-  const displayTitle = unit.lesson_title || unit.title;
-  const sourceFileDisplay = unit.sourceFileName || unit.title || 'קובץ השיעור';
-  const sourceLabel = unit.sourceFileName || unit.sourceLabel || displayTitle || 'קובץ השיעור';
+  const displayTitle = cleanLearnerVisibleTitle(unit.lesson_title || unit.title, unit.sourceLabel || 'יחידת לימוד יומית') || 'יחידת לימוד יומית';
+  const displaySummary = cleanLearnerVisibleSummary(unit.pages_summary || unit.topic_summary || '')
+    || 'לימוד מונחה שקופית אחר שקופית מתוך עמודי השיעור שלך';
+  const sourceFileDisplay = unit.sourceFileName || displayTitle || 'קובץ השיעור';
+  const sourceLabel = unit.sourceFileName || cleanLearnerVisibleTitle(unit.sourceLabel || '') || displayTitle || 'קובץ השיעור';
   if (viewTitleEl) viewTitleEl.textContent = `📚 עזרה בלימודים • ${displayTitle}`;
   if (badgeEl) badgeEl.textContent = `📅 ${dateLabel}`;
   if (mainTitleEl) mainTitleEl.textContent = displayTitle;
-  if (goalDescEl) goalDescEl.textContent = unit.pages_summary || unit.topic_summary || 'לימוד מונחה שקופית אחר שקופית מתוך עמודי השיעור שלך';
+  if (goalDescEl) goalDescEl.textContent = displaySummary;
 
   const masteredBeatsCount = conceptBeats.filter(b => Boolean(b?.tutorSlide?.all_beat_terms_mastered || b?.tutorSlide?.completed)).length;
   const allConceptsMastered = UnitBeatCursor.areAllConceptBeatsMastered(unit);
@@ -3875,7 +3902,7 @@ function openStudyHelpUnit(unitId, options = {}) {
 
           <h2 class="study-promo-main-title">${displayTitle}</h2>
           <p class="study-promo-summary-text">
-            ${formatCoachChatHtml(unit.pages_summary || unit.topic_summary || 'ביחידה זו נלמד צעד אחר צעד את כל המושגים והדוגמאות מהספר, נאמת אותם בשיחה קצרה עם המורה הפרטי, ונפתור יחד את שיעורי הבית.')}
+            ${formatCoachChatHtml(cleanLearnerVisibleSummary(unit.pages_summary || unit.topic_summary || '') || 'ביחידה זו נלמד צעד אחר צעד את כל המושגים והדוגמאות מהספר, נאמת אותם בשיחה קצרה עם המורה הפרטי, ונפתור יחד את שיעורי הבית.')}
           </p>
 
           <div class="study-promo-stats-grid">
@@ -4154,7 +4181,7 @@ function openStudyHelpUnit(unitId, options = {}) {
                     </button>
                   </div>
                   <div id="concept-mfa-step2-feedback" class="study-mfa-feedback ${q2Done ? 'success' : ''}" style="display:${q2Done ? 'block' : 'none'};">
-                    ${q2Done ? `✅ ${formatCoachChatHtml(openQ.lastAiFeedback || 'הסבר מצוין במילים שלך דניאל!')}` : ''}
+                    ${q2Done ? `✅ ${formatCoachChatHtml(openQ.lastAiFeedback || 'הסבר מצוין במילים שלך!')}` : ''}
                   </div>
                 </div>
               </div>
@@ -4165,7 +4192,7 @@ function openStudyHelpUnit(unitId, options = {}) {
                   ${bothSlideQuestionsDone
                     ? (isLastConceptSlideInBeat
                         ? '✅ שתי השאלות בשקופית הושלמו! בשקופית הבאה נעביר את התשובות שלך למורה הפרטי בוואטסאפ ☀️'
-                        : '✅ כל הכבוד דניאל! שתי השאלות בשקופית הזו הושלמו — אפשר להמשיך לשקופית הבאה!')
+                        : '✅ כל הכבוד! שתי השאלות בשקופית הזו הושלמו — אפשר להמשיך לשקופית הבאה!')
                     : '🔒 השלם את שאלה 1 ושאלה 2 למעלה כדי לפתוח את המעבר לשקופית הבאה'}
                 </div>
                 <button
@@ -4217,7 +4244,7 @@ function openStudyHelpUnit(unitId, options = {}) {
         if (nextCaption) {
           nextCaption.textContent = isLastConceptSlideInBeat
             ? '✅ שתי השאלות בשקופית הושלמו! בשקופית הבאה נעביר את התשובות שלך למורה הפרטי בוואטסאפ ☀️'
-            : '✅ כל הכבוד דניאל! שתי השאלות בשקופית הזו הושלמו — אפשר להמשיך לשקופית הבאה!';
+            : '✅ כל הכבוד! שתי השאלות בשקופית הזו הושלמו — אפשר להמשיך לשקופית הבאה!';
         }
         if (nextBtn) {
           nextBtn.disabled = false;
@@ -4541,7 +4568,7 @@ Return ONLY valid JSON:
           <header class="whatsapp-tutor-header">
             <div class="whatsapp-tutor-avatar" aria-hidden="true">👨‍🏫</div>
             <div class="whatsapp-tutor-header-info">
-              <div class="whatsapp-tutor-name">המורה הפרטי של דניאל</div>
+              <div class="whatsapp-tutor-name">המורה הפרטי האישי</div>
               <div class="whatsapp-tutor-status">מחובר כעת • שיחה מהירה ואישית במילים שלך 💬</div>
             </div>
             <span class="whatsapp-shield-badge" title="מגן למידה עצמאית פעיל">🛡️ במילים שלך מהראש</span>
@@ -4598,7 +4625,7 @@ Return ONLY valid JSON:
         <div class="tutor-phased-gate-bar ${allBeatTermsMastered ? 'unlocked' : 'locked'}" id="tutor-phased-gate-bar">
           <div class="tutor-phased-gate-caption" id="tutor-phased-gate-caption">
             ${allBeatTermsMastered
-              ? '☀️ מדהים דניאל! כל המושגים בקבוצה הזו ברורים כמו שמש בבוקר — השער פתוח!'
+              ? '☀️ מדהים! כל המושגים בקבוצה הזו ברורים כמו שמש בבוקר — השער פתוח!'
               : '🔒 השער נעול עד שכל המושגים ברשימה למעלה יסומנו ב-"✅ מובן ב-100%!" בשיחה עם המורה הפרטי'}
           </div>
           <button
@@ -4647,7 +4674,7 @@ Return ONLY valid JSON:
       const blockInputPaste = (e) => {
         e.preventDefault();
         if (typeof showToast === 'function') {
-          showToast('דניאל אלוף, כאן כותבים במילים שלך מהראש – משפט קצר ופשוט מספיק! 💬', 'warning');
+          showToast('כאן כותבים במילים שלך מהראש – משפט קצר ופשוט מספיק! 💬', 'warning');
         }
       };
       waInput.onpaste = blockInputPaste;
@@ -4752,7 +4779,7 @@ Return ONLY valid JSON:
           gateBar.classList.add('unlocked');
         }
         if (gateCaption) {
-          gateCaption.textContent = '☀️ מדהים דניאל! כל המושגים בקבוצה הזו ברורים כמו שמש בבוקר — השער פתוח!';
+          gateCaption.textContent = '☀️ מדהים! כל המושגים בקבוצה הזו ברורים כמו שמש בבוקר — השער פתוח!';
         }
         if (gateBtn) {
           gateBtn.disabled = false;
@@ -4954,7 +4981,7 @@ Return ONLY valid JSON:
           </div>
         ` : ''}
 
-        <!-- 2. תצוגה כפולה של השאלה: קופסה 1 (מה כתוב בספר) + קופסה 2 (תרגום פשוט וצעדים לדניאל) -->
+        <!-- 2. תצוגה כפולה של השאלה: קופסה 1 (מה כתוב בספר) + קופסה 2 (תרגום פשוט וצעדים ללומד) -->
         <div class="study-dual-question-grid">
           <!-- Box 1: מה כתוב בספר -->
           <div class="study-book-quote-box">
@@ -4966,10 +4993,10 @@ Return ONLY valid JSON:
             </div>
           </div>
 
-          <!-- Box 2: תרגום פשוט לדניאל – מה עושים כאן צעד אחר צעד? -->
+          <!-- Box 2: תרגום פשוט – מה עושים כאן צעד אחר צעד? -->
           <div class="study-daniel-translation-box">
             <div class="study-dual-box-header translation-header">
-              <span>🎯 תרגום פשוט לדניאל – מה עושים כאן צעד אחר צעד?</span>
+              <span>🎯 תרגום פשוט – מה עושים כאן צעד אחר צעד?</span>
             </div>
             <p class="study-daniel-friendly-text">
               ${formatCoachChatHtml(currentQ.friendly_translation || '')}
@@ -5130,7 +5157,7 @@ Return ONLY valid JSON:
               }).join('')}
             </div>
             <div id="study-guided-options-feedback" class="study-mfa-feedback" style="display:${step1Done ? 'block' : 'none'};">
-              ${step1Done ? '✅ בחירה מדויקת דניאל! זיהית את הפתרון הנכון.' : ''}
+              ${step1Done ? '✅ בחירה מדויקת! זיהית את הפתרון הנכון.' : ''}
             </div>
           </div>
         ` : ''}
@@ -5166,7 +5193,7 @@ Return ONLY valid JSON:
               <span class="study-q-mfa-icon">🌟</span>
               <div>
                 <h4 class="study-q-mfa-title">
-                  מצוין דניאל! הצעד הראשון נכון! רק וידוא קטן של 10 שניות כדי שנהיה בטוחים ב-100%:
+                  מצוין! הצעד הראשון נכון! רק וידוא קטן של 10 שניות כדי שנהיה בטוחים ב-100%:
                 </h4>
                 <p class="study-q-mfa-question">${formatCoachChatHtml(currentQ.mfa_verification.question)}</p>
               </div>
@@ -5281,7 +5308,7 @@ Return ONLY valid JSON:
             <div class="study-chat-bubble-row ${msg.role === 'user' ? 'user-row' : 'coach-row'}">
               <div class="study-chat-avatar-badge">${msg.role === 'user' ? '🧑' : '🤖'}</div>
               <div class="study-chat-bubble ${msg.role === 'user' ? 'user-bubble' : 'coach-bubble'}">
-                <div class="study-chat-sender-name">${msg.role === 'user' ? 'דניאל' : 'המאמן האישי'}</div>
+                <div class="study-chat-sender-name">${msg.role === 'user' ? 'הלומד' : 'המאמן האישי'}</div>
                 <div class="study-chat-text">${formatCoachChatHtml(msg.text)}</div>
               </div>
             </div>
@@ -5609,13 +5636,13 @@ Return ONLY valid JSON:
           if (tableFeedbackBox) {
             tableFeedbackBox.style.display = 'block';
             tableFeedbackBox.className = 'study-mfa-feedback success';
-            tableFeedbackBox.innerHTML = '✅ כל הכבוד דניאל! הטבלה שמילאת מאוזנת ומדויקת! בוא נשלים את וידוא ההבנה הקצר למטה:';
+            tableFeedbackBox.innerHTML = '✅ כל הכבוד! הטבלה שמילאת מאוזנת ומדויקת! בוא נשלים את וידוא ההבנה הקצר למטה:';
           }
           triggerStep1SuccessAndMfaGate();
           return;
         }
 
-        // Otherwise ask the AI Coach to evaluate the table Daniel filled
+        // Otherwise ask the AI Coach to evaluate the table the learner filled
         checkTableBtn.disabled = true;
         checkTableBtn.innerHTML = '<span>⏳ המאמן בודק את הטבלה...</span>';
         const serializedTable = filledRows
@@ -5654,7 +5681,7 @@ Return ONLY valid JSON:
         if (guidedFeedbackEl) {
           guidedFeedbackEl.style.display = 'block';
           guidedFeedbackEl.className = 'study-mfa-feedback success';
-          guidedFeedbackEl.innerHTML = '✅ בחירה מצוינת דניאל! זיהית את הפתרון הנכון. עכשיו רק וידוא קצר של 10 שניות למטה:';
+          guidedFeedbackEl.innerHTML = '✅ בחירה מצוינת! זיהית את הפתרון הנכון. עכשיו רק וידוא קצר של 10 שניות למטה:';
         }
         triggerStep1SuccessAndMfaGate();
       } else {
@@ -5662,7 +5689,7 @@ Return ONLY valid JSON:
         if (guidedFeedbackEl) {
           guidedFeedbackEl.style.display = 'block';
           guidedFeedbackEl.className = 'study-mfa-feedback warning';
-          guidedFeedbackEl.innerHTML = '💡 קרא שוב את "תרגום פשוט לדניאל – מה עושים כאן צעד אחר צעד?" למעלה ונסה לבחור את האפשרות שמתאימה לכל הנתונים מהספר.';
+          guidedFeedbackEl.innerHTML = '💡 קרא שוב את "תרגום פשוט – מה עושים כאן צעד אחר צעד?" למעלה ונסה לבחור את האפשרות שמתאימה לכל הנתונים מהספר.';
         }
       }
     };
@@ -5711,7 +5738,7 @@ Return ONLY valid JSON:
       currentQ.copiedToNotebook = Boolean(copiedChk.checked);
       saveAppState();
       if (copiedChk.checked && typeof showToast === 'function') {
-        showToast('כל הכבוד על הסדר במחברת דניאל! ✍️🌟', 'success');
+        showToast('כל הכבוד על הסדר במחברת! ✍️🌟', 'success');
       }
     };
   }
@@ -5767,7 +5794,7 @@ Return ONLY valid JSON:
       userBubbleRow.innerHTML = `
         <div class="study-chat-avatar-badge">🧑</div>
         <div class="study-chat-bubble user-bubble">
-          <div class="study-chat-sender-name">דניאל</div>
+          <div class="study-chat-sender-name">הלומד</div>
           <div class="study-chat-text">${formatCoachChatHtml(trimmed)}</div>
         </div>
       `;
@@ -6193,6 +6220,9 @@ function renderStudyHelpRoadmap(container) {
             const isDone = Boolean(unit.completed || unit.isCompleted || (totalQ > 0 && solvedQ === totalQ));
             const progressPct = isDone ? 100 : (totalQ > 0 ? Math.round((solvedQ / totalQ) * 100) : 0);
             const dateBadge = unit.createdAtLabel || unit.dateLabel || todayLabel;
+            const cleanCardTitle = cleanLearnerVisibleTitle(unit.lesson_title || unit.title, unit.sourceLabel || `יחידת לימוד ${idx + 1}`) || `יחידת לימוד ${idx + 1}`;
+            const cleanCardSummary = cleanLearnerVisibleSummary(unit.pages_summary || unit.introText || unit.topic_summary || '')
+              || 'לחץ כדי לפתוח את שלב פיצוח המושגים ופתרון השאלות מהספר.';
 
             return `
               <article
@@ -6200,7 +6230,7 @@ function renderStudyHelpRoadmap(container) {
                 data-study-unit-id="${unit.id}"
                 tabindex="0"
                 role="button"
-                aria-label="יחידת תרגול ${idx + 1}: ${unit.title}"
+                aria-label="יחידת תרגול ${idx + 1}: ${escapeHtmlAttr(cleanCardTitle)}"
               >
                 <div class="unit-card-info" style="width:100%;">
                   <span class="study-stone-index-circle">${isDone ? '✅' : `#${idx + 1}`}</span>
@@ -6214,9 +6244,9 @@ function renderStudyHelpRoadmap(container) {
                         : `<span class="badge-new-card">חדש ✨</span>`
                       }
                     </div>
-                    <h3 class="unit-name-title" style="margin:0.35rem 0;">${unit.lesson_title || unit.title}</h3>
+                    <h3 class="unit-name-title" style="margin:0.35rem 0;">${cleanCardTitle}</h3>
                     <p class="unit-skills-preview" style="margin:0 0 0.65rem 0;">
-                      ${unit.pages_summary || unit.introText || unit.topic_summary || 'לחץ כדי לפתוח את שלב פיצוח המושגים ופתרון השאלות מהספר.'}
+                      ${cleanCardSummary}
                     </p>
                     <div class="study-card-progress-row">
                       <div class="study-card-progress-track">
@@ -6407,7 +6437,7 @@ function renderStudyHelpRoadmap(container) {
  */
 function buildFallbackSummaryExamUnit(unit, examUnitId) {
   const dateLabel = unit.createdAtLabel || unit.dateLabel || getTodayHebrewDateLabel();
-  const baseTitle = unit.lesson_title || unit.title || `תרגול יומי (${dateLabel})`;
+  const baseTitle = cleanLearnerVisibleTitle(unit.lesson_title || unit.title, `תרגול יומי (${dateLabel})`) || `תרגול יומי (${dateLabel})`;
   const goldenRuleText = Array.isArray(unit.goldenRules) && unit.goldenRules.length > 0
     ? unit.goldenRules.join(' • ')
     : 'מה שנכנס לעסק או מהווה הוצאה נרשם בחובה, ומה שיוצא מהעסק או מהווה הכנסה/מקור נרשם בזכות. תמיד מוודאים שסך החובה שווה לסך הזכות.';
@@ -6530,14 +6560,14 @@ function buildFallbackSummaryExamUnit(unit, examUnitId) {
         type: 'ai_eval_qa',
         question: 'הסבר במילים שלך: איך אתה בודק שפקודת יומן שרשמת היא מאוזנת ונכונה לפני שאתה מסיים תרגיל?',
         core_concept: 'בדיקה שזיהינו נכון מה נכנס (חובה) ומה יצא (זכות), ווידוא שסך כל הסכומים בצד החובה שווה בדיוק לסך כל הסכומים בצד הזכות.',
-        rubric_for_ai: 'אשר בחום כל תשובה שבה דניאל מציין השוואה בין סך החובה לסך הזכות או בדיקה של מה נכנס לעומת מה שיצא.'
+        rubric_for_ai: 'אשר בחום כל תשובה שבה הלומד מציין השוואה בין סך החובה לסך הזכות או בדיקה של מה נכנס לעומת מה שיצא.'
       }
     ]
   };
 }
 
 /**
- * Displays the Festive Completion & Exam Ready Modal celebrating Daniel's completion
+ * Displays the Festive Completion & Exam Ready Modal celebrating the learner's completion
  * of today's study unit and offering direct navigation to the new Summary Exam in the Accounting tab.
  * @param {object} unit
  * @param {object} examUnit
@@ -6548,6 +6578,8 @@ function showExamReadyCelebrationModal(unit, examUnit) {
     modal.remove();
   }
 
+  const cleanCelebrationTitle = cleanLearnerVisibleTitle(unit.lesson_title || unit.title, 'יחידת הלימוד היומית') || 'יחידת הלימוד היומית';
+
   modal = document.createElement('div');
   modal.id = 'study-exam-ready-celebration-modal';
   modal.className = 'study-calming-overlay active';
@@ -6556,9 +6588,9 @@ function showExamReadyCelebrationModal(unit, examUnit) {
   modal.innerHTML = `
     <div class="study-calming-modal study-exam-celebration-card" dir="rtl">
       <div class="study-celebration-trophy" aria-hidden="true">🏆✨</div>
-      <h2 class="study-celebration-title">אלוף דניאל! סיימת בהצלחה את יחידת הלימוד של היום! 🌟</h2>
+      <h2 class="study-celebration-title">כל הכבוד! סיימת בהצלחה את יחידת הלימוד של היום! 🌟</h2>
       <p class="study-celebration-desc">
-        פתרת את כל השאלות ביחידה <strong>"${unit.lesson_title || unit.title}"</strong> בצורה מעוררת השראה!
+        פתרת את כל השאלות ביחידה <strong>"${cleanCelebrationTitle}"</strong> בצורה מעוררת השראה!
       </p>
       <div class="study-celebration-exam-box">
         <div class="study-celebration-exam-badge">חדש בחלונית הנהלת חשבונות ✨</div>
@@ -6678,7 +6710,7 @@ async function completeStudyHelpUnitAndGenerateExam(unit) {
   }
 
   showStudyHelpLoadingOverlay(
-    'כל הכבוד דניאל! מפנה תמונות כבדות לחיסכון במקום ובונה עבורך מבחן מסכם מעשי מכל פעימות השיעור...'
+    'כל הכבוד! מפנה תמונות כבדות לחיסכון במקום ובונה עבורך מבחן מסכם מעשי מכל פעימות השיעור...'
   );
 
   const examUnitId = 'acc_exam_' + Date.now();
@@ -6748,16 +6780,17 @@ async function completeStudyHelpUnitAndGenerateExam(unit) {
     ? `\nמושגים שכדאי לחזק במיוחד במבחן: ${unit.learnerAdaptationProfile.challengingTerms.join(', ')}`
     : '';
 
-  const systemInstruction = `אתה מומחה לפיתוח מבחנים מעשיים בהנהלת חשבונות עבור דניאל.
-עליך לייצר יחידת מבחן מסכם מעשית בפורמט Dynamic Block Engine (JSON תקני בלבד בעברית, ללא טקסט חופשי מחוץ ל-JSON).`;
+  const cleanExamTopicTitle = cleanLearnerVisibleTitle(unit.lesson_title || unit.title, 'יחידת לימוד יומית') || 'יחידת לימוד יומית';
+  const systemInstruction = `אתה מומחה לפיתוח מבחנים מעשיים בהנהלת חשבונות בלמידה מותאמת.
+עליך לייצר יחידת מבחן מסכם מעשית בפורמט Dynamic Block Engine (JSON תקני בלבד בעברית, פנייה בגוף שני ללא שמות פרטיים, ללא טקסט חופשי מחוץ ל-JSON).`;
 
-  const prompt = `דניאל סיים בהצלחה את יחידת התרגול היומית: "${unit.lesson_title || unit.title}" (מקור: "${unit.sourceFileName || unit.title}").
-סיכום הנושא והעמודים: ${unit.pages_summary || unit.topic_summary || unit.introText || ''}${challengingFocus}
+  const prompt = `הלומד סיים בהצלחה את יחידת התרגול היומית: "${cleanExamTopicTitle}" (מקור: "${unit.sourceFileName || cleanExamTopicTitle}").
+סיכום הנושא והעמודים: ${cleanLearnerVisibleSummary(unit.pages_summary || unit.topic_summary || unit.introText || '')}${challengingFocus}
 
 כל המושגים ודוגמאות הספר שנלמדו לאורך כל ${conceptBeatsArr.length || 1} קבוצות המושגים ביחידה:
 ${practicedConceptsSummary}
 
-כל שאלות שיעורי הבית, הטבלאות והמספרים שדניאל פתר ביחידה:
+כל שאלות שיעורי הבית, הטבלאות והמספרים שהלומד פתר ביחידה:
 ${practicedQuestionsSummary}
 
 צור מבחן מסכם מעשי מקיף חדש הבוחן בדיוק את כל המושגים, הכללים ומבני הטבלאות מתוך כל קבוצות הלימוד של השיעור הזה עם **מספרים חדשים, תרחישים עסקיים חדשים ושאלות הבנה חדשות**.
@@ -6767,7 +6800,7 @@ ${practicedQuestionsSummary}
 3. בלוק "spreadsheet_task" ("title": "...", "instructions": "...", "table_data": { "headers": ["...", "..."], "rows": [["...", "..."]] }, "action_prompt": "...", "expected_numeric_answer": 1234, "hint": "...")
 4. בלוק "journal_grid" ("title": "...", "scenario": "...", "accounts_options": ["חשבון א", "חשבון ב", "חשבון ג", "חשבון ד"], "expected_rows": [ { "account": "חשבון א", "debit": 1000, "credit": 0 }, { "account": "חשבון ב", "debit": 0, "credit": 1000 } ], "explanation": "...")
 5. חמישה (5) בלוקים מסוג "exercise" (לכל אחד: "type": "exercise", "question": "...", "options": ["תשובה 1", "תשובה 2", "תשובה 3", "תשובה 4"], "correct_index": 0, "hint": "...", "explanation": "...")
-6. בלוק אחד מסוג "ai_eval_qa" ("type": "ai_eval_qa", "question": "שאלת הבנה ושיקוף פתוחה לדניאל", "core_concept": "...", "rubric_for_ai": "...")`;
+6. בלוק אחד מסוג "ai_eval_qa" ("type": "ai_eval_qa", "question": "שאלת הבנה ושיקוף פתוחה במילים שלך", "core_concept": "...", "rubric_for_ai": "...")`;
 
   let examUnit = null;
   try {
@@ -6879,6 +6912,8 @@ ${practicedQuestionsSummary}
 }
 
 const BeatGenerator = {
+  cleanLearnerVisibleTitle,
+  cleanLearnerVisibleSummary,
   extractLessonBeatBlueprint,
   consolidateAndCapQuestionOutlines,
   generateConceptBeatContent,
@@ -6892,6 +6927,8 @@ const BeatGenerator = {
 };
 
 if (typeof window !== 'undefined') {
+  window.cleanLearnerVisibleTitle = cleanLearnerVisibleTitle;
+  window.cleanLearnerVisibleSummary = cleanLearnerVisibleSummary;
   window.StudyGenerationCancelManager = StudyGenerationCancelManager;
   window.BeatGenerator = BeatGenerator;
   window.UnitBeatCursor = UnitBeatCursor;

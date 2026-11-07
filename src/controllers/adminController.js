@@ -39,7 +39,7 @@ function initAdminPortal() {
     submitPinBtn.onclick = () => {
       const entered = pinInput.value.trim();
       const expected = appState.apiConfig.adminPin || ADMIN_PIN_DEFAULT;
-      if (entered === expected || entered === ADMIN_PIN_DEFAULT || entered === 'דניאל') {
+      if (entered === expected || entered === ADMIN_PIN_DEFAULT) {
         closePinModal();
         showView('admin');
         renderAdminOverview();
@@ -195,7 +195,7 @@ function initAdminPortal() {
       appState.curriculumUnits.push(currentGeneratedUnit);
       saveAppState();
       SoundService.playSuccessSound();
-      showToast(`היחידה "${currentGeneratedUnit.title}" נוספה למסלול של דניאל! 🎉`);
+      showToast(`היחידה "${currentGeneratedUnit.title}" נוספה למסלול הלמידה! 🎉`);
       currentGeneratedUnit = null;
       if (livePreviewContainer) livePreviewContainer.innerHTML = '<p class="preview-empty-text">אין כרטיסייה בתצוגה מקדימה כרגע. צור יחידה חדשה למעלה כדי לראות אותה כאן.</p>';
       if (previewActions) previewActions.style.display = 'none';
@@ -365,7 +365,7 @@ function renderAdminOverview() {
           <th>קטגוריה</th>
           <th>רמזור</th>
           <th>סטטוס למידה</th>
-          <th>משוב דניאל</th>
+          <th>משוב הלומד</th>
         </tr>
       </thead>
       <tbody>
@@ -764,7 +764,7 @@ function renderAdminNotes() {
       if (!txt) return;
       appState.caregiverNotes.unshift({
         id: `note_${Date.now()}`,
-        author: 'אבא ומלווים',
+        author: 'צוות הליווי',
         date: new Date().toLocaleDateString('he-IL'),
         text: txt
       });
@@ -1042,7 +1042,7 @@ function renderDatabaseSwitcherSettings() {
       }
       const { selectedProvider, flatDbConfig, providerSpecificConfig } = collectFormDbConfig();
       btnDbMigrate.disabled = true;
-      showDbStatus('loading', '<span class="loading-spinner"></span> <span>מאמת חיבור ומעביר 100% מהנתונים של דניאל לספק שנבחר...</span>');
+      showDbStatus('loading', '<span class="loading-spinner"></span> <span>מאמת חיבור ומעביר 100% מנתוני הלמידה לספק שנבחר...</span>');
 
       try {
         appState.dbConfig = { ...appState.dbConfig, ...flatDbConfig };
@@ -1363,7 +1363,7 @@ function renderAdminSettings() {
   const resetBtn = document.getElementById('adm-reset-btn');
   if (resetBtn) {
     resetBtn.onclick = () => {
-      if (confirm('אזהרה: פעולה זו תאפס את כל התקדמות הלמידה של דניאל. האם להמשיך?')) {
+      if (confirm('אזהרה: פעולה זו תאפס את כל התקדמות הלמידה במערכת. האם להמשיך?')) {
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem('DANIEL_AI_DB_CONFIG_V1');
         location.reload();

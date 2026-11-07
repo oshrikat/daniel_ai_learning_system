@@ -1916,8 +1916,8 @@
 
 .study-concept-columns {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 14px;
+  grid-template-columns: 1fr;
+  gap: 1rem;
   margin-bottom: 16px;
 }
 
@@ -2303,7 +2303,7 @@
   border-radius: 8px;
 }
 
-/* 2. Dual Question Display Grid (Book Quote + Accessible Translation for Daniel) */
+/* 2. Dual Question Display Grid (Book Quote + Accessible Step-by-Step Translation) */
 .study-dual-question-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -3158,7 +3158,7 @@
 /* Dual Bottom Assessment Cards on `CONCEPT_SLIDE` */
 .study-dual-bottom-questions-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  grid-template-columns: 1fr;
   gap: 1rem;
   margin-top: 0.75rem;
 }
@@ -3618,11 +3618,9 @@
 }
 
 .global-ai-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9890;
-  background: rgba(15, 23, 42, 0.24);
-  backdrop-filter: blur(2px);
+  display: none !important;
+  backdrop-filter: none !important;
+  pointer-events: none !important;
 }
 
 #global-ai-assistant-drawer {
@@ -3954,18 +3952,22 @@
 
 .global-ai-quick-chips {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 0.35rem;
+  padding-bottom: 0.15rem;
 }
 
 .global-ai-chip-btn {
-  padding: 0.34rem 0.68rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.6rem;
   border-radius: 999px;
   border: 1.5px solid #bae6fd;
   background: #f0f9ff;
   color: #0369a1;
   font-family: inherit;
-  font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.16s ease;
@@ -4015,6 +4017,37 @@
   font-weight: 800;
   min-height: 44px;
   flex-shrink: 0;
+}
+
+@media (min-width: 1024px) {
+  body {
+    transition: padding-left 0.22s ease;
+  }
+
+  body.global-ai-split-active {
+    padding-left: 418px;
+    transition: padding-left 0.22s ease;
+  }
+
+  #global-ai-assistant-drawer {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    height: 100vh;
+    width: 410px;
+    border-radius: 0 20px 20px 0;
+    border-left: none;
+    box-shadow: 8px 0 28px rgba(15, 23, 42, 0.12);
+    transform: translateX(-100%);
+  }
+
+  #global-ai-assistant-drawer.open {
+    transform: translateX(0);
+  }
+
+  body.global-ai-split-active #global-ai-assistant-fab {
+    left: 424px;
+  }
 }
 
 @media (max-width: 640px) {
