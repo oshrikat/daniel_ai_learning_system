@@ -1482,6 +1482,7 @@ Return ONLY a valid JSON object matching this exact schema:
             preferVision: chunkHasVisuals,
             inlineImages: chunkHasVisuals ? ch.images : [],
             rawPdfPart: chunkHasVisuals ? ch.rawPdf : null,
+            extractedText: ch.chunkText || '',
             abortSignal: session ? session.signal : undefined
           });
           if (session && session.isCancelled()) return null;
@@ -2573,14 +2574,13 @@ async function generateDailyStudyUnitFromMaterial({
   if (!Array.isArray(appState.studyHelp.dailyCards)) {
     appState.studyHelp.dailyCards = [];
   }
-  appState.studyHelp.dailyCards.push(newUnit);
   appState.studyHelp.activeCardId = newUnit.id;
 
   if (StudyGenerationCancelManager._partialUnitId === newUnit.id) {
     StudyGenerationCancelManager._partialUnitId = null;
   }
 
-  saveAppState();
+  const saveRes = saveAppState();
   if (typeof window !== 'undefined' && window.DatabaseManager && typeof window.DatabaseManager.add === 'function') {
     window.DatabaseManager.add('study_help', newUnit).catch(err => {
       console.warn('[BeatGenerator] DatabaseManager.add background warning:', err);
@@ -2589,11 +2589,15 @@ async function generateDailyStudyUnitFromMaterial({
 
   hideStudyHelpLoadingOverlay();
 
-  if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
-    SoundService.playSuccessSound();
-  }
-  if (typeof showToast === 'function') {
-    showToast('פעימה 1 מוכנה ללמידה! שאר הפעימות נבנות עבורך ברקע 🌟', 'success');
+  if (!saveRes || saveRes.ok !== false) {
+    if (typeof SoundService !== 'undefined' && typeof SoundService.playSuccessSound === 'function') {
+      SoundService.playSuccessSound();
+    }
+    if (typeof showToast === 'function') {
+      showToast('פעימה 1 מוכנה ללמידה! שאר הפעימות נבנות עבורך ברקע 🌟', 'success');
+    }
+  } else if (typeof showToast === 'function') {
+    showToast('היחידה נפתחה ללמידה, אך נפח האחסון המקומי מלא — מומלץ למחוק יחידות ישנות.', 'warning');
   }
 
   if (typeof renderRoadmap === 'function') {
@@ -5004,11 +5008,11 @@ Return ONLY valid JSON:
           </div>
 
           <!-- Box 2: תרגום פשוט – מה עושים כאן צעד אחר צעד? -->
-          <div class="study-daniel-translation-box">
+          <div class="study-learner-translation-box">
             <div class="study-dual-box-header translation-header">
               <span>🎯 תרגום פשוט – מה עושים כאן צעד אחר צעד?</span>
             </div>
-            <p class="study-daniel-friendly-text">
+            <p class="study-learner-friendly-text">
               ${formatCoachChatHtml(currentQ.friendly_translation || '')}
             </p>
             ${(() => {

@@ -181,7 +181,7 @@ function renderSpreadsheetBlock(container, block) {
       fb.style.display = 'block';
       if (val === expected) {
         fb.className = 'ss-feedback-msg success';
-        fb.textContent = 'כל הכבוד, דניאל! חישוב מדויק ונכון מאוד 🌟';
+        fb.textContent = 'כל הכבוד! חישוב מדויק ונכון מאוד 🌟';
         SoundService.playSuccessSound();
       } else {
         fb.className = 'ss-feedback-msg error';

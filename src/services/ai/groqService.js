@@ -1,6 +1,7 @@
 /**
- * Tier 2 (Secondary): Groq / Grok (xAI) API
- * Includes a 25-second AbortController timeout and Hebrew-only system guard.
+ * Tier 2 (Fast Primary for Text / Socratic Tutor): Groq / Grok (xAI) API
+ * Includes a 25-second AbortController timeout, explicit temperature (0.2 default),
+ * JPEG-only Vision filtering with max_tokens <= 4096 cap, and Hebrew-only system guard.
  * @param {string} apiKey
  * @param {string} prompt
  * @param {string} explicitModel
@@ -14,23 +15,33 @@ async function callGrokAPI(apiKey, prompt, explicitModel = '', options = {}) {
     ? 'https://api.groq.com/openai/v1/chat/completions'
     : 'https://api.x.ai/v1/chat/completions';
 
+  const rawImages = Array.isArray(options.images) && options.images.length > 0
+    ? options.images
+    : (Array.isArray(options.inlineImages) ? options.inlineImages : []);
+  const validJpegImages = rawImages.filter(
+    img => img && (img.url || img.data || img.dataUrl) && !img.isNativePdf && img.mimeType !== 'application/pdf'
+  );
+  const hasVisionImages = validJpegImages.length > 0;
+
   let model = explicitModel;
   if (!model) {
-    if (Array.isArray(options.images) && options.images.length > 0 && isGroq) {
+    if (hasVisionImages && isGroq) {
       model = appState?.apiConfig?.verifiedGroqVisionModel || 'meta-llama/llama-4-scout-17b-16e-instruct';
     } else {
       model = isGroq
-        ? (appState?.apiConfig?.verifiedGroqModel || 'qwen/qwen3.8-27b')
+        ? (appState?.apiConfig?.verifiedGroqModel || 'llama-3.3-70b-versatile')
         : 'grok-2-latest';
     }
   }
 
   let userContent = prompt;
-  if (Array.isArray(options.images) && options.images.length > 0) {
+  if (hasVisionImages) {
     userContent = [{ type: 'text', text: prompt }];
-    options.images.forEach(img => {
-      if (img && (img.url || img.data)) {
-        const dataUrl = img.url || (img.data.startsWith('data:') ? img.data : `data:${img.mimeType || 'image/jpeg'};base64,${img.data}`);
+    validJpegImages.forEach(img => {
+      const rawData = img.url || img.dataUrl || img.data;
+      if (rawData) {
+        const mime = img.mimeType || 'image/jpeg';
+        const dataUrl = String(rawData).startsWith('data:') ? rawData : `data:${mime};base64,${rawData}`;
         userContent.push({ type: 'image_url', image_url: { url: dataUrl } });
       }
     });
@@ -41,6 +52,10 @@ async function callGrokAPI(apiKey, prompt, explicitModel = '', options = {}) {
     { role: 'system', content: hebrewSystemGuard },
     { role: 'user', content: userContent }
   ];
+
+  const temperature = typeof options.temperature === 'number' ? options.temperature : 0.2;
+  const requestedTokens = Number(options.maxTokens) || 1500;
+  const maxTokens = hasVisionImages ? Math.min(requestedTokens, 4096) : requestedTokens;
 
   const timeoutMs = options.timeoutMs || 25000;
   const createGroqAbortError = () => {
@@ -81,7 +96,13 @@ async function callGrokAPI(apiKey, prompt, explicitModel = '', options = {}) {
     res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-      body: JSON.stringify({ model, messages, max_tokens: options.maxTokens || 1500 }),
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        ...(options.jsonMode && !hasVisionImages ? { response_format: { type: 'json_object' } } : {})
+      }),
       ...(controller ? { signal: controller.signal } : {})
     });
   } catch (err) {

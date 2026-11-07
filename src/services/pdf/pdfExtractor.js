@@ -1,5 +1,5 @@
 /**
- * Multimodal PDF & Image Extractor Service - Daniel AI Learning System
+ * Multimodal PDF & Image Extractor Service - Adaptive AI Learning System
  * Dynamically loads Mozilla PDF.js (v3.11.174) when needed, extracts embedded text,
  * reads native PDF base64 payloads, and renders up to 15 scanned CamScanner PDF pages
  * & images into high-clarity JPEG snapshots (`scale: 1.15`, `quality: 0.72`)

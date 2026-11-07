@@ -9,7 +9,7 @@
 
 /**
  * Determines whether the app is currently running on a local Python development host (`localhost` / `127.0.0.1`),
- * preventing `/api/env` and `/api/state` 404/405 network calls on static hosts such as `oshrikat.github.io`.
+ * preventing `/api/env` and `/api/state` 404/405 network calls on static hosts such as `*.github.io`.
  * @param {string} [explicitHost]
  * @returns {boolean}
  */
@@ -111,8 +111,32 @@ class LocalRepo extends IDatabaseRepo {
   }
 
   /**
+   * Strips sensitive credentials (`apiConfig`, `dbConfig`, raw tokens) and heavy base64 images
+   * before mirroring state to `server/server.py` (`data/daniel_state.json`).
+   * @param {object} rawState
+   * @returns {object}
+   */
+  static sanitizeStateForLocalDisk(rawState) {
+    if (!rawState || typeof rawState !== 'object') return {};
+    if (typeof DatabaseManager !== 'undefined' && typeof DatabaseManager.sanitizeStateForCloudStorage === 'function') {
+      return DatabaseManager.sanitizeStateForCloudStorage(rawState);
+    }
+    const clean = JSON.parse(JSON.stringify(rawState));
+    delete clean.apiConfig;
+    delete clean.dbConfig;
+    delete clean.geminiKey;
+    delete clean.groqKey;
+    delete clean.openrouterKey;
+    delete clean.githubToken;
+    delete clean.firebaseSecret;
+    delete clean.customApiKey;
+    return clean;
+  }
+
+  /**
    * Non-blocking async mirror to `server/server.py` (`POST /api/state`).
-   * Strictly guarded by `isLocalPythonServerHost()` so static hosts (`oshrikat.github.io`) never call `/api/state`.
+   * Strictly guarded by `isLocalPythonServerHost()` so static hosts (`*.github.io`) never call `/api/state`,
+   * and sanitized via `sanitizeStateForLocalDisk` so `apiConfig`/`dbConfig` are never written to `data/daniel_state.json`.
    * @param {object} state
    * @returns {Promise<boolean>}
    */
@@ -123,12 +147,13 @@ class LocalRepo extends IDatabaseRepo {
     }
     if (typeof fetch !== 'function') return false;
     try {
+      const safeDiskPayload = LocalRepo.sanitizeStateForLocalDisk(state);
       const res = await IDatabaseRepo.fetchWithTimeout(
         this.serverEndpoint,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(state)
+          body: JSON.stringify(safeDiskPayload)
         },
         3000
       );
@@ -147,7 +172,7 @@ class LocalRepo extends IDatabaseRepo {
 
   /**
    * Probes `GET /api/state` on `server/server.py` if available.
-   * Strictly guarded by `isLocalPythonServerHost()` so static hosts (`oshrikat.github.io`) never call `/api/state`.
+   * Strictly guarded by `isLocalPythonServerHost()` so static hosts (`*.github.io`) never call `/api/state`.
    * @returns {Promise<object|null>}
    */
   async _fetchFromLocalServer() {

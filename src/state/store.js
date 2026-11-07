@@ -240,6 +240,10 @@ let appState = {
     verifiedGroqVisionModel: '',
     verifiedGeminiModel: '',
     verifiedOpenRouterModel: '',
+    verifiedGroqModels: [],
+    verifiedGroqVisionModels: [],
+    verifiedOpenRouterModels: [],
+    verifiedGeminiModels: [],
     ollamaUrl: 'http://localhost:11434',
     adminPin: ADMIN_PIN_DEFAULT
   },
@@ -254,7 +258,7 @@ function cleanApiKey(val) {
 
 /**
  * Static-host guard: returns `true` ONLY on local Python dev server hosts (`localhost`, `127.0.0.1`, `::1`, `0.0.0.0`),
- * and `false` on GitHub Pages (`oshrikat.github.io`), `file://`, or any external static host.
+ * and `false` on GitHub Pages (`*.github.io`), `file://`, or any external static host.
  * @param {string} [explicitHost]
  * @returns {boolean}
  */
@@ -293,7 +297,7 @@ async function syncEnvKeysFromServer() {
   if (!isLocalPythonServerHost()) return false;
   try {
     const res = await fetch('/api/env', { cache: 'no-store' });
-    if (!res.ok) return;
+    if (!res.ok) return false;
     const envKeys = await res.json();
     let changed = false;
 
@@ -301,20 +305,35 @@ async function syncEnvKeysFromServer() {
     const geminiK = cleanApiKey(envKeys.geminiKey);
     const orK = cleanApiKey(envKeys.openrouterKey);
 
-    if (groqK) {
+    const prevGeminiK = cleanApiKey(appState.apiConfig.geminiKey || localStorage.getItem('gemini_api_key') || '');
+
+    if (groqK && groqK !== appState.apiConfig.groqKey) {
       appState.apiConfig.groqKey = groqK;
       localStorage.setItem('groq_api_key', groqK);
       changed = true;
+    } else if (groqK) {
+      localStorage.setItem('groq_api_key', groqK);
     }
+
     if (geminiK) {
-      appState.apiConfig.geminiKey = geminiK;
+      if (prevGeminiK && prevGeminiK !== geminiK) {
+        localStorage.removeItem('verified_gemini_model');
+        appState.apiConfig.verifiedGeminiModel = '';
+        appState.apiConfig.verifiedGeminiModels = [];
+      }
+      if (geminiK !== appState.apiConfig.geminiKey) {
+        appState.apiConfig.geminiKey = geminiK;
+        changed = true;
+      }
       localStorage.setItem('gemini_api_key', geminiK);
-      changed = true;
     }
-    if (orK) {
+
+    if (orK && orK !== appState.apiConfig.openrouterKey) {
       appState.apiConfig.openrouterKey = orK;
       localStorage.setItem('openrouter_api_key', orK);
       changed = true;
+    } else if (orK) {
+      localStorage.setItem('openrouter_api_key', orK);
     }
 
     if (changed) {
@@ -326,8 +345,39 @@ async function syncEnvKeysFromServer() {
       if (geminiInput && appState.apiConfig.geminiKey) geminiInput.value = appState.apiConfig.geminiKey;
       if (orInput && appState.apiConfig.openrouterKey) orInput.value = appState.apiConfig.openrouterKey;
     }
+
+    // Background live model discovery via local Python `/api/discover-models`
+    if (groqK || geminiK || orK) {
+      fetch('/api/discover-models', { cache: 'no-store' })
+        .then(r => (r && r.ok ? r.json() : null))
+        .then(discovered => {
+          if (!discovered || typeof discovered !== 'object') return;
+          if (Array.isArray(discovered.verifiedGroqModels) && discovered.verifiedGroqModels.length > 0) {
+            appState.apiConfig.verifiedGroqModels = discovered.verifiedGroqModels;
+            appState.apiConfig.verifiedGroqModel = discovered.verifiedGroqModels[0];
+          }
+          if (Array.isArray(discovered.verifiedGroqVisionModels) && discovered.verifiedGroqVisionModels.length > 0) {
+            appState.apiConfig.verifiedGroqVisionModels = discovered.verifiedGroqVisionModels;
+            appState.apiConfig.verifiedGroqVisionModel = discovered.verifiedGroqVisionModels[0];
+          }
+          if (Array.isArray(discovered.verifiedOpenRouterModels) && discovered.verifiedOpenRouterModels.length > 0) {
+            appState.apiConfig.verifiedOpenRouterModels = discovered.verifiedOpenRouterModels;
+            appState.apiConfig.verifiedOpenRouterModel = discovered.verifiedOpenRouterModels[0];
+          }
+          if (Array.isArray(discovered.verifiedGeminiModels) && discovered.verifiedGeminiModels.length > 0) {
+            appState.apiConfig.verifiedGeminiModels = discovered.verifiedGeminiModels;
+            appState.apiConfig.verifiedGeminiModel = discovered.verifiedGeminiModels[0];
+            localStorage.setItem('verified_gemini_model', discovered.verifiedGeminiModels[0]);
+          }
+          saveAppState({ skipCloudSync: true });
+        })
+        .catch(() => {});
+    }
+
+    return changed;
   } catch (err) {
     // Silent fallback when running statically (e.g., GitHub Pages without server.py)
+    return false;
   }
 }
 
@@ -458,7 +508,7 @@ bridgeDatabaseManager();
 // ============================================================================
 
 const StudySnapshotsIDB = {
-  _dbName: 'DanielAiStudySnapshotsDB',
+  _dbName: 'AdaptiveAiStudySnapshotsDB',
   _storeName: 'unitSnapshots',
   _dbVersion: 1,
   _dbPromise: null,
@@ -695,17 +745,32 @@ const StudySnapshotsIDB = {
       });
     };
 
+    const primaryUnits = Array.isArray(stateObj.studyHelpUnits)
+      ? processUnitList(stateObj.studyHelpUnits)
+      : undefined;
+    const primaryIds = new Set(
+      (primaryUnits || [])
+        .map(u => String((u && (u.id || u.unit_id)) || '').trim())
+        .filter(Boolean)
+    );
+
     const lightweight = {
       ...stateObj,
-      ...(Array.isArray(stateObj.studyHelpUnits)
-        ? { studyHelpUnits: processUnitList(stateObj.studyHelpUnits) }
-        : {}),
+      ...(primaryUnits !== undefined ? { studyHelpUnits: primaryUnits } : {}),
       ...(stateObj.studyHelp && typeof stateObj.studyHelp === 'object'
         ? {
             studyHelp: {
               ...stateObj.studyHelp,
               ...(Array.isArray(stateObj.studyHelp.dailyCards)
-                ? { dailyCards: processUnitList(stateObj.studyHelp.dailyCards) }
+                ? {
+                    // Prevent duplicating full unit arrays between studyHelpUnits and dailyCards in localStorage
+                    dailyCards: processUnitList(
+                      stateObj.studyHelp.dailyCards.filter(c => {
+                        const cid = String((c && (c.id || c.unit_id)) || '').trim();
+                        return !cid || !primaryIds.has(cid);
+                      })
+                    )
+                  }
                 : {})
             }
           }
@@ -1012,7 +1077,7 @@ function performSmartMergeAndMigration(options = {}) {
 let _isSavingAppState = false;
 
 function saveAppState(options = {}) {
-  if (_isSavingAppState) return;
+  if (_isSavingAppState) return { ok: true, reentrant: true };
   _isSavingAppState = true;
   try {
     // 1. Auto-Purge heavy base64 snapshots/images on any completed Study Help unit
@@ -1026,11 +1091,16 @@ function saveAppState(options = {}) {
     // 3. Offload heavy base64 `pageSnapshots` / `inlineImages` into `StudySnapshotsIDB`
     //    so serialized `localStorage` JSON stays tiny and never throws `QuotaExceededError`.
     const lightweightState = StudySnapshotsIDB.extractAndStripSnapshotsForStorage(appState);
+    const serialized = JSON.stringify(lightweightState);
 
     // 4. Instant 0ms synchronous write of lightweight JSON to localStorage
+    let storageOk = true;
+    let storageError = null;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweightState));
+      localStorage.setItem(STORAGE_KEY, serialized);
     } catch (e) {
+      storageOk = false;
+      storageError = e && e.message ? e.message : String(e);
       console.warn('LocalStorage save failed:', e);
     }
 
@@ -1043,6 +1113,10 @@ function saveAppState(options = {}) {
         });
       }
     }
+
+    return storageOk
+      ? { ok: true, bytes: serialized.length }
+      : { ok: false, error: storageError };
   } finally {
     _isSavingAppState = false;
   }
@@ -1128,12 +1202,12 @@ async function syncCloudDatabaseOnStartup(options = {}) {
     }
 
     const nowIso = new Date().toISOString();
+    // Cloud state NEVER overwrites local API keys or DB tokens
     const preservedApiConfig = {
       ...(appState.apiConfig || {}),
-      ...(cloudRes.state.apiConfig || {}),
-      groqKey: cleanApiKey(cloudRes.state.apiConfig?.groqKey || appState.apiConfig?.groqKey || ''),
-      geminiKey: cleanApiKey(cloudRes.state.apiConfig?.geminiKey || appState.apiConfig?.geminiKey || ''),
-      openrouterKey: cleanApiKey(cloudRes.state.apiConfig?.openrouterKey || appState.apiConfig?.openrouterKey || '')
+      groqKey: cleanApiKey(appState.apiConfig?.groqKey || localStorage.getItem('groq_api_key') || ''),
+      geminiKey: cleanApiKey(appState.apiConfig?.geminiKey || localStorage.getItem('gemini_api_key') || ''),
+      openrouterKey: cleanApiKey(appState.apiConfig?.openrouterKey || localStorage.getItem('openrouter_api_key') || '')
     };
 
     const remoteDbNorm = normalizeDbConfig(cloudRes.state.dbConfig);
@@ -1454,6 +1528,7 @@ function deleteUnitFromAnyTrack(trackId, unitId) {
       window.ACCOUNTING_CURRICULUM = applyUnitDeletionsAndOverrides(window._RAW_ACCOUNTING_CURRICULUM);
     }
   } else if (normTrack === 'study_help') {
+    StudySnapshotsIDB.deleteUnitSnapshots(uid).catch(() => {});
     if (Array.isArray(appState.studyHelpUnits)) {
       appState.studyHelpUnits = appState.studyHelpUnits.filter(
         u => String(u.id || u.unit_id) !== uid

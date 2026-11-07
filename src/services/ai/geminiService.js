@@ -11,7 +11,7 @@ function stripThinkTags(text) {
  * Tier 1 (Primary): Gemini REST API
  * Supports `application/pdf` and `image/jpeg` / `image/png` inline parts,
  * 8192 token output budget, and automatic retry if `responseMimeType` is rejected with HTTP 400.
- * @param {string} model - e.g. 'gemini-3.6-flash'
+ * @param {string} model - e.g. 'gemini-2.5-flash-lite'
  * @param {string} apiKey
  * @param {string} prompt
  * @param {object} options

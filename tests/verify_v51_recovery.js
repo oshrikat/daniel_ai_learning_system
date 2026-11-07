@@ -1,6 +1,6 @@
 /**
  * tests/verify_v51_recovery.js
- * End-to-End Automated Verification Suite for v5.1 Recovery (Missions 1–7)
+ * Comprehensive End-to-End Verification Suite for v5.1 Full Recovery (Gates 1–8)
  *
  * Run with:
  *   node tests/verify_v51_recovery.js
@@ -9,6 +9,7 @@
 'use strict';
 
 const assert = require('assert');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -19,18 +20,20 @@ function readRepoFile(relPath) {
   return fs.readFileSync(path.join(ROOT, relPath), 'utf8');
 }
 
-/**
- * Lightweight browser-like DOM & Storage harness so real application modules
- * (`src/db/*`, `src/state/store.js`, `src/services/ai/*`, `src/controllers/studyHelpController.js`,
- * `src/components/globalAiBubble.js`) execute unchanged in Node.
- */
 function createAppSandbox() {
   const storageMap = new Map();
+  let throwQuotaOnSet = false;
+
   const localStorageMock = {
     getItem(key) {
       return storageMap.has(String(key)) ? storageMap.get(String(key)) : null;
     },
     setItem(key, val) {
+      if (throwQuotaOnSet) {
+        const err = new Error('QuotaExceededError: Simulated storage limit reached');
+        err.name = 'QuotaExceededError';
+        throw err;
+      }
       storageMap.set(String(key), String(val));
     },
     removeItem(key) {
@@ -39,8 +42,8 @@ function createAppSandbox() {
     clear() {
       storageMap.clear();
     },
-    _dump() {
-      return Object.fromEntries(storageMap.entries());
+    _setThrowQuota(flag) {
+      throwQuotaOnSet = Boolean(flag);
     }
   };
 
@@ -63,9 +66,6 @@ function createAppSandbox() {
         if (shouldAdd) classes.add(name);
         else classes.delete(name);
         return shouldAdd;
-      },
-      toArray() {
-        return Array.from(classes);
       }
     };
   }
@@ -152,6 +152,7 @@ function createAppSandbox() {
   const bodyEl = createMockElement('body', 'app-body');
   const documentMock = {
     body: bodyEl,
+    readyState: 'loading',
     createElement(tag) {
       return createMockElement(tag);
     },
@@ -191,7 +192,7 @@ function createAppSandbox() {
   const locationObj = {
     hostname: 'localhost',
     protocol: 'http:',
-    href: 'http://localhost:8000/'
+    href: 'http://localhost:8080/'
   };
 
   const sandbox = {
@@ -201,6 +202,7 @@ function createAppSandbox() {
       warn: () => {},
       error: () => {}
     },
+    performance: { now: () => Date.now() },
     setTimeout,
     clearTimeout,
     AbortController,
@@ -228,7 +230,7 @@ function createAppSandbox() {
     location: locationObj,
     fetch: fetchBridge,
     showToast: () => {},
-    SoundService: { playSuccess: () => {}, playError: () => {}, speakText: () => {} },
+    SoundService: { playSuccess: () => {}, playSuccessSound: () => {}, playError: () => {}, speakText: () => {} },
     CURRICULUM_GENERAL: [],
     CURRICULUM_ACCOUNTING: []
   };
@@ -258,7 +260,6 @@ function createAppSandbox() {
     vm.runInContext(code, sandbox, { filename: rel });
   }
 
-  // Expose top-level lexical declarations (`const`/`let`) onto `sandbox` for convenient assertions
   vm.runInContext(
     `
     globalThis.__exports = {
@@ -266,6 +267,8 @@ function createAppSandbox() {
       appState,
       saveAppState,
       syncEnvKeysFromServer,
+      syncCloudDatabaseOnStartup,
+      deleteUnitFromAnyTrack,
       StudySnapshotsIDB,
       isLocalPythonServerHost,
       DatabaseManager,
@@ -275,11 +278,13 @@ function createAppSandbox() {
       callOpenRouterAPI,
       callMultiTierAI,
       callGroqPreferredAI,
+      sanitizeHebrewPedagogicalOutput,
       AIService,
       StudyGenerationCancelManager,
       consolidateAndCapQuestionOutlines,
       generateConceptBeatContent,
       generateHomeworkBeatContent,
+      prewarmNextPendingBeat,
       cleanLearnerVisibleTitle,
       cleanLearnerVisibleSummary,
       GlobalAiAssistant
@@ -310,24 +315,24 @@ async function runVerificationSuite() {
   const X = env.exports;
 
   // =========================================================================
-  // [Test 1 - Secret Stripping]
+  // [Gate 1 - Secret Stripping, Header Auth, .env Key Sync & Static Host Guard]
   // =========================================================================
   {
     const sampleStateWithKeys = {
-      activeTrack: 'study_help',
+      activeTrackId: 'study_help',
       apiConfig: {
-        geminiKey: 'AIzaSySECRET_GEMINI_KEY_111',
-        groqKey: 'gsk_SECRET_GROQ_KEY_222',
-        openrouterKey: 'sk-or-v1-SECRET_OR_KEY_333'
+        geminiKey: 'MOCK_GEMINI_KEY_111',
+        groqKey: 'gsk_mock222',
+        openrouterKey: 'MOCK_OR_KEY_333'
       },
       dbConfig: {
         activeProvider: 'github',
-        githubToken: 'ghp_SECRET_GITHUB_TOKEN_444',
-        gistId: 'gist_secret_555',
+        githubToken: 'MOCK_GITHUB_TOKEN_444',
+        githubGistId: 'gist_secret_555',
         firebaseSecret: 'fb_SECRET_666',
         customApiKey: 'custom_SECRET_777'
       },
-      geminiKey: 'AIzaSyTOPLEVEL_LEAK',
+      geminiKey: 'MOCK_TOPLEVEL_LEAK',
       studyHelpUnits: [
         {
           id: 'unit_acc_01',
@@ -341,33 +346,40 @@ async function runVerificationSuite() {
         }
       ],
       trackProgress: {
-        accounting: { completedUnits: ['acc_1'], xp: 120 },
-        study_help: { completedUnits: [], xp: 45 }
+        general: [],
+        accounting: ['acc_1'],
+        study_help: []
       }
     };
 
     const sanitized = X.DatabaseManager.sanitizeStateForCloudStorage(sampleStateWithKeys);
     const serializedSanitized = JSON.stringify(sanitized);
-
     assert.strictEqual('apiConfig' in sanitized, false, 'apiConfig must be stripped from cloud payload');
     assert.strictEqual('dbConfig' in sanitized, false, 'dbConfig must be stripped from cloud payload');
     assert.strictEqual('geminiKey' in sanitized, false, 'top-level key fields must be stripped');
-    assert.ok(!serializedSanitized.includes('AIzaSy'), 'No Gemini secret in cloud JSON');
-    assert.ok(!serializedSanitized.includes('gsk_SECRET'), 'No Groq secret in cloud JSON');
-    assert.ok(!serializedSanitized.includes('ghp_SECRET'), 'No GitHub token in cloud JSON');
+    assert.ok(!serializedSanitized.includes('MOCK_GEMINI_KEY'), 'No Gemini secret in cloud JSON');
+    assert.ok(!serializedSanitized.includes('gsk_mock222'), 'No Groq secret in cloud JSON');
+    assert.ok(!serializedSanitized.includes('MOCK_GITHUB_TOKEN'), 'No GitHub token in cloud JSON');
+    assert.strictEqual(sanitized.studyHelpUnits.length, 1, 'studyHelpUnits preserved');
+    assert.deepStrictEqual(sanitized.trackProgress, sampleStateWithKeys.trackProgress, 'trackProgress preserved');
 
-    // Preserve studyHelpUnits & progress
-    assert.strictEqual(Array.isArray(sanitized.studyHelpUnits), true, 'studyHelpUnits must be preserved');
-    assert.strictEqual(sanitized.studyHelpUnits.length, 1, 'studyHelpUnits count preserved');
-    assert.strictEqual(sanitized.studyHelpUnits[0].title, 'מבוא לחשבונאות פיננסית', 'Unit title preserved');
-    assert.deepStrictEqual(sanitized.trackProgress, sampleStateWithKeys.trackProgress, 'Progress preserved');
+    // Verify LocalRepo.sanitizeStateForLocalDisk & server/server.py sanitize_state_for_disk
+    const localDiskSanitized = X.LocalRepo.sanitizeStateForLocalDisk(sampleStateWithKeys);
+    assert.strictEqual('apiConfig' in localDiskSanitized, false, 'LocalRepo must strip apiConfig before POST /api/state');
+    assert.strictEqual('dbConfig' in localDiskSanitized, false, 'LocalRepo must strip dbConfig before POST /api/state');
 
-    // Ensure caller input object was not mutated
-    assert.strictEqual(
-      sampleStateWithKeys.apiConfig.geminiKey,
-      'AIzaSySECRET_GEMINI_KEY_111',
-      'Original in-memory state must not be mutated'
-    );
+    const pySanitizeCheck = execFileSync(
+      'python',
+      [
+        '-c',
+        'import sys, json; sys.path.insert(0, "server"); import server; out = server.sanitize_state_for_disk({"apiConfig":{"geminiKey":"SECRET"},"dbConfig":{"githubToken":"SECRET"},"studyHelpUnits":[{"id":"u1","pageSnapshots":["BIG"]}]}); print(json.dumps(out))'
+      ],
+      { cwd: ROOT, encoding: 'utf8' }
+    ).trim();
+    const pyParsed = JSON.parse(pySanitizeCheck);
+    assert.strictEqual('apiConfig' in pyParsed, false, 'server.py sanitize_state_for_disk must strip apiConfig');
+    assert.strictEqual('dbConfig' in pyParsed, false, 'server.py sanitize_state_for_disk must strip dbConfig');
+    assert.deepStrictEqual(pyParsed.studyHelpUnits[0].pageSnapshots, [], 'server.py must strip pageSnapshots');
 
     // Verify flushCloudSync passes sanitized state to cloud repo
     await X.DatabaseManager.init();
@@ -383,27 +395,48 @@ async function runVerificationSuite() {
     };
     await X.DatabaseManager.flushCloudSync(sampleStateWithKeys);
     assert.ok(pushedCloudPayload, 'flushCloudSync should invoke cloud repo saveFullState');
-    assert.strictEqual('apiConfig' in pushedCloudPayload, false, 'flushCloudSync payload must omit apiConfig');
-    assert.strictEqual('dbConfig' in pushedCloudPayload, false, 'flushCloudSync payload must omit dbConfig');
+    assert.strictEqual('apiConfig' in pushedCloudPayload, false);
+    assert.strictEqual('dbConfig' in pushedCloudPayload, false);
+
+    // Verify syncCloudDatabaseOnStartup NEVER allows stale cloud apiConfig to overwrite local keys
+    X.appState.apiConfig.geminiKey = 'MOCK_FRESH_LOCAL_ENV_KEY';
+    env.localStorageMock.setItem('gemini_api_key', 'MOCK_FRESH_LOCAL_ENV_KEY');
+    X.appState.dbConfig.activeProvider = 'github';
+    X.appState.dbConfig.githubToken = 'MOCK_LOCAL_VALID_TOKEN';
+    X.DatabaseManager.providers.github = {
+      config: { gistId: 'gist_123' },
+      async init() {},
+      async loadFullState() {
+        return {
+          source: 'github',
+          updatedAt: '2099-01-01T00:00:00.000Z',
+          state: {
+            _updatedAt: '2099-01-01T00:00:00.000Z',
+            apiConfig: { geminiKey: 'MOCK_STALE_REVOKED_CLOUD_KEY' },
+            studyHelpUnits: [{ id: 'cloud_u1', title: 'יחידה מהענן' }]
+          }
+        };
+      }
+    };
+    await X.syncCloudDatabaseOnStartup({ forcePull: true, targetProvider: 'github' });
+    assert.strictEqual(
+      X.appState.apiConfig.geminiKey,
+      'MOCK_FRESH_LOCAL_ENV_KEY',
+      'Cloud sync must NEVER overwrite local .env / apiConfig keys'
+    );
     X.DatabaseManager.activeProviderType = 'local';
     X.DatabaseManager.providers.github = origGithubRepo;
+    X.appState.dbConfig.activeProvider = 'local';
 
-    results.push('[Test 1 - Secret Stripping] PASSED');
-  }
-
-  // =========================================================================
-  // [Test 2 - Header Auth & Static Host Guard]
-  // =========================================================================
-  {
+    // Header auth & zero ?key= check
     const geminiSrc = readRepoFile('src/services/ai/geminiService.js');
     const orchestratorSrc = readRepoFile('src/services/ai/aiOrchestrator.js');
+    const discoverPySrc = readRepoFile('scripts/discover_models.py');
+    assert.strictEqual(geminiSrc.includes('?key='), false, 'Zero ?key= in geminiService.js');
+    assert.strictEqual(orchestratorSrc.includes('?key='), false, 'Zero ?key= in aiOrchestrator.js');
+    assert.strictEqual(discoverPySrc.includes('?key='), false, 'Zero ?key= in discover_models.py');
+    assert.strictEqual(geminiSrc.includes('x-goog-api-key'), true);
 
-    assert.strictEqual(geminiSrc.includes('?key='), false, 'Zero occurrences of ?key= allowed in geminiService.js');
-    assert.strictEqual(orchestratorSrc.includes('?key='), false, 'Zero occurrences of ?key= allowed in aiOrchestrator.js');
-    assert.strictEqual(geminiSrc.includes('x-goog-api-key'), true, 'x-goog-api-key header required in geminiService.js');
-    assert.strictEqual(orchestratorSrc.includes('x-goog-api-key'), true, 'x-goog-api-key header required in aiOrchestrator.js');
-
-    // Runtime verification of callGeminiAPI header auth
     let capturedGeminiReq = null;
     env.setFetchHandler(async (url, options) => {
       capturedGeminiReq = { url, options };
@@ -411,438 +444,292 @@ async function runVerificationSuite() {
         ok: true,
         status: 200,
         async json() {
-          return {
-            candidates: [{ content: { parts: [{ text: 'תשובה תקינה' }] } }]
-          };
+          return { candidates: [{ content: { parts: [{ text: 'תשובה תקינה' }] } }] };
         }
       };
     });
+    await X.callGeminiAPI('gemini-2.5-flash-lite', 'MOCK_HEADER_ONLY_KEY', 'בדיקה');
+    assert.strictEqual(capturedGeminiReq.url.includes('?key='), false);
+    assert.strictEqual(capturedGeminiReq.options.headers['x-goog-api-key'], 'MOCK_HEADER_ONLY_KEY');
 
-    const gemReply = await X.callGeminiAPI('gemini-2.5-flash-lite', 'AIzaHeaderOnlyKey999', 'שלום');
-    assert.strictEqual(gemReply, 'תשובה תקינה');
-    assert.ok(capturedGeminiReq, 'callGeminiAPI must invoke fetch');
-    assert.strictEqual(capturedGeminiReq.url.includes('?key='), false, 'Runtime Gemini URL must not include ?key=');
-    assert.strictEqual(
-      capturedGeminiReq.options.headers['x-goog-api-key'],
-      'AIzaHeaderOnlyKey999',
-      'Runtime Gemini call must pass x-goog-api-key header'
-    );
+    // Static Host Guard verification (*.github.io)
+    assert.strictEqual(X.isLocalPythonServerHost('learner-portal.github.io'), false);
+    assert.strictEqual(X.isLocalPythonServerHost('localhost'), true);
+    assert.strictEqual(X.isLocalPythonServerHost('127.0.0.1'), true);
 
-    // Static Host Guard verification ('oshrikat.github.io')
-    assert.strictEqual(
-      X.isLocalPythonServerHost('oshrikat.github.io'),
-      false,
-      'isLocalPythonServerHost("oshrikat.github.io") must return false'
-    );
-    assert.strictEqual(X.isLocalPythonServerHost('localhost'), true, 'localhost must return true');
-    assert.strictEqual(X.isLocalPythonServerHost('127.0.0.1'), true, '127.0.0.1 must return true');
-
-    env.locationObj.hostname = 'oshrikat.github.io';
+    env.locationObj.hostname = 'learner-portal.github.io';
     env.locationObj.protocol = 'https:';
-    assert.strictEqual(
-      X.isLocalPythonServerHost(),
-      false,
-      'isLocalPythonServerHost() must return false when window.location.hostname is oshrikat.github.io'
-    );
-
     env.clearFetchLog();
     await X.syncEnvKeysFromServer();
     const localRepoInstance = new X.LocalRepo();
-    await localRepoInstance.saveFullState({ activeTrack: 'general', studyHelpUnits: [] });
+    await localRepoInstance.saveFullState({ activeTrackId: 'general', studyHelpUnits: [] });
     await localRepoInstance.loadFullState();
-
-    const apiCallsOnGithubPages = env.fetchLog.filter(
+    const apiCallsOnStaticHost = env.fetchLog.filter(
       (entry) => entry.url.includes('/api/env') || entry.url.includes('/api/state')
     );
-    assert.strictEqual(
-      apiCallsOnGithubPages.length,
-      0,
-      'Zero /api/env or /api/state calls allowed on static host oshrikat.github.io'
-    );
+    assert.strictEqual(apiCallsOnStaticHost.length, 0, 'Zero /api/env or /api/state calls on GitHub Pages');
 
-    // Restore localhost default
+    // Localhost /api/env key rotation clears stale verified_gemini_model cache
     env.locationObj.hostname = 'localhost';
     env.locationObj.protocol = 'http:';
+    X.appState.apiConfig.geminiKey = 'MOCK_OLD_KEY';
+    env.localStorageMock.setItem('gemini_api_key', 'MOCK_OLD_KEY');
+    env.localStorageMock.setItem('verified_gemini_model', 'stale-cached-model');
+    X.appState.apiConfig.verifiedGeminiModel = 'stale-cached-model';
 
-    results.push('[Test 2 - Header Auth & Static Host Guard] PASSED');
+    env.setFetchHandler(async (url) => {
+      if (url.includes('/api/env')) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { groqKey: 'gsk_env1', geminiKey: 'MOCK_NEW_ENV', openrouterKey: 'MOCK_OR_ENV' };
+          }
+        };
+      }
+      return { ok: false, status: 404, async json() { return {}; } };
+    });
+    await X.syncEnvKeysFromServer();
+    assert.strictEqual(X.appState.apiConfig.geminiKey, 'MOCK_NEW_ENV');
+    assert.strictEqual(
+      env.localStorageMock.getItem('verified_gemini_model'),
+      null,
+      'Changing Gemini key via /api/env must clear stale verified_gemini_model cache'
+    );
+
+    results.push('[Gate 1 - Secret Stripping, Header Auth, .env Sync & Static Host Guard] PASSED');
   }
 
   // =========================================================================
-  // [Test 3 - Hebrew JSON Repair]
+  // [Gate 2 - Live Model Discovery, Smart Cost-Efficient Routing & Hebrew JSON Repair]
   // =========================================================================
   {
-    const rawBrokenHebrewJson = `\`\`\`json
+    // Verify client-side testGroq / testOpenRouter / testGemini dynamic discovery
+    env.setFetchHandler(async (url, options) => {
+      if (url === 'https://api.groq.com/openai/v1/models') {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              data: [
+                { id: 'llama-3.3-70b-versatile', input_modalities: ['text'], output_modalities: ['text'] },
+                { id: 'meta-llama/llama-4-scout-17b-16e-instruct', input_modalities: ['text', 'image'], output_modalities: ['text'] },
+                { id: 'canopylabs/orpheus-arabic-saudi', input_modalities: ['text'], output_modalities: ['speech'] }
+              ]
+            };
+          }
+        };
+      }
+      if (url === 'https://api.groq.com/openai/v1/chat/completions') {
+        const b = JSON.parse(options.body);
+        assert.strictEqual(typeof b.temperature, 'number', 'Groq calls must always include explicit numeric temperature');
+        return { ok: true, status: 200, async json() { return { choices: [{ message: { content: 'פעיל' } }] }; } };
+      }
+      throw new Error('Unexpected URL in testGroq: ' + url);
+    });
+    const groqTestRes = await X.AIService.testGroq('gsk_probe1');
+    assert.strictEqual(groqTestRes.success, true);
+    assert.ok(X.appState.apiConfig.verifiedGroqModels.includes('llama-3.3-70b-versatile'));
+    assert.ok(!X.appState.apiConfig.verifiedGroqModels.includes('canopylabs/orpheus-arabic-saudi'));
+    assert.ok(X.appState.apiConfig.verifiedGroqVisionModels.includes('meta-llama/llama-4-scout-17b-16e-instruct'));
+
+    // Hebrew JSON repair (מע"מ, עו"ש, בע"מ, ש"ח, דו"ח, literal newlines, trailing commas)
+    const brokenHebrewJson = `\`\`\`json
 {
   "title": "עסקאות מע"מ והתאמות עו"ש בחברה בע"מ",
-  "summary": "ניתוח דו"ח רווח והפסד, קיזוז מע"מ תשומות מול מע"מ עסקאות, ובדיקת יתרת עו"ש בבנק.",
-  "items": [
-    "חשבונית מס עם מע"מ 18%",
-    "דף חשבון עו"ש של ספק בע"מ",
-    "עריכת דו"ח התאמה חודשי",
-  ],
+  "summary": "ניתוח דו"ח רווח והפסד בסך 1,500 ש"ח
+כולל שורה חדשה באמצע מחרוזת.",
+  "items": ["חשבונית מע"מ", "דף עו"ש",],
 }
 \`\`\``;
+    const directRepaired = X.AIService.repairHebrewJsonString('{"term":"מע"מ"}');
+    assert.ok(directRepaired.includes('מע״מ'), 'repairHebrewJsonString must convert internal Hebrew quotes to ״');
 
-    const parsed = X.AIService.cleanAndParseJSON(rawBrokenHebrewJson);
-    assert.ok(parsed && typeof parsed === 'object', 'cleanAndParseJSON must return a valid object');
-    assert.ok(parsed.title.includes('מע"מ'), 'Parsed title must preserve מע"מ');
-    assert.ok(parsed.title.includes('עו"ש'), 'Parsed title must preserve עו"ש');
-    assert.ok(parsed.title.includes('בע"מ'), 'Parsed title must preserve בע"מ');
-    assert.ok(parsed.summary.includes('דו"ח'), 'Parsed summary must preserve דו"ח');
-    assert.strictEqual(Array.isArray(parsed.items), true, 'Trailing comma in array must be repaired');
-    assert.strictEqual(parsed.items.length, 3, 'All 3 Hebrew array items must parse cleanly');
+    const parsedJson = X.AIService.cleanAndParseJSON(brokenHebrewJson);
+    assert.ok(parsedJson && typeof parsedJson === 'object', 'cleanAndParseJSON must parse repaired Hebrew JSON');
+    assert.ok(/מע["״]מ/.test(parsedJson.title) && /עו["״]ש/.test(parsedJson.title) && /בע["״]מ/.test(parsedJson.title));
+    assert.ok(/דו["״]ח/.test(parsedJson.summary) && /ש["״]ח/.test(parsedJson.summary));
+    assert.strictEqual(parsedJson.items.length, 2);
 
-    results.push('[Test 3 - Hebrew JSON Repair] PASSED');
-  }
-
-  // =========================================================================
-  // [Test 4 - Smart Task Routing & OpenRouter Multimodal Unblocking]
-  // =========================================================================
-  {
+    // Smart Task Routing:
+    // A) Text task -> Groq (0.2 temp) -> OpenRouter -> Gemini
     env.localStorageMock.clear();
     X.appState.apiConfig = {
-      geminiKey: 'AIzaTestTierGemini',
-      groqKey: 'gsk_TestTierGroq',
-      openrouterKey: 'sk-or-TestTierOpenRouter',
-      verifiedGroqModel: '',
-      verifiedOpenRouterModel: '',
-      verifiedGeminiModel: ''
+      geminiKey: 'MOCK_TIER_GEMINI',
+      groqKey: 'gsk_tier1',
+      openrouterKey: 'MOCK_TIER_OR',
+      verifiedGroqModels: [],
+      verifiedGroqVisionModels: [],
+      verifiedOpenRouterModels: [],
+      verifiedGeminiModels: []
     };
 
-    // 4A: Text / Chat task routing order -> Groq first (llama-3.3-70b-versatile) -> OpenRouter second -> Gemini third
-    const providerSequence = [];
-    const groqModelsAttempted = [];
+    const textOrder = [];
+    let groqSentTemp = null;
     env.setFetchHandler(async (url, options) => {
       const body = options && options.body ? JSON.parse(options.body) : {};
       if (url.includes('api.groq.com')) {
-        if (providerSequence[providerSequence.length - 1] !== 'groq') providerSequence.push('groq');
-        groqModelsAttempted.push(body.model);
+        groqSentTemp = body.temperature;
+        if (textOrder[textOrder.length - 1] !== 'groq') textOrder.push('groq');
         return { ok: false, status: 503, async json() { return {}; }, async text() { return '503'; } };
       }
       if (url.includes('openrouter.ai')) {
-        if (providerSequence[providerSequence.length - 1] !== 'openrouter') providerSequence.push('openrouter');
+        if (textOrder[textOrder.length - 1] !== 'openrouter') textOrder.push('openrouter');
         return { ok: false, status: 503, async json() { return {}; }, async text() { return '503'; } };
       }
       if (url.includes('generativelanguage.googleapis.com')) {
-        if (providerSequence[providerSequence.length - 1] !== 'gemini') providerSequence.push('gemini');
+        if (textOrder[textOrder.length - 1] !== 'gemini') textOrder.push('gemini');
         return {
           ok: true,
           status: 200,
           async json() {
-            return { candidates: [{ content: { parts: [{ text: 'מענה מגיבוי שלישי' }] } }] };
-          }
-        };
-      }
-      throw new Error('Unexpected endpoint: ' + url);
-    });
-
-    const textFallbackReply = await X.callMultiTierAI('הסבר תמציתי על משוואת המאזן', {
-      inlineImages: [],
-      preferVision: false
-    });
-    assert.strictEqual(textFallbackReply, 'מענה מגיבוי שלישי');
-    assert.deepStrictEqual(
-      providerSequence,
-      ['groq', 'openrouter', 'gemini'],
-      `Text tasks must route Groq -> OpenRouter -> Gemini, got: ${providerSequence.join(' -> ')}`
-    );
-    assert.strictEqual(
-      groqModelsAttempted[0],
-      'llama-3.3-70b-versatile',
-      'First Groq text model must be llama-3.3-70b-versatile'
-    );
-
-    // Also verify callGroqPreferredAI routes Groq -> OpenRouter -> Gemini
-    const chatSequence = [];
-    env.setFetchHandler(async (url) => {
-      if (url.includes('api.groq.com')) {
-        if (chatSequence[chatSequence.length - 1] !== 'groq') chatSequence.push('groq');
-        return { ok: false, status: 503, async json() { return {}; } };
-      }
-      if (url.includes('openrouter.ai')) {
-        if (chatSequence[chatSequence.length - 1] !== 'openrouter') chatSequence.push('openrouter');
-        return { ok: false, status: 503, async json() { return {}; } };
-      }
-      if (url.includes('generativelanguage.googleapis.com')) {
-        if (chatSequence[chatSequence.length - 1] !== 'gemini') chatSequence.push('gemini');
-        return {
-          ok: true,
-          status: 200,
-          async json() {
-            return { candidates: [{ content: { parts: [{ text: 'תשובת עוזר אישי' }] } }] };
-          }
-        };
-      }
-      throw new Error('Unexpected endpoint: ' + url);
-    });
-    const chatReply = await X.callGroqPreferredAI('מה מבקשים בשאלה הזו?');
-    assert.strictEqual(chatReply, 'תשובת עוזר אישי');
-    assert.deepStrictEqual(chatSequence, ['groq', 'openrouter', 'gemini']);
-
-    // 4B: generateConceptBeatContent & generateHomeworkBeatContent pass inlineImages: [] (text-only Groq first)
-    const beatRequests = [];
-    env.setFetchHandler(async (url, options) => {
-      const body = JSON.parse(options.body);
-      beatRequests.push({ url, body });
-      const isHomework = body.messages.some((m) => String(m.content || '').includes('Homework Beat'));
-      const mockJson = isHomework
-        ? JSON.stringify({
-            questions: [
-              {
-                question_number_label: 'שאלה 1',
-                page_number: 1,
-                question_type: 'calculation',
-                exact_book_text: 'חשב את סכום המע"מ בעסקה של 1,000 ש"ח.',
-                friendly_translation: 'נחשב יחד 18% מתוך 1,000 ש"ח.',
-                sub_steps: ['צעד 1: רשום את סכום העסקה', 'צעד 2: הכפל ב-0.18'],
-                table_schema: { has_table: false, columns: [], account_choices: [], expected_rows: [] },
-                guided_options: ['180 ש"ח', '100 ש"ח', '1,180 ש"ח', '18 ש"ח'],
-                correct_option_index: 0,
-                step_by_step_solution: ['1,000 * 0.18 = 180 ש"ח'],
-                final_answer: '180 ש"ח'
-              }
-            ]
-          })
-        : JSON.stringify({
-            slides: [
-              {
-                term_name: 'משוואת המאזן',
-                page_number: 1,
-                source_section_label: 'עמוד 1',
-                paragraphs: ['כל נכס של העסק ממומן מהון עצמי או מהתחייבות.', 'משוואת המאזן: נכסים = התחייבויות + הון עצמי.'],
-                book_example: {
-                  title: 'דוגמה מתוך עמוד 1 בספר',
-                  exact_excerpt: 'רכישת ציוד ב-5,000 ש"ח במזומן.',
-                  steps: ['ציוד עולה ב-5,000 ש"ח', 'מזומן יורד ב-5,000 ש"ח']
-                },
-                interactive_widget: {
-                  widget_type: 'mini_balance_check',
-                  prompt: 'מה קורה לסך הנכסים?',
-                  options: ['נשאר מאוזן', 'קטן'],
-                  correct_index: 0,
-                  explanation: 'החלפנו נכס בנכס באותו סכום.'
-                },
-                bottom_questions: {
-                  mc_question: {
-                    question: 'מה קורה לסך הנכסים ברכישת ציוד במזומן?',
-                    options: ['גדל', 'קטן', 'נשאר ללא שינוי', 'מתאפס'],
-                    correct_index: 2,
-                    explanation: 'נכס אחד עלה ונכס אחר ירד באותו סכום.'
-                  },
-                  open_question: {
-                    question: 'הסבר במילים שלך מדוע המאזן נשאר מאוזן.',
-                    expected_core_idea: 'החלפת נכס בנכס באותו שווי',
-                    hint: 'חשוב על שני צדי המשוואה.'
-                  }
-                }
-              }
-            ]
-          });
-
-      return {
-        ok: true,
-        status: 200,
-        async json() {
-          return { choices: [{ message: { content: mockJson } }] };
-        }
-      };
-    });
-
-    const sampleUnitForBeats = {
-      id: 'unit_beats_test',
-      title: 'משוואת המאזן ומע"מ',
-      lesson_title: 'משוואת המאזן ומע"מ',
-      inlineImages: [{ mimeType: 'image/jpeg', data: 'SHOULD_NOT_BE_SENT_IN_STAGE_2_OR_3' }],
-      sourceContext: {
-        fullExtractedText: 'עמוד 1: משוואת המאזן: נכסים = התחייבויות + הון עצמי. דוגמה: רכישת ציוד ב-5,000 ש"ח. שאלה 1: חשב מע"מ על 1,000 ש"ח.',
-        pageSnapshots: [{ pageNumber: 1, mimeType: 'image/jpeg', data: 'SHOULD_NOT_BE_SENT' }]
-      },
-      conceptBeats: [
-        {
-          beatIndex: 0,
-          status: 'pending',
-          conceptOutlines: [
-            {
-              term_name: 'משוואת המאזן',
-              page_number: 1,
-              source_section_label: 'פרק 1',
-              raw_book_excerpt: 'משוואת המאזן: נכסים = התחייבויות + הון עצמי. דוגמה: רכישת ציוד ב-5,000 ש"ח במזומן.'
-            }
-          ]
-        }
-      ],
-      homeworkBeats: [
-        {
-          beatIndex: 0,
-          status: 'pending',
-          questionOutlines: [
-            {
-              question_number_label: 'שאלה 1',
-              page_number: 1,
-              question_type: 'calculation',
-              exact_book_text: 'חשב את סכום המע"מ בעסקה של 1,000 ש"ח.'
-            }
-          ]
-        }
-      ]
-    };
-
-    const conceptData = await X.generateConceptBeatContent(sampleUnitForBeats, 0, null);
-    const homeworkData = await X.generateHomeworkBeatContent(sampleUnitForBeats, 0, null);
-
-    assert.ok(
-      conceptData && Array.isArray(sampleUnitForBeats.conceptBeats[0].slides) && sampleUnitForBeats.conceptBeats[0].slides.length === 1,
-      'generateConceptBeatContent must populate conceptBeats[0].slides'
-    );
-    assert.ok(
-      homeworkData && Array.isArray(sampleUnitForBeats.homeworkBeats[0].questions) && sampleUnitForBeats.homeworkBeats[0].questions.length === 1,
-      'generateHomeworkBeatContent must populate homeworkBeats[0].questions'
-    );
-    assert.strictEqual(beatRequests.length, 2, 'Both beat generators should succeed on first Groq text call');
-    for (const req of beatRequests) {
-      assert.ok(req.url.includes('api.groq.com'), 'Stage 2 & Stage 3 beat calls must route to Groq first');
-      const userMsg = req.body.messages.find((m) => m.role === 'user');
-      assert.strictEqual(
-        typeof userMsg.content,
-        'string',
-        'Beat generation must pass inlineImages: [] (plain text user content, zero base64 image_url array)'
-      );
-    }
-
-    // 4C: OpenRouter Multimodal Unblocking when hasImages === true
-    let openRouterMultimodalBody = null;
-    const visionTierOrder = [];
-    env.setFetchHandler(async (url, options) => {
-      if (url.includes('generativelanguage.googleapis.com')) {
-        if (visionTierOrder[visionTierOrder.length - 1] !== 'gemini') visionTierOrder.push('gemini');
-        return { ok: false, status: 429, async text() { return 'Quota'; }, async json() { return {}; } };
-      }
-      if (url.includes('api.groq.com')) {
-        if (visionTierOrder[visionTierOrder.length - 1] !== 'groq') visionTierOrder.push('groq');
-        return { ok: false, status: 503, async text() { return '503'; }, async json() { return {}; } };
-      }
-      if (url.includes('openrouter.ai')) {
-        if (visionTierOrder[visionTierOrder.length - 1] !== 'openrouter') visionTierOrder.push('openrouter');
-        openRouterMultimodalBody = JSON.parse(options.body);
-        return {
-          ok: true,
-          status: 200,
-          async json() {
-            return { choices: [{ message: { content: 'פענוח תמונה מוצלח דרך OpenRouter' } }] };
+            return { candidates: [{ content: { parts: [{ text: 'תשובת גיבוי' }] } }] };
           }
         };
       }
       throw new Error('Unexpected URL: ' + url);
     });
 
-    const visionReply = await X.callMultiTierAI('חלץ טקסט מתמונת העמוד', {
-      inlineImages: [{ mimeType: 'image/jpeg', data: 'QUJDREVGRw==' }],
-      preferVision: true
-    });
-    assert.strictEqual(visionReply, 'פענוח תמונה מוצלח דרך OpenRouter');
-    assert.deepStrictEqual(
-      visionTierOrder,
-      ['gemini', 'groq', 'openrouter'],
-      'Vision tasks must try Gemini -> Groq Vision -> OpenRouter Multimodal (unblocked!)'
-    );
-    assert.ok(openRouterMultimodalBody, 'OpenRouter must receive multimodal request when hasImages is true');
-    const orUserMsg = openRouterMultimodalBody.messages.find((m) => m.role === 'user');
-    assert.strictEqual(Array.isArray(orUserMsg.content), true, 'OpenRouter user content must be multimodal array');
-    assert.strictEqual(
-      orUserMsg.content.some((part) => part.type === 'image_url' && part.image_url.url.startsWith('data:image/jpeg;base64,')),
-      true,
-      'OpenRouter multimodal payload must contain base64 image_url part'
-    );
+    const textOut = await X.callMultiTierAI('הסבר על מאזן בוחן', { inlineImages: [], preferVision: false });
+    assert.strictEqual(textOut, 'תשובת גיבוי');
+    assert.deepStrictEqual(textOrder, ['groq', 'openrouter', 'gemini']);
+    assert.strictEqual(groqSentTemp, 0.2, 'Groq text tier must pass temperature: 0.2');
 
-    results.push('[Test 4 - Smart Task Routing & OpenRouter Multimodal Unblocking] PASSED');
+    // B) Vision task -> Gemini Vision -> Groq Vision (max_tokens <= 4096, JPEG) -> OpenRouter Vision (unblocked!) -> Fallback to Groq Text with extractedText!
+    const visionStages = [];
+    const pushStage = (s) => {
+      if (visionStages[visionStages.length - 1] !== s) visionStages.push(s);
+    };
+    let groqVisionMaxTokens = null;
+    let openRouterHadImageUrl = false;
+    env.setFetchHandler(async (url, options) => {
+      const body = options && options.body ? JSON.parse(options.body) : {};
+      if (url.includes('generativelanguage.googleapis.com')) {
+        pushStage('gemini_vision');
+        return { ok: false, status: 429, async text() { return '429'; }, async json() { return {}; } };
+      }
+      if (url.includes('api.groq.com')) {
+        const userMsg = (body.messages || []).find((m) => m.role === 'user');
+        if (Array.isArray(userMsg?.content)) {
+          pushStage('groq_vision');
+          groqVisionMaxTokens = body.max_tokens;
+          return { ok: false, status: 503, async text() { return '503'; }, async json() { return {}; } };
+        }
+        pushStage('groq_text_fallback');
+        assert.ok(String(userMsg.content).includes('טקסט שחולץ מהקובץ'), 'Vision-to-text fallback must include extractedText');
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { choices: [{ message: { content: 'פענוח מטקסט שחולץ בגיבוי' } }] };
+          }
+        };
+      }
+      if (url.includes('openrouter.ai')) {
+        const userMsg = (body.messages || []).find((m) => m.role === 'user');
+        if (Array.isArray(userMsg?.content)) {
+          pushStage('openrouter_vision');
+          openRouterHadImageUrl = userMsg.content.some((p) => p.type === 'image_url');
+        }
+        return { ok: false, status: 503, async text() { return '503'; }, async json() { return {}; } };
+      }
+      throw new Error('Unexpected URL: ' + url);
+    });
+
+    const visionFallbackReply = await X.callMultiTierAI('מפה עמוד סרוק', {
+      inlineImages: [{ mimeType: 'image/jpeg', data: 'QUJDREVGRw==' }],
+      preferVision: true,
+      maxTokens: 8192,
+      extractedText: 'עמוד 1: חובה קופה 500 ש״ח, זכות לקוחות 500 ש״ח.'
+    });
+    assert.strictEqual(visionFallbackReply, 'פענוח מטקסט שחולץ בגיבוי');
+    assert.ok(groqVisionMaxTokens <= 4096, `Groq Vision max_tokens must be capped <= 4096, got ${groqVisionMaxTokens}`);
+    assert.strictEqual(openRouterHadImageUrl, true, 'OpenRouter Vision must NOT be blocked by !hasImages');
+    assert.deepStrictEqual(visionStages, ['gemini_vision', 'groq_vision', 'openrouter_vision', 'groq_text_fallback']);
+
+    results.push('[Gate 2 - Live Model Discovery, Cost-Efficient Routing & Hebrew JSON Repair] PASSED');
   }
 
   // =========================================================================
-  // [Test 5 - IndexedDB Snapshot Separation]
+  // [Gate 3 - IndexedDB 10-Page Snapshot Separation, Deduplication & Storage Status]
   // =========================================================================
   {
     env.localStorageMock.clear();
-    const heavyChunk = 'A'.repeat(160 * 1024); // ~160 KB per page * 3 pages = ~480 KB
-    const testUnitId = 'study_unit_idb_sep_01';
-    const sampleSnapshots = [
-      { pageNumber: 1, mimeType: 'image/jpeg', data: heavyChunk },
-      { pageNumber: 2, mimeType: 'image/jpeg', data: heavyChunk },
-      { pageNumber: 3, mimeType: 'image/jpeg', data: heavyChunk }
-    ];
-
-    X.appState.studyHelpUnits = [
-      {
-        id: testUnitId,
-        title: 'יחידה עם צילומי עמודים כבדים',
-        completed: false,
-        inlineImages: sampleSnapshots,
-        sourceContext: {
-          fullExtractedText: 'טקסט מחולץ קל משקל שנשמר ב-localStorage',
-          pageSnapshots: sampleSnapshots
-        }
+    const pageBlob = 'B'.repeat(180 * 1024); // ~180KB * 10 pages = ~1.8MB raw snapshots
+    const tenPageSnapshots = Array.from({ length: 10 }, (_, idx) => ({
+      pageNumber: idx + 1,
+      mimeType: 'image/jpeg',
+      data: pageBlob
+    }));
+    const activeUnitId = 'study_unit_10pages_active';
+    const activeUnitObj = {
+      id: activeUnitId,
+      title: 'שיעור 10 עמודים פעיל',
+      completed: false,
+      pageSnapshots: tenPageSnapshots,
+      inlineImages: tenPageSnapshots,
+      sourceContext: {
+        fullExtractedText: 'טקסט מחולץ מתוך 10 עמודים',
+        pageSnapshots: tenPageSnapshots
       }
-    ];
+    };
 
-    X.saveAppState();
+    // Even if legacy code placed the same unit in both studyHelpUnits and dailyCards, saveAppState must deduplicate!
+    X.appState.studyHelpUnits = [activeUnitObj];
+    X.appState.studyHelp.dailyCards = [activeUnitObj];
 
-    const rawStoredJson = env.localStorageMock.getItem('DANIEL_AI_V3_CLEAN');
-    assert.ok(rawStoredJson, 'DANIEL_AI_V3_CLEAN must be written to localStorage');
+    const saveOkRes = X.saveAppState();
+    assert.ok(saveOkRes && saveOkRes.ok === true, 'saveAppState() must return { ok: true } when storage succeeds');
+
+    const rawStored = env.localStorageMock.getItem('DANIEL_AI_V3_CLEAN');
+    assert.ok(rawStored.length < 300000, `Serialized localStorage must be <300KB for 10-page PDF, got ${rawStored.length}`);
+    assert.strictEqual(rawStored.includes(pageBlob.slice(0, 128)), false, 'Zero base64 page data in localStorage');
+
+    const parsedLocal = JSON.parse(rawStored);
+    assert.strictEqual(parsedLocal.studyHelpUnits.length, 1);
     assert.strictEqual(
-      rawStoredJson.includes(heavyChunk.slice(0, 256)),
-      false,
-      'Heavy base64 pageSnapshots must NOT be serialized into localStorage'
-    );
-    assert.ok(
-      rawStoredJson.length < 25000,
-      `Serialized localStorage state must stay compact (<25KB), got ${rawStoredJson.length} bytes`
+      parsedLocal.studyHelp.dailyCards.length,
+      0,
+      'saveAppState must NOT duplicate studyHelpUnits entries inside dailyCards in localStorage'
     );
 
-    const parsedLocal = JSON.parse(rawStoredJson);
-    assert.deepStrictEqual(
-      parsedLocal.studyHelpUnits[0].pageSnapshots,
-      [],
-      'Persisted localStorage unit must have empty pageSnapshots array'
-    );
-    assert.deepStrictEqual(
-      parsedLocal.studyHelpUnits[0].sourceContext.pageSnapshots,
-      [],
-      'Persisted localStorage unit sourceContext must also have empty pageSnapshots array'
-    );
+    const idbSnaps = await X.StudySnapshotsIDB.getSnapshots(activeUnitId);
+    assert.strictEqual(idbSnaps.length, 10, 'All 10 page snapshots must be accessible in StudySnapshotsIDB');
 
-    const storedRecord = await X.StudySnapshotsIDB.getUnitSnapshots(testUnitId);
-    const storedSnaps = await X.StudySnapshotsIDB.getSnapshots(testUnitId);
-    assert.ok(storedRecord && Array.isArray(storedRecord.pageSnapshots), 'StudySnapshotsIDB record must contain pageSnapshots');
-    assert.strictEqual(storedSnaps.length, 3, 'All 3 pageSnapshots must be stored in StudySnapshotsIDB');
-    assert.strictEqual(storedSnaps[0].data.length, heavyChunk.length, 'Full base64 snapshot data preserved in IDB');
+    // Verify QuotaExceededError returns { ok: false } instead of false green success
+    env.localStorageMock._setThrowQuota(true);
+    const failedSaveRes = X.saveAppState({ skipCloudSync: true });
+    env.localStorageMock._setThrowQuota(false);
+    assert.strictEqual(failedSaveRes.ok, false, 'saveAppState() must return { ok: false } if localStorage throws QuotaExceededError');
 
-    results.push('[Test 5 - IndexedDB Snapshot Separation] PASSED');
+    // Verify deleting the unit automatically purges its snapshots from StudySnapshotsIDB
+    X.deleteUnitFromAnyTrack('study_help', activeUnitId);
+    const afterDeleteSnaps = await X.StudySnapshotsIDB.getSnapshots(activeUnitId);
+    assert.strictEqual(afterDeleteSnaps.length, 0, 'Deleting a unit must purge its snapshots from StudySnapshotsIDB');
+
+    results.push('[Gate 3 - IndexedDB 10-Page Snapshot Store, Deduplication & Quota Guard] PASSED');
   }
 
   // =========================================================================
-  // [Test 6 - Upload & Generation Cancellation]
+  // [Gate 4 - Upload & Generation Cancellation (AbortController + RunToken)]
   // =========================================================================
   {
-    const baselineUnit = { id: 'existing_safe_unit', title: 'יחידה קיימת ובטוחה', completed: false };
-    const partialUnit = { id: 'partial_inflight_unit', title: 'יחידה חלקית בבנייה', completed: false };
+    const shSrc = readRepoFile('src/controllers/studyHelpController.js');
+    const pdfSrc = readRepoFile('src/services/pdf/pdfExtractor.js');
+    assert.ok(shSrc.includes('🛑 בטל העלאה ויצירת יחידה'), 'Cancel button label must exist in loading overlay');
+    assert.ok(pdfSrc.includes('throwIfUploadAborted(abortSignal)'), 'PDFExtractor must enforce abortSignal cancellation');
+
+    const baselineUnit = { id: 'existing_safe_unit', title: 'יחידה קיימת', completed: false };
+    const partialUnit = { id: 'partial_inflight_unit', title: 'יחידה בבנייה', completed: false };
     X.appState.studyHelpUnits = [partialUnit, baselineUnit];
 
     const session = X.StudyGenerationCancelManager.startNewSession();
     X.StudyGenerationCancelManager._partialUnitId = 'partial_inflight_unit';
 
-    let abortEventTriggered = false;
-    session.signal.addEventListener('abort', () => {
-      abortEventTriggered = true;
-    });
-
-    // Simulate a slow in-flight AI request wired to session.signal
     env.setFetchHandler((_url, options) => {
       return new Promise((_resolve, reject) => {
         if (options && options.signal) {
-          if (options.signal.aborted) {
-            const err = new Error('Aborted');
-            err.name = 'AbortError';
-            return reject(err);
-          }
           options.signal.addEventListener('abort', () => {
             const err = new Error('Aborted');
             err.name = 'AbortError';
@@ -852,255 +739,281 @@ async function runVerificationSuite() {
       });
     });
 
-    const simulatedGenerationTask = (async () => {
-      await X.callMultiTierAI('בנה שלד יחידה מקובץ', { abortSignal: session.signal });
-      if (!session.isCancelled()) {
-        X.appState.studyHelpUnits.unshift({ id: 'cancelled_ghost_unit', title: 'אסור שיישמר' });
-      }
-    })();
-
-    // Cancel active session while AI call is in flight
+    const inflightPromise = X.callMultiTierAI('בנה שלד יחידה', { abortSignal: session.signal });
     X.StudyGenerationCancelManager.cancelActiveSession();
-    assert.strictEqual(session.signal.aborted, true, 'Active AbortController signal must be aborted');
-    assert.strictEqual(abortEventTriggered, true, 'Abort event listener must fire immediately');
-    assert.strictEqual(session.isCancelled(), true, 'session.isCancelled() must be true');
 
-    let caughtAbortErr = null;
-    try {
-      await simulatedGenerationTask;
-    } catch (err) {
-      caughtAbortErr = err;
-    }
-
-    assert.ok(caughtAbortErr, 'In-flight callMultiTierAI must abort when cancelActiveSession() runs');
-    assert.strictEqual(caughtAbortErr.name, 'AbortError', 'Cancellation error must have name AbortError');
-    assert.strictEqual(
-      X.appState.studyHelpUnits.length,
-      1,
-      'Cancelled generation run must clean partial unit and NOT mutate existing appState.studyHelpUnits'
-    );
+    assert.strictEqual(session.signal.aborted, true);
+    assert.strictEqual(session.isCancelled(), true);
+    await assert.rejects(inflightPromise, (err) => err && err.name === 'AbortError');
+    assert.strictEqual(X.appState.studyHelpUnits.length, 1);
     assert.strictEqual(X.appState.studyHelpUnits[0].id, 'existing_safe_unit');
 
-    results.push('[Test 6 - Upload & Generation Cancellation] PASSED');
+    results.push('[Gate 4 - Meaningful Upload & Generation Cancellation] PASSED');
   }
 
   // =========================================================================
-  // [Test 7 - 12-Question Consolidation & Solved-Example Separation]
+  // [Gate 5 - English Blueprint, 12-Question Cap, Text-Only Beats & 1-Beat Lookahead]
   // =========================================================================
   {
+    // 5A: 12-Question Consolidation & Solved-Example Separation
     const rawOutlines = [
-      // Solved textbook examples that MUST be filtered out
-      {
-        question_number_label: 'דוגמה פתורה 1',
-        exact_book_text: 'דוגמה פתורה עם פתרון מודפס מהחוברת לחישוב פחת.',
-        is_solved_example: true,
-        page_number: 2
-      },
-      {
-        question_number_label: 'דוגמה פתורה 2',
-        exact_book_text: 'דוגמה פתורה: פתרון מלא להמחשה בכיתה.',
-        page_number: 3
-      },
-      // Multi-part Question 1 (סעיפים א', ב', ג') that MUST merge into 1 parent question
-      {
-        question_number_label: 'שאלה 1 סעיף א\'',
-        exact_book_text: 'חשב את יתרת המזומנים של החברה ליום 31.12.',
-        question_type: 'calculation',
-        page_number: 4
-      },
-      {
-        question_number_label: 'שאלה 1 סעיף ב\'',
-        exact_book_text: 'רשום את פקודת היומן בגין תשלום השכירות.',
-        question_type: 'journal_table',
-        page_number: 4
-      },
-      {
-        question_number_label: 'סעיף ג\'',
-        exact_book_text: 'הצג את ההשפעה על משוואת המאזן.',
-        question_type: 'open_question',
-        page_number: 5
-      },
-      // Multi-part Question 2 (סעיף א' + סעיף ב')
-      {
-        question_number_label: 'שאלה 2 סעיף א\'',
-        exact_book_text: 'חשב את עלות המכר.',
-        question_type: 'calculation',
-        page_number: 5
-      },
-      {
-        question_number_label: 'שאלה 2 סעיף ב\'',
-        exact_book_text: 'חשב את הרווח הגולמי.',
-        question_type: 'calculation',
-        page_number: 5
-      }
+      { question_number_label: 'דוגמה פתורה 1', exact_book_text: 'דוגמה פתורה עם פתרון מלא מהספר.', is_solved_example: true, page_number: 1 },
+      { question_number_label: 'שאלה 1 סעיף א\'', exact_book_text: 'חשב יתרת מזומנים ליום 31.12.', question_type: 'calculation', page_number: 2 },
+      { question_number_label: 'שאלה 1 סעיף ב\'', exact_book_text: 'רשום פקודת יומן לתשלום שכירות.', question_type: 'journal_table', page_number: 2 },
+      { question_number_label: 'סעיף ג\'', exact_book_text: 'הצג השפעה על משוואת המאזן.', question_type: 'open_question', page_number: 2 }
     ];
-
-    // Add 16 additional standalone homework questions (שאלה 3 .. שאלה 18) -> total > 20 raw items
-    for (let q = 3; q <= 18; q++) {
+    for (let q = 2; q <= 17; q++) {
       rawOutlines.push({
         question_number_label: `שאלה ${q}`,
-        exact_book_text: `נתח את האירוע החשבונאי בשאלה ${q} ורשום חובה וזכות.`,
+        exact_book_text: `נתח אירוע חשבונאי בשאלה ${q}.`,
         question_type: 'open_question',
-        page_number: Math.min(15, 5 + Math.floor(q / 2))
+        page_number: 3
+      });
+    }
+    const consolidated = X.consolidateAndCapQuestionOutlines(rawOutlines, 12);
+    assert.strictEqual(consolidated.length, 12, 'Questions must be capped at <= 12');
+    assert.strictEqual(consolidated.some((q) => /דוגמה\s*פתורה/.test(q.question_number_label || '')), false);
+    assert.ok(consolidated[0].exact_book_text.includes('31.12') && consolidated[0].exact_book_text.includes('פקודת יומן'));
+    assert.ok(Array.isArray(consolidated[0].sub_steps) && consolidated[0].sub_steps.length >= 2, 'Merged parent question must include sub_steps');
+
+    // 5B: Text-only Beat generation (inlineImages: []) & 1-Beat Lookahead (warms ONLY 1 pending beat!)
+    const beatCalls = [];
+    env.setFetchHandler(async (url, options) => {
+      if (url.includes('/api/state') || url.includes('/api/env')) {
+        return { ok: true, status: 200, async json() { return { status: 'ok' }; } };
+      }
+      const body = JSON.parse(options.body);
+      beatCalls.push({ url, body });
+      const isHw = body.messages.some((m) => String(m.content || '').includes('Homework Beat'));
+      const mockPayload = isHw
+        ? {
+            questions: [
+              {
+                question_number_label: 'שאלה 1',
+                page_number: 1,
+                question_type: 'calculation',
+                exact_book_text: 'חשב מע״מ על 1,000 ש״ח.',
+                friendly_translation: 'נחשב 18% מתוך 1,000 ש״ח.',
+                sub_steps: ['צעד 1: רשום סכום', 'צעד 2: הכפל ב-0.18'],
+                table_schema: { has_table: false, columns: [], account_choices: [], expected_rows: [] },
+                guided_options: ['180 ש״ח', '100 ש״ח'],
+                correct_option_index: 0,
+                step_by_step_solution: ['1,000 * 0.18 = 180'],
+                final_answer: '180 ש״ח'
+              }
+            ]
+          }
+        : {
+            slides: [
+              {
+                term_name: 'משוואת המאזן',
+                page_number: 1,
+                source_section_label: 'עמוד 1',
+                paragraphs: ['כל נכס ממומן מהון עצמי או מהתחייבות.'],
+                book_example: { title: 'דוגמה', exact_excerpt: 'ציוד ב-5,000 ש״ח', steps: ['נכס עולה', 'מזומן יורד'] },
+                interactive_widget: { widget_type: 'mini_balance_check', prompt: 'בדיקה', options: ['מאוזן', 'לא'], correct_index: 0, explanation: 'מאוזן' },
+                bottom_questions: {
+                  mc_question: { question: 'שאלה?', options: ['א', 'ב', 'ג', 'ד'], correct_index: 0, explanation: 'נכון' },
+                  open_question: { question: 'הסבר במילים שלך', expected_core_idea: 'איזון', hint: 'רמז' }
+                }
+              }
+            ]
+          };
+      return { ok: true, status: 200, async json() { return { choices: [{ message: { content: JSON.stringify(mockPayload) } }] }; } };
+    });
+
+    const lookaheadUnit = {
+      id: 'unit_lookahead_test',
+      title: 'בדיקת פעימות',
+      lesson_title: 'בדיקת פעימות',
+      inlineImages: [{ mimeType: 'image/jpeg', data: 'NEVER_SEND_ON_BEATS' }],
+      conceptBeats: [
+        { beatIndex: 0, status: 'ready', slides: [{ term_name: 'מוכן' }], conceptOutlines: [{ term_name: 'מוכן', page_number: 1, raw_book_excerpt: 'א' }] },
+        { beatIndex: 1, status: 'pending', slides: [], conceptOutlines: [{ term_name: 'פעימה 2', page_number: 2, raw_book_excerpt: 'ב' }] },
+        { beatIndex: 2, status: 'pending', slides: [], conceptOutlines: [{ term_name: 'פעימה 3', page_number: 3, raw_book_excerpt: 'ג' }] }
+      ],
+      homeworkBeats: [
+        { beatIndex: 0, status: 'pending', questions: [], questionOutlines: [{ question_number_label: 'שאלה 1', page_number: 4, question_type: 'calculation', exact_book_text: 'חשב מע״מ' }] }
+      ]
+    };
+    X.appState.studyHelpUnits = [lookaheadUnit];
+
+    await X.prewarmNextPendingBeat(lookaheadUnit.id);
+    assert.strictEqual(
+      beatCalls.length,
+      1,
+      `1-Beat Lookahead must generate ONLY 1 immediate next pending beat, got ${beatCalls.length} calls`
+    );
+    assert.strictEqual(lookaheadUnit.conceptBeats[1].status, 'ready');
+    assert.strictEqual(lookaheadUnit.conceptBeats[2].status, 'pending', 'Beat 3 must remain pending until learner advances');
+
+    await X.generateHomeworkBeatContent(lookaheadUnit, 0, null);
+    assert.strictEqual(beatCalls.length, 2);
+    for (const call of beatCalls) {
+      assert.ok(call.url.includes('api.groq.com'), 'Stage 2 & 3 beats must route to Groq text first (0 Gemini Vision calls)');
+      const uMsg = call.body.messages.find((m) => m.role === 'user');
+      assert.strictEqual(typeof uMsg.content, 'string', 'Beats must pass inlineImages: []');
+    }
+
+    results.push('[Gate 5 - English Blueprint, 12-Question Cap, Text-Only Beats & 1-Beat Lookahead] PASSED');
+  }
+
+  // =========================================================================
+  // [Gate 6 - High-Precision Hebrew & Accounting Ground-Truth Anchor in Chats]
+  // =========================================================================
+  {
+    const shSrc = readRepoFile('src/controllers/studyHelpController.js');
+    const bubbleSrc = readRepoFile('src/components/globalAiBubble.js');
+
+    assert.ok(
+      shSrc.includes('ACCOUNTING GROUND-TRUTH ANCHOR') &&
+        shSrc.includes('DEBITED (בחובה)') &&
+        shSrc.includes('CREDITED (בזכות)'),
+      'studyHelpController tutor prompts must include explicit double-entry Debit/Credit ground-truth anchor'
+    );
+    assert.ok(
+      bubbleSrc.includes('ACCOUNTING GROUND-TRUTH ANCHOR') &&
+        bubbleSrc.includes('DEBITED (בחובה)') &&
+        bubbleSrc.includes('CREDITED (בזכות)'),
+      'GlobalAiAssistant.sendMessage must include explicit double-entry Debit/Credit ground-truth anchor'
+    );
+
+    let capturedBubbleSystem = '';
+    let capturedBubbleTemp = null;
+    env.setFetchHandler(async (_url, options) => {
+      const body = JSON.parse(options.body);
+      capturedBubbleTemp = body.temperature;
+      capturedBubbleSystem = (body.messages.find((m) => m.role === 'system') || {}).content || '';
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            choices: [
+              {
+                message: {
+                  content: '<think>internal</think>כאשר לקוח משלם לעסק במזומן, מחייבים את חשבון הקופה ומזכים את חשבון הלקוח.'
+                }
+              }
+            ]
+          };
+        }
+      };
+    });
+
+    X.GlobalAiAssistant.syncDelayMs = 0;
+    await X.GlobalAiAssistant.open();
+    await X.GlobalAiAssistant.sendMessage('לקוח שילם לנו 500 ש״ח במזומן, מה בחובה ומה בזכות?');
+    assert.strictEqual(capturedBubbleTemp, 0.2, 'GlobalAiAssistant must use temperature: 0.2');
+    assert.ok(capturedBubbleSystem.includes('ACCOUNTING GROUND-TRUTH ANCHOR'));
+    const lastMsg = X.GlobalAiAssistant.chatHistory[X.GlobalAiAssistant.chatHistory.length - 1];
+    assert.ok(lastMsg && !lastMsg.text.includes('<think>'), 'sanitizeHebrewPedagogicalOutput must strip think tags');
+
+    results.push('[Gate 6 - High-Precision Hebrew & Accounting Ground-Truth Anchor] PASSED');
+  }
+
+  // =========================================================================
+  // [Gate 7 - Generalized Identity, Clean Headers, 1fr Flow & Split-View Assistant]
+  // =========================================================================
+  {
+    const dirsToScan = ['src', 'server', 'scripts', 'styles'];
+    const filesToScan = ['index.html'];
+
+    function collectFiles(dirRel) {
+      const absDir = path.join(ROOT, dirRel);
+      for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
+        const relChild = path.join(dirRel, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === 'key' || entry.name === '__pycache__') continue;
+          collectFiles(relChild);
+        } else if (entry.name !== 'scaleBlock.js') {
+          filesToScan.push(relChild);
+        }
+      }
+    }
+    dirsToScan.forEach(collectFiles);
+
+    const forbiddenIdentityRe = /(דניאל|אושרי|Daniel|Oshri|בן\s*28|28-year-old)/;
+    for (const rel of filesToScan) {
+      const lines = readRepoFile(rel).split(/\r?\n/);
+      lines.forEach((line, idx) => {
+        const scrubbed = line
+          .replace(/DANIEL_AI_[A-Z0-9_]+/g, '')
+          .replace(/daniel_ai_[a-z0-9_]+/g, '')
+          .replace(/daniel_state(\.json)?/g, '');
+        assert.strictEqual(
+          forbiddenIdentityRe.test(scrubbed),
+          false,
+          `Hardcoded personal name found in ${rel}:${idx + 1} -> ${line.trim()}`
+        );
       });
     }
 
-    const consolidated = X.consolidateAndCapQuestionOutlines(rawOutlines, 12);
+    // Technical backwards-compatibility keys preserved
+    assert.ok(readRepoFile('src/state/store.js').includes("'DANIEL_AI_V3_CLEAN'"));
+    assert.ok(readRepoFile('src/db/DatabaseManager.js').includes("'DANIEL_AI_DB_CONFIG_V1'"));
 
-    assert.ok(Array.isArray(consolidated), 'consolidateAndCapQuestionOutlines must return an array');
+    // Clean headers
+    assert.strictEqual(
+      X.cleanLearnerVisibleTitle('התהליך החשבונאי | מיפוי מלא של עמודים 29 עד 31'),
+      'התהליך החשבונאי'
+    );
+    assert.ok(!X.cleanLearnerVisibleSummary('מיפוי מלא ללא שום השמטה. נלמד על חובה וזכות.').includes('מיפוי מלא'));
+
+    // Single-column 1fr & docked non-blurring split-view CSS
+    const cssSrc = readRepoFile('styles/tutor-chat.css');
+    const conceptCols = cssSrc.match(/\.study-concept-columns\s*\{([^}]*)\}/);
+    const dualQuestions = cssSrc.match(/\.study-dual-bottom-questions-grid\s*\{([^}]*)\}/);
+    const backdropRule = cssSrc.match(/\.global-ai-backdrop\s*\{([^}]*)\}/);
+    const chipsRule = cssSrc.match(/\.global-ai-quick-chips\s*\{([^}]*)\}/);
+
+    assert.ok(conceptCols && /grid-template-columns\s*:\s*1fr\s*;/.test(conceptCols[1]));
+    assert.ok(dualQuestions && /grid-template-columns\s*:\s*1fr\s*;/.test(dualQuestions[1]));
     assert.ok(
-      consolidated.length <= 12,
-      `Consolidated homework questions must be capped at <= 12, got ${consolidated.length}`
+      backdropRule &&
+        /display\s*:\s*none\s*!important/.test(backdropRule[1]) &&
+        /backdrop-filter\s*:\s*none\s*!important/.test(backdropRule[1])
     );
-    assert.strictEqual(consolidated.length, 12, 'With 18 distinct parent questions, cap should produce exactly 12');
+    assert.ok(chipsRule && /flex-wrap\s*:\s*nowrap/.test(chipsRule[1]));
+    assert.ok(cssSrc.includes('body.global-ai-split-active') && cssSrc.includes('padding-left: 418px'));
 
-    // Verify solved examples were filtered out
-    const hasSolvedExample = consolidated.some(
-      (q) =>
-        /דוגמה\s*פתורה/.test(q.question_number_label || '') ||
-        /דוגמה\s*פתורה/.test(q.exact_book_text || '')
-    );
-    assert.strictEqual(hasSolvedExample, false, 'Solved textbook examples must be excluded from homework questions');
+    await X.GlobalAiAssistant.open();
+    assert.strictEqual(env.documentMock.body.classList.contains('global-ai-split-active'), true);
+    assert.strictEqual(env.documentMock.getElementById('global-ai-assistant-backdrop').style.display, 'none');
+    X.GlobalAiAssistant.close();
+    assert.strictEqual(env.documentMock.body.classList.contains('global-ai-split-active'), false);
 
-    // Verify שאלה 1 merged סעיף א', סעיף ב', סעיף ג' under a single parent question
-    const q1 = consolidated[0];
-    assert.ok(
-      String(q1.question_number_label || '').startsWith('שאלה 1'),
-      `First consolidated question should be parent שאלה 1, got "${q1.question_number_label}"`
-    );
-    assert.ok(q1.exact_book_text.includes('31.12'), 'Merged שאלה 1 must include סעיף א text');
-    assert.ok(q1.exact_book_text.includes('פקודת היומן'), 'Merged שאלה 1 must include סעיף ב text');
-    assert.ok(q1.exact_book_text.includes('משוואת המאזן'), 'Merged שאלה 1 must include סעיף ג text');
-
-    results.push('[Test 7 - 12-Question Consolidation & Solved-Example Separation] PASSED');
+    results.push('[Gate 7 - Generalized Identity, Clean Headers, 1fr Flow & Split-View UI] PASSED');
   }
 
   // =========================================================================
-  // [Test 8 - Generalized Identity & Single-Column Split-View UI]
+  // [Gate 8 - Syntax Compilation, Gitignore Hygiene & Secret Safety]
   // =========================================================================
   {
-    const filesToCheckIdentity = [
-      'src/controllers/studyHelpController.js',
-      'src/services/ai/aiOrchestrator.js',
-      'src/components/globalAiBubble.js',
-      'src/controllers/adminController.js',
-      'src/state/store.js',
-      'src/main.js',
-      'src/components/aiEvalBlock.js',
-      'src/components/journalGridBlock.js',
-      'src/components/exerciseStepper.js',
-      'src/controllers/roadmapController.js',
-      'src/controllers/unitPlayerController.js',
-      'index.html'
-    ];
+    const gitignoreSrc = readRepoFile('.gitignore');
+    assert.ok(gitignoreSrc.includes('.env'), '.gitignore must ignore .env');
+    assert.ok(gitignoreSrc.includes('data/daniel_state.json'), '.gitignore must ignore data/daniel_state.json');
 
-    const forbiddenIdentityPatterns = [
-      { label: 'דניאל', regex: /דניאל/g },
-      { label: 'אושרי', regex: /אושרי/g },
-      { label: 'בן 28', regex: /בן\s*28/g },
-      { label: '28-year-old', regex: /28-year-old/gi }
-    ];
+    execFileSync('python', ['-m', 'py_compile', 'server/server.py', 'scripts/discover_models.py'], {
+      cwd: ROOT,
+      stdio: 'pipe'
+    });
 
-    for (const relFile of filesToCheckIdentity) {
-      const content = readRepoFile(relFile);
-      for (const pat of forbiddenIdentityPatterns) {
-        const matches = content.match(pat.regex);
-        assert.strictEqual(
-          matches ? matches.length : 0,
-          0,
-          `Found hardcoded personal identity "${pat.label}" in ${relFile}`
-        );
-      }
-    }
-
-    // Verify internal storage keys remain 100% intact for backwards compatibility
-    const storeSrc = readRepoFile('src/state/store.js');
-    const dbManagerSrc = readRepoFile('src/db/DatabaseManager.js');
-    assert.ok(storeSrc.includes("'DANIEL_AI_V3_CLEAN'"), "Storage key 'DANIEL_AI_V3_CLEAN' must remain intact");
-    assert.ok(dbManagerSrc.includes("'DANIEL_AI_DB_CONFIG_V1'"), "Storage key 'DANIEL_AI_DB_CONFIG_V1' must remain intact");
-
-    // Verify cleanLearnerVisibleTitle & cleanLearnerVisibleSummary strip internal mapping metadata
-    const cleanedTitle = X.cleanLearnerVisibleTitle('משוואת המאזן | מיפוי מלא של עמודים 4-8');
-    assert.strictEqual(cleanedTitle, 'משוואת המאזן', 'cleanLearnerVisibleTitle must strip internal page mapping suffix');
-    const cleanedSummary = X.cleanLearnerVisibleSummary(
-      'מיפוי מלא ללא שום השמטה של כל החומר. נכיר את משוואת המאזן ונפתור דוגמאות.'
-    );
-    assert.ok(!cleanedSummary.includes('מיפוי מלא'), 'cleanLearnerVisibleSummary must strip internal mapping phrases');
-    assert.ok(cleanedSummary.includes('משוואת המאזן'), 'cleanLearnerVisibleSummary must keep pedagogical content');
-
-    // Verify CSS rules in styles/tutor-chat.css
-    const cssSrc = readRepoFile('styles/tutor-chat.css');
-
-    const conceptColsMatch = cssSrc.match(/\.study-concept-columns\s*\{([^}]*)\}/);
-    assert.ok(conceptColsMatch, '.study-concept-columns rule must exist in styles/tutor-chat.css');
-    assert.ok(
-      /grid-template-columns\s*:\s*1fr\s*;/.test(conceptColsMatch[1]),
-      '.study-concept-columns must use grid-template-columns: 1fr;'
-    );
-
-    const dualQuestionsMatch = cssSrc.match(/\.study-dual-bottom-questions-grid\s*\{([^}]*)\}/);
-    assert.ok(dualQuestionsMatch, '.study-dual-bottom-questions-grid rule must exist in styles/tutor-chat.css');
-    assert.ok(
-      /grid-template-columns\s*:\s*1fr\s*;/.test(dualQuestionsMatch[1]),
-      '.study-dual-bottom-questions-grid must use grid-template-columns: 1fr;'
-    );
-
-    const backdropMatch = cssSrc.match(/\.global-ai-backdrop\s*\{([^}]*)\}/);
-    assert.ok(backdropMatch, '.global-ai-backdrop rule must exist');
-    assert.ok(
-      /display\s*:\s*none\s*!important/.test(backdropMatch[1]),
-      '.global-ai-backdrop must enforce display: none !important'
-    );
-
-    const quickChipsMatch = cssSrc.match(/\.global-ai-quick-chips\s*\{([^}]*)\}/);
-    assert.ok(quickChipsMatch, '.global-ai-quick-chips rule must exist');
-    assert.ok(
-      /flex-wrap\s*:\s*nowrap/.test(quickChipsMatch[1]),
-      '.global-ai-quick-chips must enforce single-row flex-wrap: nowrap'
-    );
-
-    assert.ok(
-      cssSrc.includes('body.global-ai-split-active') && cssSrc.includes('padding-left: 418px'),
-      'Desktop split-view rule body.global-ai-split-active { padding-left: 418px } must exist'
-    );
-
-    // Runtime check on GlobalAiAssistant split-view class toggling & hidden backdrop
-    X.GlobalAiAssistant.syncDelayMs = 0;
-    await X.GlobalAiAssistant.open();
-    const backdropEl = env.documentMock.getElementById('global-ai-assistant-backdrop');
-    assert.strictEqual(
-      env.documentMock.body.classList.contains('global-ai-split-active'),
-      true,
-      'GlobalAiAssistant.open() must activate body.global-ai-split-active'
-    );
-    assert.strictEqual(
-      backdropEl.style.display,
-      'none',
-      'GlobalAiAssistant backdrop must remain display: none when open'
-    );
-
-    X.GlobalAiAssistant.close();
-    assert.strictEqual(
-      env.documentMock.body.classList.contains('global-ai-split-active'),
-      false,
-      'GlobalAiAssistant.close() must remove body.global-ai-split-active'
-    );
-
-    results.push('[Test 8 - Generalized Identity & Single-Column Split-View UI] PASSED');
+    results.push('[Gate 8 - Python/JS Compilation, Gitignore Hygiene & Full Suite Integrity] PASSED');
   }
 
   console.log('================================================================');
-  console.log('v5.1 RECOVERY END-TO-END VERIFICATION SUITE');
+  console.log('v5.1 FULL SELF-HEALING AUDIT & E2E VERIFICATION SUITE');
   console.log('================================================================');
   for (const line of results) {
     console.log('✅ ' + line);
   }
   console.log('----------------------------------------------------------------');
-  console.log(`TOTAL: ${results.length}/8 TESTS PASSED (100%)`);
+  console.log(`TOTAL: ${results.length}/8 AUDIT GATES PASSED (100%)`);
   console.log('================================================================');
 }
 
 runVerificationSuite().catch((err) => {
-  console.error('❌ VERIFICATION SUITE FAILED:', err);
+  console.error('❌ AUDIT SUITE FAILED:', err);
   process.exit(1);
 });

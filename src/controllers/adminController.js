@@ -859,7 +859,7 @@ function renderDatabaseSwitcherSettings() {
           <input type="password" id="cfg-db-firebase-secret" class="styled-input" placeholder="Database Secret (אופציונלי)">
         </div>
         <div id="cfg-db-custom-fields" style="display: none; flex-direction: column; gap: 0.75rem;">
-          <input type="url" id="cfg-db-custom-url" class="styled-input" placeholder="https://api.example.com/daniel-state">
+          <input type="url" id="cfg-db-custom-url" class="styled-input" placeholder="https://api.example.com/learning-state">
           <input type="password" id="cfg-db-custom-key" class="styled-input" placeholder="API Key (אופציונלי)">
         </div>
         <div id="cfg-db-status" style="display: none; padding: 0.7rem 0.95rem; border-radius: 8px; font-size: 0.92rem; line-height: 1.5;"></div>

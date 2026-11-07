@@ -3,14 +3,14 @@
  * Implements `window.GithubRepo` extending `IDatabaseRepo` using the official GitHub Gists REST API:
  * - Config fields: `{ token, gistId, filename: 'daniel_ai_cloud_state.json' }`.
  * - Auto-discovers an existing secret Gist containing `daniel_ai_cloud_state.json` or auto-creates
- *   a new secret Gist (`public: false`, description `'Daniel AI Learning System - Cloud Database State'`)
+ *   a new secret Gist (`public: false`, description `'Adaptive AI Learning System - Cloud Database State'`)
  *   whenever `token` is provided and `gistId` is empty!
  * - Supports full CRUD (`loadFullState`, `saveFullState`, `getAll`, `getById`, `add`, `update`, `delete`).
  */
 
 const GITHUB_GISTS_API_BASE = 'https://api.github.com/gists';
 const GITHUB_DEFAULT_FILENAME = 'daniel_ai_cloud_state.json';
-const GITHUB_GIST_DESCRIPTION = 'Daniel AI Learning System - Cloud Database State';
+const GITHUB_GIST_DESCRIPTION = 'Adaptive AI Learning System - Cloud Database State';
 
 class GithubRepo extends IDatabaseRepo {
   /**
@@ -113,7 +113,7 @@ class GithubRepo extends IDatabaseRepo {
     const seedContent = initialState && typeof initialState === 'object'
       ? JSON.stringify({ ...initialState, _updatedAt: new Date().toISOString() }, null, 2)
       : JSON.stringify({
-          _initializedBy: 'Daniel AI Learning System',
+          _initializedBy: 'Adaptive AI Learning System',
           _updatedAt: new Date().toISOString()
         }, null, 2);
 

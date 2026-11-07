@@ -2312,7 +2312,7 @@
 }
 
 .study-book-quote-box,
-.study-daniel-translation-box {
+.study-learner-translation-box {
   border-radius: 16px;
   padding: 18px 20px;
   background: var(--bg-secondary);
@@ -2326,7 +2326,7 @@
   border-right: 5px solid #3b82f6;
 }
 
-.study-daniel-translation-box {
+.study-learner-translation-box {
   border-right: 5px solid #10b981;
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(59, 130, 246, 0.04));
 }
@@ -2354,7 +2354,7 @@
   white-space: pre-line;
 }
 
-.study-daniel-friendly-text {
+.study-learner-friendly-text {
   margin: 0;
   font-size: 1.02rem;
   line-height: 1.7;

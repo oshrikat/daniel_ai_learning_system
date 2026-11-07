@@ -182,42 +182,78 @@ async function callMultiTierAI(prompt, options = {}) {
   const isVisionTask = hasImages || options.preferVision === true;
   const enrichedOptions = {
     ...options,
+    temperature: typeof options.temperature === 'number' ? options.temperature : 0.2,
     maxTokens: options.maxTokens || 8192,
     jsonMode: Boolean(options.jsonMode),
     ...(hasImages ? { inlineImages: normalizedImages, images: normalizedImages } : {})
   };
 
-  const tryGroqTier = async () => {
+  const buildGroqTextModels = () => {
+    const discovered = Array.isArray(cfg.verifiedGroqModels) ? cfg.verifiedGroqModels : [];
+    return [...new Set([
+      ...discovered,
+      'llama-3.3-70b-versatile',
+      'openai/gpt-oss-120b',
+      'qwen/qwen3-32b',
+      cfg.verifiedGroqModel,
+      'llama-3.1-8b-instant'
+    ].filter(m => m && !/qwen3\.8|allam-2-7b|orpheus|whisper|guard/i.test(m)))];
+  };
+
+  const tryGroqTier = async (forceTextOnly = false) => {
     if (!grokKey) return null;
     const isGroq = grokKey.startsWith('gsk_');
+    const useVision = hasImages && !forceTextOnly;
+
+    // Groq Vision only supports JPEG/PNG images (not application/pdf)
+    const jpegImages = normalizedImages.filter(
+      img => img && (img.data || img.dataUrl || img.url) && !img.isNativePdf && img.mimeType !== 'application/pdf'
+    );
+    if (useVision && jpegImages.length === 0) {
+      return null;
+    }
+
     let groqModelsToTry = [];
-    if (hasImages && isGroq) {
+    if (useVision && isGroq) {
+      const discoveredVision = Array.isArray(cfg.verifiedGroqVisionModels) ? cfg.verifiedGroqVisionModels : [];
       groqModelsToTry = [...new Set([
+        ...discoveredVision,
         cfg.verifiedGroqVisionModel,
         'meta-llama/llama-4-scout-17b-16e-instruct'
       ].filter(Boolean))];
     } else if (isGroq) {
-      groqModelsToTry = [...new Set([
-        'llama-3.3-70b-versatile',
-        'openai/gpt-oss-120b',
-        'qwen/qwen3-32b',
-        cfg.verifiedGroqModel,
-        'llama-3.1-8b-instant'
-      ].filter(Boolean))];
+      groqModelsToTry = buildGroqTextModels();
     } else {
       groqModelsToTry = ['grok-2-latest'];
     }
+
+    const activePrompt = (forceTextOnly && options.extractedText)
+      ? `${prompt}\n\nטקסט שחולץ מהקובץ:\n${options.extractedText}`
+      : prompt;
+    const groqCallOptions = useVision
+      ? {
+          ...enrichedOptions,
+          images: jpegImages,
+          inlineImages: jpegImages,
+          maxTokens: Math.min(enrichedOptions.maxTokens || 2048, 4096)
+        }
+      : {
+          ...enrichedOptions,
+          images: [],
+          inlineImages: [],
+          rawPdfPart: null
+        };
 
     for (const model of groqModelsToTry) {
       if (options.abortSignal?.aborted) {
         throw createOrchestratorAbortError();
       }
       try {
-        const reply = await callGrokAPI(grokKey, prompt, model, enrichedOptions);
+        const reply = await callGrokAPI(grokKey, activePrompt, model, groqCallOptions);
         if (options.abortSignal?.aborted) {
           throw createOrchestratorAbortError();
         }
-        if (isGroq && !hasImages && appState?.apiConfig) {
+        if (isGroq && !useVision && appState?.apiConfig) {
           appState.apiConfig.verifiedGroqModel = model;
         }
         return reply;
@@ -232,26 +268,37 @@ async function callMultiTierAI(prompt, options = {}) {
     return null;
   };
 
-  const tryOpenRouterTier = async () => {
+  const tryOpenRouterTier = async (forceTextOnly = false) => {
     if (!orKey) return null;
-    const orModels = hasImages
+    const useVision = hasImages && !forceTextOnly;
+    const discoveredOr = Array.isArray(cfg.verifiedOpenRouterModels) ? cfg.verifiedOpenRouterModels : [];
+    const orModels = useVision
       ? [...new Set([
+          ...discoveredOr,
           cfg.verifiedOpenRouterModel,
           'openai/gpt-4o-mini',
           'google/gemini-2.0-flash-001'
         ].filter(Boolean))]
       : [...new Set([
+          ...discoveredOr,
           cfg.verifiedOpenRouterModel,
           'openai/gpt-4o-mini',
           'openai/gpt-3.5-turbo'
         ].filter(Boolean))];
+
+    const activePrompt = (forceTextOnly && options.extractedText)
+      ? `${prompt}\n\nטקסט שחולץ מהקובץ:\n${options.extractedText}`
+      : prompt;
+    const orCallOptions = useVision
+      ? enrichedOptions
+      : { ...enrichedOptions, images: [], inlineImages: [], rawPdfPart: null };
 
     for (const model of orModels) {
       if (options.abortSignal?.aborted) {
         throw createOrchestratorAbortError();
       }
       try {
-        const reply = await callOpenRouterAPI(orKey, prompt, model, enrichedOptions);
+        const reply = await callOpenRouterAPI(orKey, activePrompt, model, orCallOptions);
         if (options.abortSignal?.aborted) {
           throw createOrchestratorAbortError();
         }
@@ -272,24 +319,31 @@ async function callMultiTierAI(prompt, options = {}) {
 
   const tryGeminiTier = async () => {
     if (!geminiKey) return null;
+    const discoveredGem = Array.isArray(cfg.verifiedGeminiModels) ? cfg.verifiedGeminiModels : [];
     const baseGemini = (typeof AIService !== 'undefined' && Array.isArray(AIService.geminiModels))
       ? AIService.geminiModels
-      : ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-flash-lite-latest'];
+      : ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest'];
     const geminiModelsToTry = [...new Set([
       localStorage.getItem('verified_gemini_model'),
       cfg.verifiedGeminiModel,
+      ...discoveredGem,
       ...(isVisionTask
-        ? ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest']
-        : ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest']),
+        ? ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest']
+        : ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest']),
       ...baseGemini
     ].filter(Boolean))];
+
+    const geminiOptions = {
+      ...enrichedOptions,
+      timeoutMs: options.timeoutMs || (isVisionTask ? 55000 : 35000)
+    };
 
     for (const model of geminiModelsToTry) {
       if (options.abortSignal?.aborted) {
         throw createOrchestratorAbortError();
       }
       try {
-        const reply = await callGeminiAPI(model, geminiKey, prompt, enrichedOptions);
+        const reply = await callGeminiAPI(model, geminiKey, prompt, geminiOptions);
         if (options.abortSignal?.aborted) {
           throw createOrchestratorAbortError();
         }
@@ -309,16 +363,29 @@ async function callMultiTierAI(prompt, options = {}) {
     return null;
   };
 
-  // Smart Task Routing:
-  // - Vision / PDF Blueprint tasks (`isVisionTask === true`): Gemini -> Groq Vision -> OpenRouter Multimodal
-  // - Text / Beat / Chat tasks (`isVisionTask === false`): Groq -> OpenRouter -> Gemini
-  const tierRunners = isVisionTask
-    ? [tryGeminiTier, tryGroqTier, tryOpenRouterTier]
-    : [tryGroqTier, tryOpenRouterTier, tryGeminiTier];
-
-  for (const runTier of tierRunners) {
-    const result = await runTier();
-    if (result) return result;
+  // Smart Cost-Efficient Task Routing:
+  // - Vision / Scanned PDF tasks (`isVisionTask === true`):
+  //     Gemini Vision (55s) -> Groq Vision (<=4096 tokens, JPEG) -> OpenRouter Vision ->
+  //     Automatic fallback to extracted text on Groq Text -> OpenRouter Text!
+  // - Text / JSON / Chat / Beat / Evaluation tasks (`isVisionTask === false`):
+  //     Groq Text (0.2 temp) -> OpenRouter -> Gemini Flash-Lite
+  if (isVisionTask) {
+    for (const runVisionTier of [() => tryGeminiTier(), () => tryGroqTier(false), () => tryOpenRouterTier(false)]) {
+      const res = await runVisionTier();
+      if (res) return res;
+    }
+    // If all vision calls failed and text is available, fall back to Groq Text -> OpenRouter Text!
+    if (String(options.extractedText || prompt || '').trim().length > 0) {
+      const groqTextFallback = await tryGroqTier(true);
+      if (groqTextFallback) return groqTextFallback;
+      const orTextFallback = await tryOpenRouterTier(true);
+      if (orTextFallback) return orTextFallback;
+    }
+  } else {
+    for (const runTextTier of [() => tryGroqTier(false), () => tryOpenRouterTier(false), () => tryGeminiTier()]) {
+      const res = await runTextTier();
+      if (res) return res;
+    }
   }
 
   if (options.abortSignal?.aborted) {
@@ -502,13 +569,8 @@ const AIService = {
   geminiModels: [
     'gemini-2.5-flash-lite',
     'gemini-2.5-flash',
-    'gemini-3.6-flash',
-    'gemini-3.5-flash',
-    'gemini-flash-latest',
-    'gemini-3.1-flash-lite',
-    'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-flash-lite-latest'
+    'gemini-flash-lite-latest',
+    'gemini-flash-latest'
   ],
 
   groqModels: [
@@ -520,6 +582,7 @@ const AIService = {
 
   openrouterModels: [
     'openai/gpt-4o-mini',
+    'google/gemini-2.0-flash-001',
     'openai/gpt-3.5-turbo'
   ],
 
@@ -529,6 +592,7 @@ const AIService = {
     const t0 = performance.now();
 
     let candidateModels = [...this.groqModels];
+    const discoveredVision = [];
     try {
       if (progressCb) progressCb('מגלה מודלים פעילים ב-Groq...');
       const modelsResp = await fetch('https://api.groq.com/openai/v1/models', {
@@ -537,19 +601,35 @@ const AIService = {
       });
       if (modelsResp.ok) {
         const modelsData = await modelsResp.json();
-        const availableIds = (modelsData?.data || [])
+        const rawItems = modelsData?.data || [];
+        const availableIds = rawItems
+          .filter(m => {
+            const outMod = Array.isArray(m.output_modalities) ? m.output_modalities : ['text'];
+            return outMod.includes('text');
+          })
           .map(m => m.id)
-          .filter(id => id && !/whisper|tts|guard|embed/i.test(id));
-        if (availableIds.includes('meta-llama/llama-4-scout-17b-16e-instruct')) {
+          .filter(id => id && !/whisper|tts|orpheus|guard|safeguard|embed|allam-2-7b|qwen3\.8/i.test(id));
+
+        rawItems.forEach(m => {
+          const mid = String(m?.id || '').trim();
+          const inMod = Array.isArray(m?.input_modalities) ? m.input_modalities : [];
+          if (mid && (inMod.includes('image') || /llama-4-scout|llama-4-maverick|vision/i.test(mid)) && !/qwen3\.8/i.test(mid)) {
+            discoveredVision.push(mid);
+          }
+        });
+        if (discoveredVision.length > 0) {
+          appState.apiConfig.verifiedGroqVisionModels = [...new Set(discoveredVision)];
+          appState.apiConfig.verifiedGroqVisionModel = appState.apiConfig.verifiedGroqVisionModels[0];
+        } else {
+          appState.apiConfig.verifiedGroqVisionModels = ['meta-llama/llama-4-scout-17b-16e-instruct'];
           appState.apiConfig.verifiedGroqVisionModel = 'meta-llama/llama-4-scout-17b-16e-instruct';
         }
+
         if (availableIds.length > 0) {
-          const prioritized = this.groqModels.filter(m => availableIds.includes(m));
-          const others = availableIds.filter(m => !prioritized.includes(m));
-          const combined = [...new Set([...prioritized, ...others, ...this.groqModels])];
-          const nonReasoning = combined.filter(id => !/gpt-oss|deepseek-r1|qwq/i.test(id));
-          const reasoning = combined.filter(id => /gpt-oss|deepseek-r1|qwq/i.test(id));
-          candidateModels = [...nonReasoning, ...reasoning];
+          const textOnly = availableIds.filter(id => !/llama-4-scout|llama-4-maverick|vision/i.test(id));
+          const prioritized = this.groqModels.filter(m => textOnly.includes(m));
+          const others = textOnly.filter(m => !prioritized.includes(m));
+          candidateModels = [...new Set([...prioritized, ...others])];
         }
       }
     } catch (e) {
@@ -569,6 +649,7 @@ const AIService = {
           body: JSON.stringify({
             model: model,
             messages: [{ role: 'user', content: 'שלום! ענה במילה אחת: "פעיל".' }],
+            temperature: 0.2,
             max_tokens: 150
           })
         });
@@ -584,6 +665,7 @@ const AIService = {
           const latency = Math.round(performance.now() - t0);
           appState.apiConfig.groqKey = key;
           appState.apiConfig.verifiedGroqModel = model;
+          appState.apiConfig.verifiedGroqModels = [...new Set([model, ...candidateModels])];
           localStorage.setItem('groq_api_key', key);
           saveAppState();
           return { success: true, model, latency, reply: rawText };
@@ -615,21 +697,12 @@ const AIService = {
         const availableIds = (listData?.models || [])
           .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
           .map(m => (m.name || '').replace(/^models\//, ''))
-          .filter(id => id && /gemini/i.test(id) && !/embedding|vision-pro|aqa|tts|image|robotics|computer-use|transcribe|lyria|banana|argon/i.test(id));
+          .filter(id => id && /gemini/i.test(id) && !/embedding|vision-pro|aqa|tts|image|robotics|computer-use|transcribe|lyria|banana|argon|imagen|veo/i.test(id));
 
         if (availableIds.length > 0) {
-          const preferredOrder = [
-            'gemini-3.6-flash',
-            'gemini-3.5-flash',
-            'gemini-flash-latest',
-            'gemini-3.1-flash-lite',
-            'gemini-3.8-flash',
-            'gemini-3.7-flash',
-            'gemini-flash-lite-latest'
-          ];
-          const prioritized = preferredOrder.filter(m => availableIds.includes(m));
+          const prioritized = this.geminiModels.filter(m => availableIds.includes(m));
           const others = availableIds.filter(m => !prioritized.includes(m));
-          candidateModels = [...new Set([...prioritized, ...others, ...this.geminiModels])];
+          candidateModels = [...new Set([...prioritized, ...others])];
         }
       }
     } catch (e) {
@@ -662,6 +735,7 @@ const AIService = {
           const latency = Math.round(performance.now() - t0);
           appState.apiConfig.geminiKey = key;
           appState.apiConfig.verifiedGeminiModel = model;
+          appState.apiConfig.verifiedGeminiModels = [...new Set([model, ...candidateModels])];
           localStorage.setItem('gemini_api_key', key);
           localStorage.setItem('verified_gemini_model', model);
           saveAppState();
@@ -682,8 +756,27 @@ const AIService = {
     if (!key) return { success: false, error: 'לא הוזן מפתח API של OpenRouter.' };
     const t0 = performance.now();
 
+    let candidateModels = [...this.openrouterModels];
+    try {
+      if (progressCb) progressCb('מגלה מודלים פעילים ב-OpenRouter...');
+      const listResp = await fetch('https://openrouter.ai/api/v1/models', {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${key}` }
+      });
+      if (listResp.ok) {
+        const listData = await listResp.json();
+        const availableIds = (listData?.data || []).map(m => m.id).filter(Boolean);
+        if (availableIds.length > 0) {
+          const prioritized = this.openrouterModels.filter(m => availableIds.includes(m));
+          candidateModels = prioritized.length > 0 ? prioritized : [...this.openrouterModels];
+        }
+      }
+    } catch (e) {
+      console.warn('OpenRouter model discovery fallback:', e);
+    }
+
     let lastStatus = '';
-    for (const model of this.openrouterModels) {
+    for (const model of candidateModels) {
       if (progressCb) progressCb(`בודק מודל ${model}...`);
       try {
         const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -695,6 +788,7 @@ const AIService = {
           body: JSON.stringify({
             model: model,
             messages: [{ role: 'user', content: 'שלום! ענה במילה אחת: "פעיל".' }],
+            temperature: 0.2,
             max_tokens: 100
           })
         });
@@ -706,6 +800,7 @@ const AIService = {
           const latency = Math.round(performance.now() - t0);
           appState.apiConfig.openrouterKey = key;
           appState.apiConfig.verifiedOpenRouterModel = model;
+          appState.apiConfig.verifiedOpenRouterModels = [...new Set([model, ...candidateModels])];
           localStorage.setItem('openrouter_api_key', key);
           saveAppState();
           return { success: true, model, latency, reply };
@@ -779,79 +874,78 @@ const AIService = {
     return { unit: localUnit, provider: 'מנוע למידה פנימי' };
   },
 
-  cleanAndParseJSON(text) {
-    if (!text || typeof text !== 'string') return null;
+  repairHebrewJsonString(rawJson) {
+    if (!rawJson || typeof rawJson !== 'string') return '';
+    // 1. Convert internal Hebrew abbreviation quotes (e.g. מע"מ -> מע״מ, עו"ש -> עו״ש, בע"מ -> בע״מ, ש"ח -> ש״ח, דו"ח -> דו״ח)
+    let fixed = rawJson
+      .replace(/([\u0590-\u05FF])"([\u0590-\u05FF])/g, '$1״$2')
+      .replace(/([\u0590-\u05FF])"([\u0590-\u05FF])/g, '$1״$2');
 
-    const repairHebrewJsonString = (rawJson) => {
-      // 1. Escape unescaped Hebrew abbreviation gershayim (e.g. מע"מ, עו"ש, בע"מ, דו"ח, סה"כ, חו"ז, ש"ח)
-      let fixed = rawJson
-        .replace(/([\u0590-\u05FF])"([\u0590-\u05FF])/g, '$1\\"$2')
-        .replace(/([\u0590-\u05FF])"([\u0590-\u05FF])/g, '$1\\"$2');
+    // 2. Remove trailing commas before closing } or ]
+    fixed = fixed.replace(/,\s*([}\]])/g, '$1');
 
-      // 2. Remove trailing commas before closing } or ]
-      fixed = fixed.replace(/,\s*([}\]])/g, '$1');
-
-      // 3. State-machine pass: escape raw control chars & stray unescaped quotes inside string values
-      let out = '';
-      let inStr = false;
-      let escaped = false;
-      for (let i = 0; i < fixed.length; i++) {
-        const ch = fixed[i];
-        if (!inStr) {
-          if (ch === '"') inStr = true;
+    // 3. State-machine pass: clean literal newlines/tabs & stray unescaped internal quotes inside JSON strings
+    let out = '';
+    let inStr = false;
+    let escaped = false;
+    for (let i = 0; i < fixed.length; i++) {
+      const ch = fixed[i];
+      if (!inStr) {
+        if (ch === '"') inStr = true;
+        out += ch;
+        continue;
+      }
+      if (escaped) {
+        escaped = false;
+        out += ch;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        out += ch;
+        continue;
+      }
+      if (ch === '\n') {
+        out += '\\n';
+        continue;
+      }
+      if (ch === '\r') {
+        out += '\\r';
+        continue;
+      }
+      if (ch === '\t') {
+        out += '\\t';
+        continue;
+      }
+      if (ch === '"') {
+        let j = i + 1;
+        while (j < fixed.length && /\s/.test(fixed[j])) j++;
+        const nextCh = j < fixed.length ? fixed[j] : '';
+        if (nextCh === ':' || nextCh === '}' || nextCh === ']' || nextCh === '') {
+          inStr = false;
           out += ch;
-          continue;
-        }
-        if (escaped) {
-          escaped = false;
-          out += ch;
-          continue;
-        }
-        if (ch === '\\') {
-          escaped = true;
-          out += ch;
-          continue;
-        }
-        if (ch === '\n') {
-          out += '\\n';
-          continue;
-        }
-        if (ch === '\r') {
-          out += '\\r';
-          continue;
-        }
-        if (ch === '\t') {
-          out += '\\t';
-          continue;
-        }
-        if (ch === '"') {
-          // Check next non-whitespace token to decide if this quote closes the JSON string
-          let j = i + 1;
-          while (j < fixed.length && /\s/.test(fixed[j])) j++;
-          const nextCh = j < fixed.length ? fixed[j] : '';
-          if (nextCh === ':' || nextCh === '}' || nextCh === ']' || nextCh === '') {
+        } else if (nextCh === ',') {
+          let k = j + 1;
+          while (k < fixed.length && /\s/.test(fixed[k])) k++;
+          const afterComma = k < fixed.length ? fixed[k] : '';
+          if (!afterComma || /^["{\[\]}\-0-9tfn]$/.test(afterComma)) {
             inStr = false;
             out += ch;
-          } else if (nextCh === ',') {
-            // After comma in JSON object/array, valid next non-ws char is ", {, [, }, ], -, digit, t, f, n
-            let k = j + 1;
-            while (k < fixed.length && /\s/.test(fixed[k])) k++;
-            const afterComma = k < fixed.length ? fixed[k] : '';
-            if (!afterComma || /^["{\[\]}\-0-9tfn]$/.test(afterComma)) {
-              inStr = false;
-              out += ch;
-            } else {
-              out += '\\"';
-            }
           } else {
             out += '\\"';
           }
-          continue;
+        } else {
+          out += '\\"';
         }
-        out += ch;
+        continue;
       }
-      return out.replace(/,\s*([}\]])/g, '$1');
-    };
+      out += ch;
+    }
+    return out.replace(/,\s*([}\]])/g, '$1');
+  },
+
+  cleanAndParseJSON(text) {
+    if (!text || typeof text !== 'string') return null;
 
     try {
       let clean = stripThinkTags(text).trim();
@@ -875,16 +969,8 @@ const AIService = {
         try {
           return JSON.parse(clean);
         } catch (_firstErr) {
-          const fastSanitized = clean
-            .replace(/([\u0590-\u05FF])"([\u0590-\u05FF])/g, '$1\\"$2')
-            .replace(/([\u0590-\u05FF])"([\u0590-\u05FF])/g, '$1\\"$2')
-            .replace(/,\s*([}\]])/g, '$1');
-          try {
-            return JSON.parse(fastSanitized);
-          } catch (_secondErr) {
-            const deepRepaired = repairHebrewJsonString(clean);
-            return JSON.parse(deepRepaired);
-          }
+          const repaired = this.repairHebrewJsonString(clean);
+          return JSON.parse(repaired);
         }
       }
     } catch (e) {
@@ -1459,7 +1545,7 @@ ${cleanText ? `\nהטקסט שהוזן / חולץ מהחומר:\n"""\n${cleanTex
 
       // אם הועלו תמונות או דפי PDF סרוקים ויש מפתח Gemini, נריץ תחילה מול Gemini Multimodal
       if (images.length > 0 && geminiKey) {
-        const modelsToTry = this.geminiModels || ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+        const modelsToTry = this.geminiModels || ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-flash-latest'];
         for (const model of modelsToTry) {
           try {
             rawResponse = await callGeminiAPI(model, geminiKey, prompt, { images });
